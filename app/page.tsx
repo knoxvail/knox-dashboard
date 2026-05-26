@@ -162,14 +162,12 @@ export default function Dashboard() {
       backgroundSize: "48px 48px",
       fontFamily: "'DM Sans', sans-serif",
     }}>
-      {/* Scan line */}
       <div style={{
         position: "fixed", top: 0, left: 0, right: 0, height: 1,
         background: "linear-gradient(90deg, transparent, rgba(0,212,255,0.07), transparent)",
         animation: "scan 12s linear infinite", zIndex: 100, pointerEvents: "none",
       }} />
 
-      {/* Header */}
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px 12px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#00d4ff", boxShadow: "0 0 10px #00d4ff" }} />
@@ -184,7 +182,6 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Clock */}
       <div style={{ textAlign: "center", padding: "4px 0 16px" }}>
         <div style={{
           fontFamily: "'Barlow Condensed', sans-serif",
@@ -206,7 +203,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Main 3-column grid */}
       <main style={{
         flex: 1,
         display: "grid",
@@ -215,8 +211,6 @@ export default function Dashboard() {
         padding: "0 24px",
         minHeight: 0,
       }}>
-
-        {/* WSJ */}
         <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <PanelHeader label="Wall Street Journal" right={
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -247,7 +241,6 @@ export default function Dashboard() {
           </div>
         </Panel>
 
-        {/* Notion Tasks */}
         <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <PanelHeader label="Open Tasks" right={<Tag>NOTION</Tag>} />
           <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -280,10 +273,7 @@ export default function Dashboard() {
           )}
         </Panel>
 
-        {/* Right column: Gmail (2/3) + Spotify (1/3) */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
-
-          {/* Gmail placeholder */}
           <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <PanelHeader label="Inbox" right={<Tag>GMAIL</Tag>} />
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
@@ -297,7 +287,6 @@ export default function Dashboard() {
             </div>
           </Panel>
 
-          {/* Spotify */}
           <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
             <PanelHeader label="Spotify" right={
               nowPlaying.connected ? (
@@ -307,7 +296,6 @@ export default function Dashboard() {
                 </button>
               ) : null
             } />
-
             {!nowPlaying.connected ? (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
                 <a href="/api/spotify/login" style={{
@@ -350,13 +338,11 @@ export default function Dashboard() {
                     {nowPlaying.artist && <p style={{ margin: "2px 0 0", fontSize: 11, color: "#607080", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nowPlaying.artist}</p>}
                   </div>
                 </div>
-
                 {nowPlaying.playing && (
                   <div style={{ height: 1, background: "#1a2332", borderRadius: 1, margin: "8px 0" }}>
                     <div style={{ height: "100%", width: `${progressPct}%`, background: "#00d4ff", transition: "width 1s linear" }} />
                   </div>
                 )}
-
                 <div style={{ display: "flex", justifyContent: "center", gap: 16 }}>
                   {[
                     { action: "previous", label: "⏮" },
@@ -378,7 +364,6 @@ export default function Dashboard() {
         </div>
       </main>
 
-      {/* Bible verse footer */}
       <footer style={{
         padding: "12px 24px 16px",
         textAlign: "center",
