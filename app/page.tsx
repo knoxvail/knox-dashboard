@@ -134,9 +134,7 @@ const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ connected: false });
     fetchStatic();
     fetchSpotify();
     fetchGmail();
-  }, [fetchStatic, fetchSpotify, fetchGmail]););
-    fetchSpotify();
-  }, [fetchStatic, fetchSpotify]);
+  }, [fetchStatic, fetchSpotify, fetchGmail]);
 
   useEffect(() => {
     spotifyInterval.current = setInterval(fetchSpotify, 10000);
