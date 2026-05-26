@@ -21,8 +21,7 @@ export async function GET() {
       body: JSON.stringify({
         filter: {
           property: "Status",
-          status: { equals: "To Do" },h
-        },
+status: { equals: "To Do" },        },
         sorts: [{ timestamp: "created_time", direction: "ascending" }],
         page_size: 8,
       }),
