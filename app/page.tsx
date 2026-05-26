@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 type Headline = { title: string; link: string; date: string };
 type Task = { id: string; title: string };
 type Verse = { ref: string; text: string };
+type Email = { id: string; from: string; subject: string; date: string };
 type NowPlaying = {
   connected: boolean; expired?: boolean; playing?: boolean;
   track?: string; artist?: string; album?: string;
@@ -75,24 +76,15 @@ export default function Dashboard() {
   const [headlines, setHeadlines] = useState<Headline[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [verse, setVerse] = useState<Verse | null>(null);
-const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ connected: false });
-  const [emails, setEmails] = useState<{id: string; from: string; subject: string; date: string}[]>([]);
+  const [emails, setEmails] = useState<Email[]>([]);
   const [gmailConnected, setGmailConnected] = useState(false);
+  const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ connected: false });
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [showPlaylists, setShowPlaylists] = useState(false);
   const [loading, setLoading] = useState(true);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchGmail = useCallback(async () => {
-    try {
-      const res = await fetch("/api/gmail");
-      const data = await res.json();
-      setGmailConnected(data.connected);
-      setEmails(data.emails || []);
-    } catch {}
-  }, []);
-
-  const fetchStatic = useCallback(async () => { useCallback(async () => {
+  const fetchStatic = useCallback(async () => {
     setLoading(true);
     try {
       const [hRes, tRes, vRes] = await Promise.all([
@@ -119,6 +111,15 @@ const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ connected: false });
       } else {
         setNowPlaying(data);
       }
+    } catch {}
+  }, []);
+
+  const fetchGmail = useCallback(async () => {
+    try {
+      const res = await fetch("/api/gmail");
+      const data = await res.json();
+      setGmailConnected(data.connected);
+      setEmails(data.emails || []);
     } catch {}
   }, []);
 
@@ -288,13 +289,6 @@ const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ connected: false });
         <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
           <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <PanelHeader label="Inbox" right={<Tag>GMAIL</Tag>} />
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
-              <div style={{ width: 32, height: 32, border: "1px solid #1a2332", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <span style={{ color: "#2a3a4a", fontSize: 14 }}>✉</span>
-              </div>
-              <p style={{ margin: 0, color: "#3a4a5c", fontSize: 11, textAlign: "center", lineHeight: 1.6 }}>
-                <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <PanelHeader label="Inbox" right={<Tag>GMAIL</Tag>} />
             {!gmailConnected ? (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
                 <a href="/api/gmail/login" style={{
@@ -330,7 +324,9 @@ const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ connected: false });
                 ))}
               </div>
             )}
-          </Panel><Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+          </Panel>
+
+          <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
             <PanelHeader label="Spotify" right={
               nowPlaying.connected ? (
                 <button onClick={() => { setShowPlaylists(!showPlaylists); if (!showPlaylists) fetchPlaylists(); }}
