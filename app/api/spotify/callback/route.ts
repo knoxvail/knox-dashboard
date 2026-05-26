@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const SITE_URL = "https://knox-dashboard.vercel.app";
+
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const state = request.nextUrl.searchParams.get("state");
   const storedState = request.cookies.get("spotify_auth_state")?.value;
   const error = request.nextUrl.searchParams.get("error");
 
-  if (!state || state !== storedState) {
-    return NextResponse.redirect(new URL("/?spotify=error", request.nextUrl.origin));
+  if (storedState && state !== storedState) {
+    return NextResponse.redirect(new URL("/?spotify=error", SITE_URL));
   }
 
   if (error || !code) {
-    return NextResponse.redirect(new URL("/?spotify=error", request.nextUrl.origin));
+    return NextResponse.redirect(new URL("/?spotify=error", SITE_URL));
   }
 
   try {
@@ -31,7 +33,12 @@ export async function GET(request: NextRequest) {
     });
 
     const tokenData = await tokenResponse.json();
-    const response = NextResponse.redirect(new URL("/?spotify=connected", request.nextUrl.origin));
+
+    if (!tokenData.access_token) {
+      return NextResponse.redirect(new URL("/?spotify=error", SITE_URL));
+    }
+
+    const response = NextResponse.redirect(new URL("/?spotify=connected", SITE_URL));
 
     response.cookies.set({
       name: "spotify_access_token",
@@ -54,7 +61,7 @@ export async function GET(request: NextRequest) {
     }
 
     return response;
-  } catch {
-    return NextResponse.redirect(new URL("/?spotify=error", request.nextUrl.origin));
+  } catch (err) {
+    return NextResponse.redirect(new URL("/?spotify=error", SITE_URL));
   }
 }
