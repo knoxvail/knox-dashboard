@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const SITE_URL = "https://knox-dashboard.vercel.app";
+const SITE_URL = "https://knox-dashboard-pnsj.vercel.app";
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
