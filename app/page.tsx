@@ -83,7 +83,7 @@ const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ connected: false });
   const [loading, setLoading] = useState(true);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
 
-  const const fetchGmail = useCallback(async () => {
+  const fetchGmail = useCallback(async () => {
     try {
       const res = await fetch("/api/gmail");
       const data = await res.json();
