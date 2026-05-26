@@ -75,13 +75,24 @@ export default function Dashboard() {
   const [headlines, setHeadlines] = useState<Headline[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [verse, setVerse] = useState<Verse | null>(null);
-  const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ connected: false });
+const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ connected: false });
+  const [emails, setEmails] = useState<{id: string; from: string; subject: string; date: string}[]>([]);
+  const [gmailConnected, setGmailConnected] = useState(false);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [showPlaylists, setShowPlaylists] = useState(false);
   const [loading, setLoading] = useState(true);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
 
-  const fetchStatic = useCallback(async () => {
+  const const fetchGmail = useCallback(async () => {
+    try {
+      const res = await fetch("/api/gmail");
+      const data = await res.json();
+      setGmailConnected(data.connected);
+      setEmails(data.emails || []);
+    } catch {}
+  }, []);
+
+  const fetchStatic = useCallback(async () => { useCallback(async () => {
     setLoading(true);
     try {
       const [hRes, tRes, vRes] = await Promise.all([
@@ -121,6 +132,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchStatic();
+    fetchSpotify();
+    fetchGmail();
+  }, [fetchStatic, fetchSpotify, fetchGmail]););
     fetchSpotify();
   }, [fetchStatic, fetchSpotify]);
 
@@ -281,13 +295,44 @@ export default function Dashboard() {
                 <span style={{ color: "#2a3a4a", fontSize: 14 }}>✉</span>
               </div>
               <p style={{ margin: 0, color: "#3a4a5c", fontSize: 11, textAlign: "center", lineHeight: 1.6 }}>
-                Gmail requires Google OAuth.<br />
-                <a href="mailto:" style={{ color: "#00d4ff", opacity: 0.6, fontSize: 10 }}>Coming soon</a>
-              </p>
-            </div>
-          </Panel>
-
-          <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+                <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <PanelHeader label="Inbox" right={<Tag>GMAIL</Tag>} />
+            {!gmailConnected ? (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                <a href="/api/gmail/login" style={{
+                  display: "inline-block", padding: "8px 16px",
+                  border: "1px solid #1a2332", color: "#00d4ff",
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
+                  letterSpacing: "0.15em", textDecoration: "none", textTransform: "uppercase",
+                  transition: "border-color 0.2s, background 0.2s",
+                }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#00d4ff"; (e.currentTarget as HTMLElement).style.background = "rgba(0,212,255,0.05)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#1a2332"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                >
+                  CONNECT GMAIL
+                </a>
+              </div>
+            ) : emails.length === 0 ? (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <p style={{ color: "#2a3a4a", fontSize: 12 }}>No unread emails</p>
+              </div>
+            ) : (
+              <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
+                {emails.map((email) => (
+                  <div key={email.id} style={{ borderBottom: "1px solid #1a2332", padding: "10px 0", transition: "border-color 0.2s" }}
+                    onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "rgba(0,212,255,0.25)")}
+                    onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "#1a2332")}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                      <span style={{ fontSize: 11, color: "#d0e4f0", fontWeight: 500 }}>{email.from}</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#2a3a4a" }}>{email.date}</span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: 12, color: "#607080", lineHeight: 1.4 }}>{email.subject}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Panel><Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
             <PanelHeader label="Spotify" right={
               nowPlaying.connected ? (
                 <button onClick={() => { setShowPlaylists(!showPlaylists); if (!showPlaylists) fetchPlaylists(); }}
