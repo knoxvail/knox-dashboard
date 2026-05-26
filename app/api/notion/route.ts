@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
-export const revalidate = 300; // cache 5 min
+export const revalidate = 300;
 
 export async function GET() {
-  const token = process.env.NOTION_API_TOKEN;
+  const token = process.env.NOTION_TOKEN;
   const dbId = process.env.NOTION_DB_ID;
 
   if (!token || !dbId) {
@@ -19,9 +19,6 @@ export async function GET() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        filter: {
-          property: "Status",
-status: { equals: "To Do" },        },
         sorts: [{ timestamp: "created_time", direction: "ascending" }],
         page_size: 8,
       }),
