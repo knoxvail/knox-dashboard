@@ -20,7 +20,7 @@ export async function GET() {
       },
       body: JSON.stringify({
         sorts: [{ timestamp: "created_time", direction: "ascending" }],
-        page_size: 8,
+        page_size: 20,
       }),
       next: { revalidate: 300 },
     });
