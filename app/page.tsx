@@ -208,7 +208,7 @@ export default function Dashboard() {
     return () => { if (spotifyInterval.current) clearInterval(spotifyInterval.current); };
   }, [fetchSpotify]);
 
-  const completeTask = async (id: string) => {
+ const completeTask = async (id: string) => {
     setShortTerm(prev => prev.filter(t => t.id !== id));
     setLongTerm(prev => prev.filter(t => t.id !== id));
     await fetch("/api/notion", {
@@ -216,6 +216,7 @@ export default function Dashboard() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
+    await fetchStatic();
   };
 
   const archiveEmail = async (id: string) => {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-export const revalidate = 300;
+export const revalidate = 0;
 
 export async function GET() {
   const token = process.env.NOTION_TOKEN;
@@ -19,7 +19,7 @@ export async function GET() {
         sorts: [{ timestamp: "created_time", direction: "ascending" }],
         page_size: 50,
       }),
-      next: { revalidate: 300 },
+      cache: "no-store",
     });
     const data = await res.json();
 
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   const { id } = await request.json();
 
   try {
-    await fetch(`https://api.notion.com/v1/pages/${id}`, {
+    const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -60,6 +60,12 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({ archived: true }),
     });
+
+    if (!notionRes.ok) {
+      const err = await notionRes.json();
+      return NextResponse.json({ error: err }, { status: notionRes.status });
+    }
+
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json({ error: "Failed" }, { status: 500 });
