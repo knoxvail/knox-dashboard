@@ -5,10 +5,7 @@ export const revalidate = 300;
 export async function GET() {
   const token = process.env.NOTION_TOKEN;
   const dbId = process.env.NOTION_DB_ID;
-
-  if (!token || !dbId) {
-    return NextResponse.json({ tasks: [] }, { status: 200 });
-  }
+  if (!token || !dbId) return NextResponse.json({ tasks: [] });
 
   try {
     const res = await fetch(`https://api.notion.com/v1/databases/${dbId}/query`, {
@@ -19,24 +16,17 @@ export async function GET() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-  sorts: [{ timestamp: "created_time", direction: "ascending" }],
-  page_size: 20,
-}),
-}),
+        sorts: [{ timestamp: "created_time", direction: "ascending" }],
+        page_size: 20,
+      }),
       next: { revalidate: 300 },
     });
-
     const data = await res.json();
-
     const tasks = (data.results || []).map((page: any) => {
-      const titleProp = Object.values(page.properties).find(
-        (p: any) => p.type === "title"
-      ) as any;
-      const title =
-        titleProp?.title?.map((t: any) => t.plain_text).join("") || "Untitled";
+      const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
+      const title = titleProp?.title?.map((t: any) => t.plain_text).join("") || "Untitled";
       return { id: page.id, title };
     });
-
     return NextResponse.json({ tasks });
   } catch {
     return NextResponse.json({ tasks: [] });
