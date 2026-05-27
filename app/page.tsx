@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 type Headline = { title: string; link: string; date: string };
 type Task = { id: string; title: string };
 type Verse = { ref: string; text: string };
-type Email = { id: string; from: string; subject: string; date: string };
+type Email = { id: string; from: string; subject: string; date: string; link: string };
 type NowPlaying = {
   connected: boolean; expired?: boolean; playing?: boolean;
   track?: string; artist?: string; album?: string;
@@ -45,7 +45,7 @@ function Tag({ children, accent }: { children: React.ReactNode; accent?: boolean
   );
 }
 
-function Panel({ children, className, style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
+function Panel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <div style={{
       background: "#0d1117",
@@ -54,7 +54,7 @@ function Panel({ children, className, style }: { children: React.ReactNode; clas
       padding: "18px 20px",
       overflow: "hidden",
       ...style,
-    }} className={className}>
+    }}>
       <div style={{ position: "absolute", top: -1, left: 16, width: 32, height: 1, background: "#00d4ff" }} />
       <div style={{ position: "absolute", top: -1, left: -1, width: 10, height: 10, borderTop: "1px solid #00d4ff", borderLeft: "1px solid #00d4ff" }} />
       {children}
@@ -67,6 +67,22 @@ function PanelHeader({ label, right }: { label: string; right?: React.ReactNode 
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
       <Tag accent>{label}</Tag>
       {right}
+    </div>
+  );
+}
+
+function ConnectButton({ href, label }: { href: string; label: string }) {
+  return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <a href={href} style={{
+        display: "inline-block", padding: "8px 16px",
+        border: "1px solid #1a2332", color: "#00d4ff",
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
+        letterSpacing: "0.15em", textDecoration: "none", textTransform: "uppercase" as const,
+      }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#00d4ff"; (e.currentTarget as HTMLElement).style.background = "rgba(0,212,255,0.05)"; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#1a2332"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+      >{label}</a>
     </div>
   );
 }
@@ -189,7 +205,7 @@ export default function Dashboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
           <Tag>{clock.day}</Tag>
           <Tag>{clock.date}</Tag>
-          <button onClick={fetchStatic} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          <button onClick={() => { fetchStatic(); fetchGmail(); fetchSpotify(); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
             <Tag>REFRESH</Tag>
           </button>
         </div>
@@ -224,6 +240,7 @@ export default function Dashboard() {
         padding: "0 24px",
         minHeight: 0,
       }}>
+
         <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <PanelHeader label="Wall Street Journal" right={
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -290,20 +307,7 @@ export default function Dashboard() {
           <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <PanelHeader label="Inbox" right={<Tag>GMAIL</Tag>} />
             {!gmailConnected ? (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
-                <a href="/api/gmail/login" style={{
-                  display: "inline-block", padding: "8px 16px",
-                  border: "1px solid #1a2332", color: "#00d4ff",
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
-                  letterSpacing: "0.15em", textDecoration: "none", textTransform: "uppercase",
-                  transition: "border-color 0.2s, background 0.2s",
-                }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#00d4ff"; (e.currentTarget as HTMLElement).style.background = "rgba(0,212,255,0.05)"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#1a2332"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                >
-                  CONNECT GMAIL
-                </a>
-              </div>
+              <ConnectButton href="/api/gmail/login" label="CONNECT GMAIL" />
             ) : emails.length === 0 ? (
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <p style={{ color: "#2a3a4a", fontSize: 12 }}>No unread emails</p>
@@ -311,16 +315,16 @@ export default function Dashboard() {
             ) : (
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                 {emails.map((email) => (
-                  <div key={email.id} style={{ borderBottom: "1px solid #1a2332", padding: "10px 0", transition: "border-color 0.2s" }}
+                  <a key={email.id} href={email.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", display: "block", borderBottom: "1px solid #1a2332", padding: "10px 0", transition: "border-color 0.2s" }}
                     onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "rgba(0,212,255,0.25)")}
                     onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "#1a2332")}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
-                      <span style={{ fontSize: 11, color: "#d0e4f0", fontWeight: 500 }}>{email.from}</span>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#2a3a4a" }}>{email.date}</span>
+                      <span style={{ fontSize: 11, color: "#d0e4f0", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%" }}>{email.from}</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#2a3a4a", flexShrink: 0 }}>{email.date}</span>
                     </div>
-                    <p style={{ margin: 0, fontSize: 12, color: "#607080", lineHeight: 1.4 }}>{email.subject}</p>
-                  </div>
+                    <p style={{ margin: 0, fontSize: 12, color: "#607080", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email.subject}</p>
+                  </a>
                 ))}
               </div>
             )}
@@ -336,20 +340,7 @@ export default function Dashboard() {
               ) : null
             } />
             {!nowPlaying.connected ? (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 }}>
-                <a href="/api/spotify/login" style={{
-                  display: "inline-block", padding: "8px 16px",
-                  border: "1px solid #1a2332", color: "#00d4ff",
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
-                  letterSpacing: "0.15em", textDecoration: "none", textTransform: "uppercase",
-                  transition: "border-color 0.2s, background 0.2s",
-                }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#00d4ff"; (e.currentTarget as HTMLElement).style.background = "rgba(0,212,255,0.05)"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#1a2332"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                >
-                  CONNECT SPOTIFY
-                </a>
-              </div>
+              <ConnectButton href="/api/spotify/login" label="CONNECT SPOTIFY" />
             ) : showPlaylists ? (
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                 {playlists.map(p => (
@@ -405,7 +396,6 @@ export default function Dashboard() {
 
       <footer style={{
         padding: "12px 24px 16px",
-        textAlign: "center",
         borderTop: "1px solid #1a2332",
         marginTop: 12,
         display: "flex",
