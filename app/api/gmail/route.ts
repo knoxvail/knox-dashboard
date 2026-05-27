@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     const messages = listData.messages || [];
 
     const emails = await Promise.all(
-      messages.map(async (msg: { id: string }) => {
+      messages.map(async (msg: { id: string; threadId: string }) => {
         const msgRes = await gmailFetch(
           `/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
           token
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
         const from = get("From").replace(/<.*>/, "").trim() || get("From");
         const subject = get("Subject") || "(no subject)";
         const date = new Date(get("Date")).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-        const link = `https://mail.google.com/mail/u/0/#inbox/${msg.id}`;
+        const link = `https://mail.google.com/mail/u/0/#all/${msg.threadId}`;
 
         return { id: msg.id, from, subject, date, link };
       })
