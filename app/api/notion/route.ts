@@ -5,7 +5,7 @@ export const revalidate = 300;
 export async function GET() {
   const token = process.env.NOTION_TOKEN;
   const dbId = process.env.NOTION_DB_ID;
-  if (!token || !dbId) return NextResponse.json({ tasks: [] });
+  if (!token || !dbId) return NextResponse.json({ shortTerm: [], longTerm: [] });
 
   try {
     const res = await fetch(`https://api.notion.com/v1/databases/${dbId}/query`, {
@@ -17,19 +17,30 @@ export async function GET() {
       },
       body: JSON.stringify({
         sorts: [{ timestamp: "created_time", direction: "ascending" }],
-        page_size: 20,
+        page_size: 50,
       }),
       next: { revalidate: 300 },
     });
     const data = await res.json();
-    const tasks = (data.results || []).map((page: any) => {
+
+    const shortTerm: { id: string; title: string }[] = [];
+    const longTerm: { id: string; title: string }[] = [];
+
+    (data.results || []).forEach((page: any) => {
       const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
-      const title = titleProp?.title?.map((t: any) => t.plain_text).join("") || "Untitled";
-      return { id: page.id, title };
+      const title = titleProp?.title?.map((t: any) => t.plain_text).join("") || "";
+      if (!title) return;
+
+      const statusProp = Object.values(page.properties).find((p: any) => p.type === "status") as any;
+      const status = statusProp?.status?.name || "";
+
+      if (status === "Short Term") shortTerm.push({ id: page.id, title });
+      else if (status === "Long Term") longTerm.push({ id: page.id, title });
     });
-    return NextResponse.json({ tasks });
+
+    return NextResponse.json({ shortTerm, longTerm });
   } catch {
-    return NextResponse.json({ tasks: [] });
+    return NextResponse.json({ shortTerm: [], longTerm: [] });
   }
 }
 
