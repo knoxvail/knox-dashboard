@@ -19,9 +19,9 @@ export async function GET() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-  filter: { property: "archived", value: false },
   sorts: [{ timestamp: "created_time", direction: "ascending" }],
   page_size: 20,
+}),
 }),
       next: { revalidate: 300 },
     });
