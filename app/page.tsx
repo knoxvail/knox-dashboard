@@ -87,6 +87,19 @@ function ConnectButton({ href, label }: { href: string; label: string }) {
   );
 }
 
+function DoneButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button onClick={onClick} style={{
+      background: "none", border: "1px solid #1a2332", cursor: "pointer",
+      color: "#1a3a4a", fontSize: 11, padding: "2px 6px", flexShrink: 0,
+      borderRadius: 2, transition: "color 0.2s, border-color 0.2s",
+    }}
+      onMouseEnter={e => { (e.currentTarget.style.color = "#00d4ff"); (e.currentTarget.style.borderColor = "#00d4ff"); }}
+      onMouseLeave={e => { (e.currentTarget.style.color = "#1a3a4a"); (e.currentTarget.style.borderColor = "#1a2332"); }}
+    >✓</button>
+  );
+}
+
 export default function Dashboard() {
   const clock = useClock();
   const [headlines, setHeadlines] = useState<Headline[]>([]);
@@ -161,6 +174,15 @@ export default function Dashboard() {
   const completeTask = async (id: string) => {
     setTasks(prev => prev.filter(t => t.id !== id));
     await fetch("/api/notion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+  };
+
+  const archiveEmail = async (id: string) => {
+    setEmails(prev => prev.filter(e => e.id !== id));
+    await fetch("/api/gmail", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
@@ -302,14 +324,7 @@ export default function Dashboard() {
                   <div style={{ width: 5, height: 5, borderRadius: "50%", border: "1px solid #1a3a4a", flexShrink: 0, marginTop: 5 }} />
                   <p style={{ margin: 0, fontSize: 13, color: "#8aa0b0", lineHeight: 1.5 }}>{t.title}</p>
                 </div>
-                <button onClick={() => completeTask(t.id)} style={{
-                  background: "none", border: "1px solid #1a2332", cursor: "pointer",
-                  color: "#1a3a4a", fontSize: 11, padding: "2px 6px", flexShrink: 0,
-                  borderRadius: 2, transition: "color 0.2s, border-color 0.2s",
-                }}
-                  onMouseEnter={e => { (e.currentTarget.style.color = "#00d4ff"); (e.currentTarget.style.borderColor = "#00d4ff"); }}
-                  onMouseLeave={e => { (e.currentTarget.style.color = "#1a3a4a"); (e.currentTarget.style.borderColor = "#1a2332"); }}
-                >✓</button>
+                <DoneButton onClick={() => completeTask(t.id)} />
               </div>
             ))}
           </div>
@@ -332,16 +347,19 @@ export default function Dashboard() {
             ) : (
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                 {emails.map((email) => (
-                  <a key={email.id} href={email.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", display: "block", borderBottom: "1px solid #1a2332", padding: "10px 0", transition: "border-color 0.2s" }}
+                  <div key={email.id} style={{ borderBottom: "1px solid #1a2332", padding: "10px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, transition: "border-color 0.2s" }}
                     onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "rgba(0,212,255,0.25)")}
                     onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "#1a2332")}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
-                      <span style={{ fontSize: 11, color: "#d0e4f0", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%" }}>{email.from}</span>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#2a3a4a", flexShrink: 0 }}>{email.date}</span>
-                    </div>
-                    <p style={{ margin: 0, fontSize: 12, color: "#607080", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email.subject}</p>
-                  </a>
+                    <a href={email.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", minWidth: 0, flex: 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                        <span style={{ fontSize: 11, color: "#d0e4f0", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%" }}>{email.from}</span>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#2a3a4a", flexShrink: 0 }}>{email.date}</span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: 12, color: "#607080", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email.subject}</p>
+                    </a>
+                    <DoneButton onClick={() => archiveEmail(email.id)} />
+                  </div>
                 ))}
               </div>
             )}

@@ -44,3 +44,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ connected: false, emails: [] });
   }
 }
+
+export async function POST(request: NextRequest) {
+  const token = request.cookies.get("gmail_access_token")?.value;
+  if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
+
+  const { id } = await request.json();
+
+  try {
+    await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}/modify`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ removeLabelIds: ["INBOX"] }),
+    });
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json({ error: "Failed" }, { status: 500 });
+  }
+}
