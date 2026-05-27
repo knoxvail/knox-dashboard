@@ -32,3 +32,25 @@ export async function GET() {
     return NextResponse.json({ tasks: [] });
   }
 }
+
+export async function POST(request: Request) {
+  const token = process.env.NOTION_TOKEN;
+  if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
+
+  const { id } = await request.json();
+
+  try {
+    await fetch(`https://api.notion.com/v1/pages/${id}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ archived: true }),
+    });
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json({ error: "Failed" }, { status: 500 });
+  }
+}

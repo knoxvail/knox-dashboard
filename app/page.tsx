@@ -158,6 +158,15 @@ export default function Dashboard() {
     return () => { if (spotifyInterval.current) clearInterval(spotifyInterval.current); };
   }, [fetchSpotify]);
 
+  const completeTask = async (id: string) => {
+    setTasks(prev => prev.filter(t => t.id !== id));
+    await fetch("/api/notion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+  };
+
   const spotifyAction = async (action: string) => {
     await fetch("/api/spotify/now-playing", {
       method: "POST",
@@ -285,14 +294,22 @@ export default function Dashboard() {
                 <p style={{ color: "#2a3a4a", fontSize: 12, textAlign: "center" }}>No open tasks</p>
               </div>
             ) : tasks.map((t) => (
-              <div key={t.id} style={{ borderLeft: "1px solid #1a2332", paddingLeft: 12, transition: "border-color 0.2s, padding-left 0.2s" }}
+              <div key={t.id} style={{ borderLeft: "1px solid #1a2332", paddingLeft: 12, transition: "border-color 0.2s, padding-left 0.2s", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderLeftColor = "#00d4ff"; (e.currentTarget as HTMLElement).style.paddingLeft = "14px"; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderLeftColor = "#1a2332"; (e.currentTarget as HTMLElement).style.paddingLeft = "12px"; }}
               >
-                <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: 0 }}>
                   <div style={{ width: 5, height: 5, borderRadius: "50%", border: "1px solid #1a3a4a", flexShrink: 0, marginTop: 5 }} />
                   <p style={{ margin: 0, fontSize: 13, color: "#8aa0b0", lineHeight: 1.5 }}>{t.title}</p>
                 </div>
+                <button onClick={() => completeTask(t.id)} style={{
+                  background: "none", border: "1px solid #1a2332", cursor: "pointer",
+                  color: "#1a3a4a", fontSize: 11, padding: "2px 6px", flexShrink: 0,
+                  borderRadius: 2, transition: "color 0.2s, border-color 0.2s",
+                }}
+                  onMouseEnter={e => { (e.currentTarget.style.color = "#00d4ff"); (e.currentTarget.style.borderColor = "#00d4ff"); }}
+                  onMouseLeave={e => { (e.currentTarget.style.color = "#1a3a4a"); (e.currentTarget.style.borderColor = "#1a2332"); }}
+                >✓</button>
               </div>
             ))}
           </div>
