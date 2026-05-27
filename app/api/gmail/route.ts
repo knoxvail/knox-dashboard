@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
         const from = get("From").replace(/<.*>/, "").trim() || get("From");
         const subject = get("Subject") || "(no subject)";
         const date = new Date(get("Date")).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-        const link = `https://mail.google.com/mail/u/0/#all/${msg.threadId}`;
+        const link = `https://mail.google.com/mail/u/1/#all/${msg.threadId}`;
 
         return { id: msg.id, from, subject, date, link };
       })
