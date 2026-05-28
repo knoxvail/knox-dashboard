@@ -38,10 +38,10 @@ function Tag({ children, accent }: { children: React.ReactNode; accent?: boolean
   return (
     <span style={{
       fontFamily: "'JetBrains Mono', monospace",
-      fontSize: 9,
+      fontSize: 10,
       letterSpacing: "0.15em",
       textTransform: "uppercase" as const,
-      color: accent ? "#e0e0e0" : "#606060",
+      color: accent ? "#e8e8e8" : "#707070",
     }}>{children}</span>
   );
 }
@@ -56,8 +56,8 @@ function Panel({ children, style }: { children: React.ReactNode; style?: React.C
       overflow: "hidden",
       ...style,
     }}>
-      <div style={{ position: "absolute", top: -1, left: 16, width: 32, height: 1, background: "#888888" }} />
-      <div style={{ position: "absolute", top: -1, left: -1, width: 10, height: 10, borderTop: "1px solid #888888", borderLeft: "1px solid #888888" }} />
+      <div style={{ position: "absolute", top: -1, left: 16, width: 32, height: 1, background: "#999" }} />
+      <div style={{ position: "absolute", top: -1, left: -1, width: 10, height: 10, borderTop: "1px solid #999", borderLeft: "1px solid #999" }} />
       {children}
     </div>
   );
@@ -77,13 +77,13 @@ function ConnectButton({ href, label }: { href: string; label: string }) {
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <a href={href} style={{
         display: "inline-block", padding: "8px 16px",
-        border: "1px solid #333", color: "#ccc",
-        fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
+        border: "1px solid #444", color: "#ddd",
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
         letterSpacing: "0.15em", textDecoration: "none", textTransform: "uppercase" as const,
         transition: "border-color 0.2s, background 0.2s",
       }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#888"; (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.05)"; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#333"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#999"; (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.05)"; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#444"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
       >{label}</a>
     </div>
   );
@@ -93,9 +93,9 @@ function DoneButton({ onClick }: { onClick: () => void }) {
   return (
     <button onClick={onClick} style={{
       background: "#1e1e1e",
-      border: "1px solid #404040",
+      border: "1px solid #505050",
       cursor: "pointer",
-      color: "#888",
+      color: "#aaa",
       fontSize: 13,
       fontWeight: 600,
       padding: "3px 8px",
@@ -104,8 +104,8 @@ function DoneButton({ onClick }: { onClick: () => void }) {
       transition: "color 0.2s, border-color 0.2s, background 0.2s",
       lineHeight: 1,
     }}
-      onMouseEnter={e => { (e.currentTarget.style.color = "#fff"); (e.currentTarget.style.borderColor = "#888"); (e.currentTarget.style.background = "#2a2a2a"); }}
-      onMouseLeave={e => { (e.currentTarget.style.color = "#888"); (e.currentTarget.style.borderColor = "#404040"); (e.currentTarget.style.background = "#1e1e1e"); }}
+      onMouseEnter={e => { (e.currentTarget.style.color = "#fff"); (e.currentTarget.style.borderColor = "#aaa"); (e.currentTarget.style.background = "#2a2a2a"); }}
+      onMouseLeave={e => { (e.currentTarget.style.color = "#aaa"); (e.currentTarget.style.borderColor = "#505050"); (e.currentTarget.style.background = "#1e1e1e"); }}
     >✓</button>
   );
 }
@@ -113,7 +113,7 @@ function DoneButton({ onClick }: { onClick: () => void }) {
 function TaskList({ tasks, onComplete }: { tasks: Task[]; onComplete: (id: string) => void }) {
   if (tasks.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <p style={{ color: "#333", fontSize: 11, textAlign: "center" }}>None</p>
+      <p style={{ color: "#444", fontSize: 12, textAlign: "center" }}>None</p>
     </div>
   );
   return (
@@ -123,12 +123,12 @@ function TaskList({ tasks, onComplete }: { tasks: Task[]; onComplete: (id: strin
           borderLeft: "1px solid #2a2a2a", paddingLeft: 10,
           transition: "border-color 0.2s, padding-left 0.2s",
           display: "flex", alignItems: "flex-start",
-          justifyContent: "space-between", gap: 8, marginBottom: 8,
+          justifyContent: "space-between", gap: 8, marginBottom: 10,
         }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderLeftColor = "#666"; (e.currentTarget as HTMLElement).style.paddingLeft = "12px"; }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderLeftColor = "#777"; (e.currentTarget as HTMLElement).style.paddingLeft = "12px"; }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderLeftColor = "#2a2a2a"; (e.currentTarget as HTMLElement).style.paddingLeft = "10px"; }}
         >
-          <p style={{ margin: 0, fontSize: 12, color: "#909090", lineHeight: 1.5, minWidth: 0 }}>{t.title}</p>
+          <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.5, minWidth: 0 }}>{t.title}</p>
           <DoneButton onClick={() => onComplete(t.id)} />
         </div>
       ))}
@@ -281,7 +281,7 @@ export default function Dashboard() {
 
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px 12px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#888", boxShadow: "0 0 8px #888" }} />
+          <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#999", boxShadow: "0 0 8px #999" }} />
           <Tag accent>KNOX // COMMAND CENTER</Tag>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
@@ -299,7 +299,7 @@ export default function Dashboard() {
           fontSize: "clamp(64px, 9vw, 108px)",
           fontWeight: 300,
           letterSpacing: "0.06em",
-          color: "#e8e8e8",
+          color: "#f0f0f0",
           lineHeight: 1,
           display: "inline-flex",
           alignItems: "center",
@@ -309,7 +309,7 @@ export default function Dashboard() {
           <span style={{ color: "#303030", fontWeight: 200 }}>:</span>
           <span>{clock.m}</span>
           <span style={{ color: "#303030", fontWeight: 200 }}>:</span>
-          <span style={{ color: "#404040", fontSize: "0.45em", alignSelf: "flex-end", paddingBottom: "0.2em" }}>{clock.s}</span>
+          <span style={{ color: "#484848", fontSize: "0.45em", alignSelf: "flex-end", paddingBottom: "0.2em" }}>{clock.s}</span>
         </div>
       </div>
 
@@ -327,7 +327,7 @@ export default function Dashboard() {
           <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <PanelHeader label="Wall Street Journal" right={
               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#888" }} />
+                <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#999" }} />
                 <Tag>LIVE</Tag>
               </div>
             } />
@@ -340,14 +340,14 @@ export default function Dashboard() {
                 ))
               ) : headlines.map((h, i) => (
                 <a key={i} href={h.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", display: "block", borderBottom: "1px solid #1e1e1e", padding: "9px 0", transition: "border-color 0.2s" }}
-                  onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#444")}
+                  onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#555")}
                   onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "#1e1e1e")}
                 >
-                  <p style={{ margin: 0, fontSize: 11, color: "#707070", lineHeight: 1.5, fontWeight: 400, transition: "color 0.2s" }}
-                    onMouseEnter={e => (e.currentTarget.style.color = "#ccc")}
-                    onMouseLeave={e => (e.currentTarget.style.color = "#707070")}
+                  <p style={{ margin: 0, fontSize: 12, color: "#909090", lineHeight: 1.5, fontWeight: 400, transition: "color 0.2s" }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "#ddd")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "#909090")}
                   >{h.title}</p>
-                  {h.date && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: "#333", letterSpacing: "0.1em" }}>{h.date}</span>}
+                  {h.date && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444", letterSpacing: "0.1em" }}>{h.date}</span>}
                 </a>
               ))}
             </div>
@@ -358,17 +358,17 @@ export default function Dashboard() {
             <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
               {events.length === 0 ? (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", paddingTop: 20 }}>
-                  <p style={{ color: "#333", fontSize: 11 }}>Nothing scheduled</p>
+                  <p style={{ color: "#444", fontSize: 12 }}>Nothing scheduled</p>
                 </div>
               ) : events.map((event) => (
                 <div key={event.id} style={{ borderBottom: "1px solid #1e1e1e", padding: "10px 0" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
-                    <p style={{ margin: 0, fontSize: 12, color: "#909090", lineHeight: 1.4 }}>{event.title}</p>
-                    {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: "#444", flexShrink: 0, marginLeft: 6 }}>{event.type.toUpperCase()}</span>}
+                    <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.4 }}>{event.title}</p>
+                    {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#555", flexShrink: 0, marginLeft: 6 }}>{event.type.toUpperCase()}</span>}
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#555" }}>{event.displayDate}</span>
-                    {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444" }}>{event.displayTime}</span>}
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#666" }}>{event.displayDate}</span>
+                    {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>{event.displayTime}</span>}
                   </div>
                 </div>
               ))}
@@ -380,7 +380,7 @@ export default function Dashboard() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, minHeight: 0 }}>
           <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <PanelHeader label="Short Term" right={
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444" }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>
                 {shortTerm.length}
               </span>
             } />
@@ -397,7 +397,7 @@ export default function Dashboard() {
 
           <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <PanelHeader label="Long Term" right={
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444" }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>
                 {longTerm.length}
               </span>
             } />
@@ -421,21 +421,21 @@ export default function Dashboard() {
               <ConnectButton href="/api/gmail/login" label="CONNECT GMAIL" />
             ) : emails.length === 0 ? (
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <p style={{ color: "#333", fontSize: 12 }}>No unread emails</p>
+                <p style={{ color: "#444", fontSize: 12 }}>No emails</p>
               </div>
             ) : (
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                 {emails.map((email) => (
                   <div key={email.id} style={{ borderBottom: "1px solid #1e1e1e", padding: "9px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, transition: "border-color 0.2s" }}
-                    onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#444")}
+                    onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#555")}
                     onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "#1e1e1e")}
                   >
                     <a href={email.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", minWidth: 0, flex: 1 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
-                        <span style={{ fontSize: 11, color: "#c0c0c0", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%" }}>{email.from}</span>
-                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: "#333", flexShrink: 0 }}>{email.date}</span>
+                        <span style={{ fontSize: 12, color: "#d8d8d8", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%" }}>{email.from}</span>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444", flexShrink: 0 }}>{email.date}</span>
                       </div>
-                      <p style={{ margin: 0, fontSize: 11, color: "#606060", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email.subject}</p>
+                      <p style={{ margin: 0, fontSize: 12, color: "#808080", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email.subject}</p>
                     </a>
                     <DoneButton onClick={() => archiveEmail(email.id)} />
                   </div>
@@ -462,10 +462,10 @@ export default function Dashboard() {
                     display: "block", width: "100%", background: "none", border: "none",
                     borderBottom: "1px solid #1e1e1e", padding: "8px 0", cursor: "pointer", textAlign: "left",
                   }}
-                    onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#444")}
+                    onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#555")}
                     onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "#1e1e1e")}
                   >
-                    <span style={{ fontSize: 12, color: "#707070" }}>{p.name}</span>
+                    <span style={{ fontSize: 13, color: "#909090" }}>{p.name}</span>
                   </button>
                 ))}
               </div>
@@ -476,10 +476,10 @@ export default function Dashboard() {
                     <img src={nowPlaying.albumArt} alt="album" style={{ width: 44, height: 44, objectFit: "cover", border: "1px solid #2a2a2a", flexShrink: 0, filter: "grayscale(100%)" }} />
                   )}
                   <div style={{ minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 13, color: "#d0d0d0", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {nowPlaying.playing ? nowPlaying.track || "—" : <span style={{ color: "#333" }}>Not playing</span>}
+                    <p style={{ margin: 0, fontSize: 13, color: "#e0e0e0", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {nowPlaying.playing ? nowPlaying.track || "—" : <span style={{ color: "#444" }}>Not playing</span>}
                     </p>
-                    {nowPlaying.artist && <p style={{ margin: "2px 0 0", fontSize: 11, color: "#606060", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nowPlaying.artist}</p>}
+                    {nowPlaying.artist && <p style={{ margin: "2px 0 0", fontSize: 12, color: "#777", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nowPlaying.artist}</p>}
                   </div>
                 </div>
                 {nowPlaying.playing && (
@@ -495,10 +495,10 @@ export default function Dashboard() {
                   ].map(btn => (
                     <button key={btn.action} onClick={() => spotifyAction(btn.action)} style={{
                       background: "none", border: "none", cursor: "pointer",
-                      color: "#606060", fontSize: 14, padding: "4px 8px", transition: "color 0.15s",
+                      color: "#777", fontSize: 14, padding: "4px 8px", transition: "color 0.15s",
                     }}
-                      onMouseEnter={e => (e.currentTarget.style.color = "#ccc")}
-                      onMouseLeave={e => (e.currentTarget.style.color = "#606060")}
+                      onMouseEnter={e => (e.currentTarget.style.color = "#ddd")}
+                      onMouseLeave={e => (e.currentTarget.style.color = "#777")}
                     >{btn.label}</button>
                   ))}
                 </div>
@@ -521,14 +521,14 @@ export default function Dashboard() {
           <>
             <Tag>DAILY WORD</Tag>
             <span style={{ color: "#222" }}>|</span>
-            <p style={{ margin: 0, fontSize: 12, color: "#505050", fontStyle: "italic", maxWidth: 600 }}>
+            <p style={{ margin: 0, fontSize: 13, color: "#686868", fontStyle: "italic", maxWidth: 600 }}>
               &ldquo;{verse.text}&rdquo;
             </p>
             <span style={{ color: "#222" }}>|</span>
             <span style={{
               fontFamily: "'Barlow Condensed', sans-serif",
-              fontSize: 13, fontWeight: 500,
-              color: "#909090", letterSpacing: "0.06em",
+              fontSize: 14, fontWeight: 500,
+              color: "#aaa", letterSpacing: "0.06em",
               whiteSpace: "nowrap",
             }}>{verse.ref}</span>
           </>
