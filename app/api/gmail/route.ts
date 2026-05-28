@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   if (!token) return NextResponse.json({ connected: false, emails: [] });
 
   try {
-    const listRes = await gmailFetch("/users/me/messages?maxResults=6&q=is:unread", token);
+    const listRes = await gmailFetch("/users/me/messages?maxResults=8&q=in:inbox", token);
     if (listRes.status === 401) return NextResponse.json({ connected: false, expired: true, emails: [] });
 
     const listData = await listRes.json();
