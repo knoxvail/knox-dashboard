@@ -24,42 +24,54 @@ export async function GET() {
           date: { on_or_after: todayStr },
         },
         sorts: [{ property: "Date", direction: "ascending" }],
-        page_size: 10,
+        page_size: 20,
       }),
       cache: "no-store",
     });
 
     const data = await res.json();
 
-    const events = (data.results || []).map((page: any) => {
-      const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
-      const title = titleProp?.title?.map((t: any) => t.plain_text).join("") || "Untitled";
-      const dateProp = (page.properties as any)["Date"];
-      const start = dateProp?.date?.start || "";
-      const isDatetime = start.includes("T");
-      const type = (page.properties as any)["Type"]?.select?.name || "";
+    const events = (data.results || [])
+      .map((page: any) => {
+        const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
+        const title = titleProp?.title?.map((t: any) => t.plain_text).join("") || "Untitled";
+        const dateProp = (page.properties as any)["Date"];
+        const start = dateProp?.date?.start || "";
+        const isDatetime = start.includes("T");
 
-      let displayTime = "";
-      let displayDate = "";
+        let displayTime = "";
+        let displayDate = "";
+        let startMs = 0;
 
-      if (start) {
-        const d = new Date(start);
-        const eventDay = start.split("T")[0];
-        const isToday = eventDay === todayStr;
-        const tomorrow = new Date(now);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const tomorrowStr = tomorrow.toISOString().split("T")[0];
-        const isTomorrow = eventDay === tomorrowStr;
+        if (start) {
+          const d = new Date(start);
+          startMs = d.getTime();
+          const eventDay = start.split("T")[0];
+          const isToday = eventDay === todayStr;
+          const tomorrow = new Date(now);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          const tomorrowStr = tomorrow.toISOString().split("T")[0];
+          const isTomorrow = eventDay === tomorrowStr;
 
-        displayDate = isToday ? "Today" : isTomorrow ? "Tomorrow" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+          displayDate = isToday ? "Today" : isTomorrow ? "Tomorrow" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-        if (isDatetime) {
-          displayTime = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/Los_Angeles" });
+          if (isDatetime) {
+            displayTime = d.toLocaleTimeString("en-US", {
+              hour: "numeric", minute: "2-digit", hour12: true,
+              timeZone: "America/Los_Angeles"
+            });
+          }
         }
-      }
 
-      return { id: page.id, title, displayDate, displayTime, type, start };
-    });
+        const type = (page.properties as any)["Type"]?.select?.name || "";
+        return { id: page.id, title, displayDate, displayTime, type, startMs, isDatetime };
+      })
+      .filter((event: any) => {
+        if (!event.startMs) return true;
+        if (!event.isDatetime) return true; // all-day events stay all day
+        return event.startMs > now.getTime(); // timed events disappear once passed
+      })
+      .map(({ startMs, isDatetime, ...rest }: any) => rest);
 
     return NextResponse.json({ events });
   } catch {
