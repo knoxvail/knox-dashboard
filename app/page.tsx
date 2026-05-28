@@ -226,6 +226,7 @@ export default function Dashboard() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
+    await fetchGmail();
   };
 
   const spotifyAction = async (action: string) => {
