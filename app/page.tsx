@@ -6,6 +6,7 @@ type Headline = { title: string; link: string; date: string };
 type Task = { id: string; title: string };
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
+type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string };
 type NowPlaying = {
   connected: boolean; expired?: boolean; playing?: boolean;
   track?: string; artist?: string; album?: string;
@@ -143,6 +144,7 @@ export default function Dashboard() {
   const [verse, setVerse] = useState<Verse | null>(null);
   const [emails, setEmails] = useState<Email[]>([]);
   const [gmailConnected, setGmailConnected] = useState(false);
+  const [events, setEvents] = useState<Event[]>([]);
   const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ connected: false });
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [showPlaylists, setShowPlaylists] = useState(false);
@@ -189,6 +191,14 @@ export default function Dashboard() {
     } catch {}
   }, []);
 
+  const fetchSchedule = useCallback(async () => {
+    try {
+      const res = await fetch("/api/schedule");
+      const data = await res.json();
+      setEvents(data.events || []);
+    } catch {}
+  }, []);
+
   const fetchPlaylists = useCallback(async () => {
     try {
       const res = await fetch("/api/spotify/playlists");
@@ -201,14 +211,15 @@ export default function Dashboard() {
     fetchStatic();
     fetchSpotify();
     fetchGmail();
-  }, [fetchStatic, fetchSpotify, fetchGmail]);
+    fetchSchedule();
+  }, [fetchStatic, fetchSpotify, fetchGmail, fetchSchedule]);
 
   useEffect(() => {
     spotifyInterval.current = setInterval(fetchSpotify, 10000);
     return () => { if (spotifyInterval.current) clearInterval(spotifyInterval.current); };
   }, [fetchSpotify]);
 
- const completeTask = async (id: string) => {
+  const completeTask = async (id: string) => {
     setShortTerm(prev => prev.filter(t => t.id !== id));
     setLongTerm(prev => prev.filter(t => t.id !== id));
     await fetch("/api/notion", {
@@ -276,7 +287,7 @@ export default function Dashboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
           <Tag>{clock.day}</Tag>
           <Tag>{clock.date}</Tag>
-          <button onClick={() => { fetchStatic(); fetchGmail(); fetchSpotify(); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          <button onClick={() => { fetchStatic(); fetchGmail(); fetchSpotify(); fetchSchedule(); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
             <Tag>REFRESH</Tag>
           </button>
         </div>
@@ -311,35 +322,59 @@ export default function Dashboard() {
         minHeight: 0,
       }}>
 
-        {/* WSJ - 1/4 */}
-        <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <PanelHeader label="WSJ" right={
-            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#888" }} />
-              <Tag>LIVE</Tag>
+        {/* Left column: WSJ + Up Next */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+          <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <PanelHeader label="Wall Street Journal" right={
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#888" }} />
+                <Tag>LIVE</Tag>
+              </div>
+            } />
+            <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
+              {loading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} style={{ borderBottom: "1px solid #1e1e1e", padding: "10px 0" }}>
+                    <div style={{ height: 8, background: "#1e1e1e", borderRadius: 2, marginBottom: 5, width: `${88 - i * 7}%` }} />
+                  </div>
+                ))
+              ) : headlines.map((h, i) => (
+                <a key={i} href={h.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", display: "block", borderBottom: "1px solid #1e1e1e", padding: "9px 0", transition: "border-color 0.2s" }}
+                  onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#444")}
+                  onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "#1e1e1e")}
+                >
+                  <p style={{ margin: 0, fontSize: 11, color: "#707070", lineHeight: 1.5, fontWeight: 400, transition: "color 0.2s" }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "#ccc")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "#707070")}
+                  >{h.title}</p>
+                  {h.date && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: "#333", letterSpacing: "0.1em" }}>{h.date}</span>}
+                </a>
+              ))}
             </div>
-          } />
-          <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
-            {loading ? (
-              Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} style={{ borderBottom: "1px solid #1e1e1e", padding: "10px 0" }}>
-                  <div style={{ height: 8, background: "#1e1e1e", borderRadius: 2, marginBottom: 5, width: `${88 - i * 7}%` }} />
+          </Panel>
+
+          <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
+            <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
+              {events.length === 0 ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", paddingTop: 20 }}>
+                  <p style={{ color: "#333", fontSize: 11 }}>Nothing scheduled</p>
                 </div>
-              ))
-            ) : headlines.map((h, i) => (
-              <a key={i} href={h.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", display: "block", borderBottom: "1px solid #1e1e1e", padding: "9px 0", transition: "border-color 0.2s" }}
-                onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#444")}
-                onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "#1e1e1e")}
-              >
-                <p style={{ margin: 0, fontSize: 11, color: "#707070", lineHeight: 1.5, fontWeight: 400, transition: "color 0.2s" }}
-                  onMouseEnter={e => (e.currentTarget.style.color = "#ccc")}
-                  onMouseLeave={e => (e.currentTarget.style.color = "#707070")}
-                >{h.title}</p>
-                {h.date && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: "#333", letterSpacing: "0.1em" }}>{h.date}</span>}
-              </a>
-            ))}
-          </div>
-        </Panel>
+              ) : events.map((event) => (
+                <div key={event.id} style={{ borderBottom: "1px solid #1e1e1e", padding: "10px 0" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
+                    <p style={{ margin: 0, fontSize: 12, color: "#909090", lineHeight: 1.4 }}>{event.title}</p>
+                    {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: "#444", flexShrink: 0, marginLeft: 6 }}>{event.type.toUpperCase()}</span>}
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#555" }}>{event.displayDate}</span>
+                    {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444" }}>{event.displayTime}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </div>
 
         {/* Tasks - 3/4, split into two columns */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, minHeight: 0 }}>
