@@ -17,6 +17,7 @@ export default function MapView({ markets }) {
   const markersRef = useRef({});
   const [selectedMarket, setSelectedMarket] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [clickedLocation, setClickedLocation] = useState(null);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -34,7 +35,21 @@ export default function MapView({ markets }) {
       });
 
       // Add click listener to create new market
-      mapInstance.current.addListener('click', (e) => {
+      mapInstance.current.addListener('click', async (e) => {
+        const lat = e.latLng.lat();
+        const lng = e.latLng.lng();
+
+        // Try to reverse geocode
+        const geocoder = new google.maps.Geocoder();
+        try {
+          const results = await geocoder.geocode({ location: { lat, lng } });
+          const address = results[0]?.formatted_address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          setClickedLocation({ lat, lng, address });
+        } catch (error) {
+          console.error('Geocoding error:', error);
+          setClickedLocation({ lat, lng, address: `${lat.toFixed(4)}, ${lng.toFixed(4)}` });
+        }
+
         setShowAddForm(true);
       });
 
@@ -117,9 +132,14 @@ export default function MapView({ markets }) {
 
       {showAddForm && (
         <AddMarketForm
-          onClose={() => setShowAddForm(false)}
+          prefilledLocation={clickedLocation}
+          onClose={() => {
+            setShowAddForm(false);
+            setClickedLocation(null);
+          }}
           onSuccess={() => {
             setShowAddForm(false);
+            setClickedLocation(null);
           }}
         />
       )}

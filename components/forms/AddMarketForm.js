@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { addMarket, updateMarket } from '@/lib/store/marketStore';
 
-export default function AddMarketForm({ market = null, onClose, onSuccess }) {
+export default function AddMarketForm({ market = null, prefilledLocation = null, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
     name: '',
-    address: '',
-    lat: null,
-    lng: null,
+    address: prefilledLocation?.address || '',
+    lat: prefilledLocation?.lat || null,
+    lng: prefilledLocation?.lng || null,
     asset_class: 'multifamily',
     status: 'scouting',
     notes: '',
