@@ -153,7 +153,7 @@ export default function MapView({ markets }) {
 
       {showNameInput && (
         <div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center" onClick={() => setShowNameInput(false)}>
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-96 p-6 animate-fade-in-up" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-96 p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-semibold mb-5 text-white">Name this Asset</h2>
             <input
               type="text"

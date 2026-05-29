@@ -41,7 +41,7 @@ export default function WatchlistPage() {
           {watchlist.map(asset => (
             <div
               key={asset.id}
-              className="bg-gray-900 border border-gray-800 rounded-2xl p-5 hover:border-gray-700 hover:shadow-lg transition-all duration-200 group animate-fade-in"
+              className="bg-gray-900 border border-gray-800 rounded-2xl p-5 hover:border-gray-700 group animate-fade-in card-hover"
             >
               <div className="flex justify-between items-start mb-3">
                 <div>

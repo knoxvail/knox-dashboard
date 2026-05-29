@@ -104,7 +104,7 @@ export default function GlobalSearch() {
             <button
               key={i}
               onClick={() => handleSelect(result)}
-              className="w-full px-5 py-4 text-left hover:bg-gray-800/50 border-b border-gray-800/50 last:border-b-0 transition-colors duration-150 flex justify-between items-center group"
+              className="w-full px-5 py-4 text-left hover:bg-gray-800/50 border-b border-gray-800/50 last:border-b-0 transition-all duration-150 flex justify-between items-center group list-item"
             >
               <div>
                 <p className="text-gray-100 text-base font-medium group-hover:text-white">{result.label}</p>

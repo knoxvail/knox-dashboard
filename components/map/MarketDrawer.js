@@ -40,7 +40,7 @@ export default function MarketDrawer({ market, onClose }) {
         className="fixed inset-0 bg-black/40 z-40"
         onClick={onClose}
       />
-      <div className="fixed right-0 top-0 bottom-0 w-96 bg-gray-900 border-l border-gray-800 shadow-lg z-50 overflow-y-auto flex flex-col animate-fade-in">
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-gray-900 border-l border-gray-800 shadow-lg z-50 overflow-y-auto flex flex-col animate-slide-right">
         <div className="p-6 border-b border-gray-800 flex justify-between items-start">
           <h2 className="text-xl font-semibold text-white">{market.name}</h2>
           <button

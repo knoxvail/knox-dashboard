@@ -53,7 +53,7 @@ export default function AddCompForm({ markets, onClose }) {
     <>
       <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
       <div className="fixed inset-0 flex items-center justify-center z-50">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl p-6 max-h-96 overflow-y-auto animate-fade-in-up">
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl p-6 max-h-96 overflow-y-auto animate-scale-in">
           <h2 className="text-lg font-semibold mb-5 text-white">Add Comp</h2>
 
           <form onSubmit={handleSubmit} className="space-y-5">

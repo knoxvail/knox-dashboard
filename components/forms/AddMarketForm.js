@@ -129,7 +129,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
         onClick={onClose}
       />
       <div className="fixed inset-0 flex items-center justify-center z-50">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-96 p-6 animate-fade-in-up">
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-96 p-6 animate-scale-in">
           <h2 className="text-lg font-semibold mb-5 text-white">
             {market ? 'Edit Asset' : 'Add Asset'}
           </h2>
@@ -267,7 +267,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
             onClick={() => setShowNewMarketModal(false)}
           />
           <div className="fixed inset-0 flex items-center justify-center z-50">
-            <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-96 p-6 animate-fade-in-up">
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-96 p-6 animate-scale-in">
               <h2 className="text-lg font-semibold mb-5 text-white">Create New Market</h2>
               <input
                 type="text"

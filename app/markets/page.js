@@ -52,7 +52,7 @@ export default function MarketsPage() {
           {markets.map((market, i) => (
             <div
               key={market.id}
-              className="bg-gray-900 border border-gray-800 rounded-2xl p-5 hover:border-gray-700 hover:shadow-lg transition-all duration-200 cursor-pointer group animate-fade-in"
+              className="bg-gray-900 border border-gray-800 rounded-2xl p-5 hover:border-gray-700 cursor-pointer group animate-fade-in card-hover"
               style={{ animationDelay: `${i * 30}ms` }}
               onClick={() => router.push(`/markets/${market.id}`)}
             >
