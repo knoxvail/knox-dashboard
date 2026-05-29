@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
-export function withErrorHandler<T extends (...args: any[]) => Promise<Response>>(
-  handler: T,
+export function withErrorHandler(
+  handler: (...args: any[]) => Promise<Response>,
   context: string
-): T {
+): (...args: any[]) => Promise<Response> {
   return async (...args: any[]) => {
     try {
       return await handler(...args);
@@ -14,7 +14,7 @@ export function withErrorHandler<T extends (...args: any[]) => Promise<Response>
         { status: 500 }
       );
     }
-  } as T;
+  };
 }
 
 export function missingEnvError(variable: string) {
