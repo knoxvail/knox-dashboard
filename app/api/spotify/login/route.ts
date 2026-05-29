@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
   authUrl.searchParams.set("redirect_uri", redirectUri!);
   authUrl.searchParams.set("scope", scope);
   authUrl.searchParams.set("state", state);
+  authUrl.searchParams.set("show_dialog", "true");
 
   response.headers.set("Location", authUrl.toString());
   return response;
