@@ -146,7 +146,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                 onChange={(e) =>
                   setFormData(prev => ({ ...prev, address: e.target.value }))
                 }
-                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                 placeholder="Search address..."
               />
             </div>
@@ -161,7 +161,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                 onChange={(e) =>
                   setFormData(prev => ({ ...prev, name: e.target.value }))
                 }
-                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                 placeholder="e.g., Austin CBD"
               />
             </div>
@@ -179,7 +179,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                     setFormData(prev => ({ ...prev, market_id: e.target.value }));
                   }
                 }}
-                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
               >
                 <option value="">Select a market...</option>
                 {markets.map(m => (
@@ -199,7 +199,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                   onChange={(e) =>
                     setFormData(prev => ({ ...prev, asset_class: e.target.value }))
                   }
-                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                 >
                   <option value="multifamily">Multifamily</option>
                   <option value="mixed-use">Mixed-Use</option>
@@ -216,7 +216,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                   onChange={(e) =>
                     setFormData(prev => ({ ...prev, status: e.target.value }))
                   }
-                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                 >
                   <option value="scouting">Scouting</option>
                   <option value="active">Active</option>
@@ -235,7 +235,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                 onChange={(e) =>
                   setFormData(prev => ({ ...prev, notes: e.target.value }))
                 }
-                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                 rows="3"
               />
             </div>
@@ -251,7 +251,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
               <button
                 type="submit"
                 disabled={syncing}
-                className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors duration-200"
+                className="flex-1 px-4 py-2.5 bg-gray-700 text-white rounded-lg text-sm font-medium hover:bg-gray-600 disabled:opacity-50 transition-colors duration-200"
               >
                 {syncing ? 'Saving...' : 'Save'}
               </button>
@@ -274,7 +274,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                 value={newMarketName}
                 onChange={(e) => setNewMarketName(e.target.value)}
                 placeholder="e.g., Austin CBD, Tulsa Suburbs"
-                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 mb-6 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 mb-6 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && newMarketName.trim()) {
@@ -292,7 +292,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                 <button
                   onClick={handleCreateMarket}
                   disabled={!newMarketName.trim()}
-                  className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors duration-200"
+                  className="flex-1 px-4 py-2.5 bg-gray-700 text-white rounded-lg text-sm font-medium hover:bg-gray-600 disabled:opacity-50 transition-colors duration-200"
                 >
                   Create
                 </button>

@@ -160,7 +160,7 @@ export default function MapView({ markets }) {
               value={assetName}
               onChange={(e) => setAssetName(e.target.value)}
               placeholder="e.g., Downtown Tulsa Apt Complex"
-              className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 mb-6 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+              className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 mb-6 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && assetName.trim()) {
@@ -183,7 +183,7 @@ export default function MapView({ markets }) {
                     setShowAddForm(true);
                   }
                 }}
-                className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors duration-200"
+                className="flex-1 px-4 py-2.5 bg-gray-700 text-white rounded-lg text-sm font-medium hover:bg-gray-600 disabled:opacity-50 transition-colors duration-200"
                 disabled={!assetName.trim()}
               >
                 Next

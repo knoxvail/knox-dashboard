@@ -74,7 +74,7 @@ input, textarea, select {
 }
 
 input:focus, textarea:focus, select:focus {
-  @apply outline-none border-b-2 border-indigo-500;
+  @apply outline-none border-b-2 border-gray-500;
 }
 
 input::placeholder, textarea::placeholder {
@@ -91,7 +91,7 @@ button:active {
 }
 
 a {
-  @apply text-indigo-400 hover:text-indigo-300 transition-colors duration-200;
+  @apply text-gray-300 hover:text-gray-200 transition-colors duration-200;
 }
 
 /* Premium animations */

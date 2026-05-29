@@ -45,7 +45,7 @@ export default function WatchlistPage() {
             >
               <div className="flex justify-between items-start mb-3">
                 <div>
-                  <h3 className="text-lg font-semibold text-white group-hover:text-indigo-300 transition-colors duration-200">{asset.address}</h3>
+                  <h3 className="text-lg font-semibold text-white group-hover:text-gray-200 transition-colors duration-200">{asset.address}</h3>
                   <p className="text-sm text-gray-400 font-medium mt-1">{getMarketName(asset.market_id)}</p>
                 </div>
                 <button

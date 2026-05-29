@@ -59,7 +59,7 @@ export default function CompsPage() {
         <div className="space-x-2">
           <button
             onClick={() => setShowAddForm(true)}
-            className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-md transition-all duration-200"
+            className="px-4 py-2.5 bg-gray-700 text-white rounded-lg text-sm font-medium hover:bg-gray-600 shadow-md transition-all duration-200"
           >
             + Add Comp
           </button>
@@ -78,7 +78,7 @@ export default function CompsPage() {
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="bg-gray-900/50 border-b-2 border-gray-700 text-gray-100 rounded-lg text-sm px-3 py-2.5 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+            className="bg-gray-900/50 border-b-2 border-gray-700 text-gray-100 rounded-lg text-sm px-3 py-2.5 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
           >
             <option value="all">All Types</option>
             <option value="sold">Sold</option>
@@ -91,7 +91,7 @@ export default function CompsPage() {
           <select
             value={filterMarket}
             onChange={(e) => setFilterMarket(e.target.value)}
-            className="bg-gray-900/50 border-b-2 border-gray-700 text-gray-100 rounded-lg text-sm px-3 py-2.5 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+            className="bg-gray-900/50 border-b-2 border-gray-700 text-gray-100 rounded-lg text-sm px-3 py-2.5 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
           >
             <option value="all">All Markets</option>
             {markets.map(m => (
@@ -105,7 +105,7 @@ export default function CompsPage() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            className="bg-gray-900/50 border-b-2 border-gray-700 text-gray-100 rounded-lg text-sm px-3 py-2.5 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+            className="bg-gray-900/50 border-b-2 border-gray-700 text-gray-100 rounded-lg text-sm px-3 py-2.5 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
           >
             <option value="date">Date</option>
             <option value="price">Sale Price</option>

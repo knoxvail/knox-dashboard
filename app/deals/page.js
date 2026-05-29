@@ -63,7 +63,7 @@ export default function DealsPage() {
               <select
                 value={selectedMarket}
                 onChange={(e) => setSelectedMarket(e.target.value)}
-                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
               >
                 {markets.map(m => (
                   <option key={m.id} value={m.id}>{m.name}</option>
@@ -81,7 +81,7 @@ export default function DealsPage() {
                   type="number"
                   value={deal.cap_rate}
                   onChange={(e) => setDeal(prev => ({ ...prev, cap_rate: e.target.value }))}
-                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                   step="0.01"
                 />
               </div>
@@ -91,7 +91,7 @@ export default function DealsPage() {
                   type="number"
                   value={deal.rent_per_sf}
                   onChange={(e) => setDeal(prev => ({ ...prev, rent_per_sf: e.target.value }))}
-                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                   step="0.01"
                 />
               </div>
@@ -103,7 +103,7 @@ export default function DealsPage() {
                 type="number"
                 value={deal.vacancy_rate}
                 onChange={(e) => setDeal(prev => ({ ...prev, vacancy_rate: e.target.value }))}
-                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                 step="0.01"
               />
             </div>
@@ -125,7 +125,7 @@ export default function DealsPage() {
 
             <button
               onClick={handleScore}
-              className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors duration-200"
+              className="w-full px-4 py-2.5 bg-gray-700 text-white rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors duration-200"
             >
               Calculate Score
             </button>
@@ -146,7 +146,7 @@ export default function DealsPage() {
               <p className="text-5xl font-bold text-white">{scoreResult.score}</p>
               <div className="w-full bg-gray-800 rounded-full h-2 mt-3">
                 <div
-                  className="bg-indigo-600 h-2 rounded-full"
+                  className="bg-gray-600 h-2 rounded-full"
                   style={{ width: `${Math.min(scoreResult.score, 100)}%` }}
                 />
               </div>

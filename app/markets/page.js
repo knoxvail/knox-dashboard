@@ -39,7 +39,7 @@ export default function MarketsPage() {
         <h1 className="text-3xl font-bold text-white">Markets</h1>
         <button
           onClick={() => setShowForm(true)}
-          className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-md transition-all duration-200"
+          className="px-4 py-2.5 bg-gray-700 text-white rounded-lg text-sm font-medium hover:bg-gray-600 shadow-md transition-all duration-200"
         >
           + Add Market
         </button>
@@ -58,15 +58,15 @@ export default function MarketsPage() {
             >
               <div className="flex justify-between items-start">
                 <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-white group-hover:text-indigo-300 transition-colors duration-200">
+                  <h3 className="text-lg font-semibold text-white group-hover:text-gray-200 transition-colors duration-200">
                     {market.name}
                   </h3>
                   <p className="text-sm text-gray-400 mt-1.5">{market.address}</p>
                 </div>
                 <div className="flex gap-2 items-center">
                   {market.score && (
-                    <div className="bg-indigo-600/20 rounded-full px-3 py-1.5">
-                      <p className="text-sm font-mono text-indigo-300 font-semibold">{market.score}</p>
+                    <div className="bg-gray-800/50 rounded-full px-3 py-1.5">
+                      <p className="text-sm font-mono text-gray-300 font-semibold">{market.score}</p>
                     </div>
                   )}
                   <div className={`badge badge-${market.status}`}>
@@ -83,7 +83,7 @@ export default function MarketsPage() {
                     e.stopPropagation();
                     router.push(`/markets/${market.id}`);
                   }}
-                  className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200 font-medium"
+                  className="text-xs px-3 py-1.5 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors duration-200 font-medium"
                 >
                   View Details
                 </button>

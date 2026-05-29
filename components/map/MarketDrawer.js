@@ -71,7 +71,7 @@ export default function MarketDrawer({ market, onClose }) {
           {market.score && (
             <div>
               <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Score</p>
-              <p className="text-2xl font-mono font-bold text-indigo-400 mt-1">{market.score}</p>
+              <p className="text-2xl font-mono font-bold text-gray-300 mt-1">{market.score}</p>
             </div>
           )}
 
@@ -94,7 +94,7 @@ export default function MarketDrawer({ market, onClose }) {
                 router.push(`/markets/${market.id}`);
                 onClose();
               }}
-              className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors duration-200"
+              className="w-full px-4 py-2.5 bg-gray-700 text-white rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors duration-200"
             >
               View Full Details
             </button>

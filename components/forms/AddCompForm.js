@@ -65,7 +65,7 @@ export default function AddCompForm({ markets, onClose }) {
                   onChange={(e) =>
                     setFormData(prev => ({ ...prev, market_id: e.target.value }))
                   }
-                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                 >
                   {markets.map(m => (
                     <option key={m.id} value={m.id}>{m.name}</option>
@@ -81,7 +81,7 @@ export default function AddCompForm({ markets, onClose }) {
                     setCompType(e.target.value);
                     setFormData(prev => ({ ...prev, comp_type: e.target.value }));
                   }}
-                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                 >
                   <option value="sold">Sold</option>
                   <option value="lease">Lease</option>
@@ -98,7 +98,7 @@ export default function AddCompForm({ markets, onClose }) {
                   onChange={(e) =>
                     setFormData(prev => ({ ...prev, address: e.target.value }))
                   }
-                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                 />
               </div>
 
@@ -110,7 +110,7 @@ export default function AddCompForm({ markets, onClose }) {
                   onChange={(e) =>
                     setFormData(prev => ({ ...prev, date: e.target.value }))
                   }
-                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                 />
               </div>
             </div>
@@ -125,7 +125,7 @@ export default function AddCompForm({ markets, onClose }) {
                     onChange={(e) =>
                       setFormData(prev => ({ ...prev, sale_price: e.target.value }))
                     }
-                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                     placeholder="$"
                   />
                 </div>
@@ -137,7 +137,7 @@ export default function AddCompForm({ markets, onClose }) {
                     onChange={(e) =>
                       setFormData(prev => ({ ...prev, price_per_sf: e.target.value }))
                     }
-                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                     step="0.01"
                   />
                 </div>
@@ -149,7 +149,7 @@ export default function AddCompForm({ markets, onClose }) {
                     onChange={(e) =>
                       setFormData(prev => ({ ...prev, cap_rate: e.target.value }))
                     }
-                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                     step="0.01"
                   />
                 </div>
@@ -164,7 +164,7 @@ export default function AddCompForm({ markets, onClose }) {
                     onChange={(e) =>
                       setFormData(prev => ({ ...prev, rent_per_sf: e.target.value }))
                     }
-                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                     step="0.01"
                   />
                 </div>
@@ -176,7 +176,7 @@ export default function AddCompForm({ markets, onClose }) {
                     onChange={(e) =>
                       setFormData(prev => ({ ...prev, vacancy_rate: e.target.value }))
                     }
-                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                     step="0.01"
                   />
                 </div>
@@ -190,7 +190,7 @@ export default function AddCompForm({ markets, onClose }) {
                 onChange={(e) =>
                   setFormData(prev => ({ ...prev, notes: e.target.value }))
                 }
-                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200"
                 rows="2"
               />
             </div>
@@ -205,7 +205,7 @@ export default function AddCompForm({ markets, onClose }) {
               </button>
               <button
                 type="submit"
-                className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors duration-200"
+                className="flex-1 px-4 py-2.5 bg-gray-700 text-white rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors duration-200"
               >
                 Save Comp
               </button>
