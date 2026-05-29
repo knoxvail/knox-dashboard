@@ -22,6 +22,7 @@ export default function RootLayout({ children }) {
               <li><a href="/markets" className="block px-3 py-2 rounded hover:bg-gray-900 text-gray-300 hover:text-white">Markets</a></li>
               <li><a href="/comps" className="block px-3 py-2 rounded hover:bg-gray-900 text-gray-300 hover:text-white">Comps</a></li>
               <li><a href="/deals" className="block px-3 py-2 rounded hover:bg-gray-900 text-gray-300 hover:text-white">Deals</a></li>
+              <li><a href="/watchlist" className="block px-3 py-2 rounded hover:bg-gray-900 text-gray-300 hover:text-white">Watchlist</a></li>
               <li><a href="/settings" className="block px-3 py-2 rounded hover:bg-gray-900 text-gray-300 hover:text-white">Settings</a></li>
             </ul>
           </nav>
