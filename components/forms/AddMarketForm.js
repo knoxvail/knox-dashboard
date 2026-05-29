@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { addMarket, updateMarket } from '@/lib/store/marketStore';
-import { createMarketInNotion } from '@/lib/api/notionSync';
 
 export default function AddMarketForm({ market = null, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
@@ -70,9 +69,16 @@ export default function AddMarketForm({ market = null, onClose, onSuccess }) {
         savedMarket = addMarket(formData);
       }
 
-      // Sync to Notion
+      // Sync to Notion via API route
       try {
-        await createMarketInNotion(savedMarket);
+        const notionRes = await fetch('/api/notion/sync-market', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(savedMarket),
+        });
+        if (!notionRes.ok) {
+          console.error('Failed to sync to Notion:', await notionRes.text());
+        }
       } catch (error) {
         console.error('Failed to sync to Notion:', error);
       }

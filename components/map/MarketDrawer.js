@@ -1,6 +1,8 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useState } from 'react';
+import AddMarketForm from '../forms/AddMarketForm';
 
 const STATUS_LABELS = {
   scouting: 'Scouting',
@@ -17,6 +19,20 @@ const ASSET_CLASS_LABELS = {
 
 export default function MarketDrawer({ market, onClose }) {
   const router = useRouter();
+  const [isEditing, setIsEditing] = useState(false);
+
+  if (isEditing) {
+    return (
+      <AddMarketForm
+        market={market}
+        onClose={() => setIsEditing(false)}
+        onSuccess={() => {
+          setIsEditing(false);
+          onClose();
+        }}
+      />
+    );
+  }
 
   return (
     <>
@@ -66,7 +82,13 @@ export default function MarketDrawer({ market, onClose }) {
             </div>
           )}
 
-          <div className="pt-4">
+          <div className="pt-4 space-y-2">
+            <button
+              onClick={() => setIsEditing(true)}
+              className="w-full px-4 py-2 bg-gray-200 text-gray-900 rounded text-sm font-mono hover:bg-gray-300"
+            >
+              Edit
+            </button>
             <button
               onClick={() => {
                 router.push(`/markets/${market.id}`);
