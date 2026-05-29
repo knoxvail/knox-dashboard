@@ -214,18 +214,16 @@ function TaskItem({
             minWidth: 0,
             cursor: "pointer",
             flex: 1,
-            transition: "color 0.2s, text-decoration 0.2s, background-color 0.2s",
+            transition: "color 0.2s, background-color 0.2s",
             padding: "2px 4px",
             borderRadius: 2,
           }}
           onMouseEnter={e => {
             (e.currentTarget as HTMLElement).style.color = "#e8e8e8";
-            (e.currentTarget as HTMLElement).style.textDecoration = "underline";
             (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255, 255, 255, 0.05)";
           }}
           onMouseLeave={e => {
             (e.currentTarget as HTMLElement).style.color = "#b0b0b0";
-            (e.currentTarget as HTMLElement).style.textDecoration = "none";
             (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
           }}
         >
