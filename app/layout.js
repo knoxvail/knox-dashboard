@@ -14,9 +14,16 @@ export default function RootLayout({ children }) {
       </head>
       <body className="bg-gray-950">
         <div className="flex h-screen flex-col">
-          {/* Top Search Bar */}
-          <div className="h-20 bg-gray-950 border-b border-gray-800 flex items-center justify-center px-6">
-            <div className="w-full max-w-2xl">
+          {/* Top Header with Logo and Search */}
+          <div className="h-20 bg-gray-950 border-b border-gray-800 flex items-center px-6 gap-6">
+            <div className="flex items-center gap-2 shrink-0">
+              <svg className="w-8 h-8 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2L2 20h20L12 2Z" />
+                <path d="M12 10L6 18h12L12 10Z" />
+              </svg>
+              <h1 className="text-3xl font-bold text-white tracking-tight">CREST</h1>
+            </div>
+            <div className="flex-1">
               <GlobalSearch />
             </div>
           </div>
@@ -24,20 +31,13 @@ export default function RootLayout({ children }) {
           {/* Main Content Area */}
           <div className="flex flex-1 overflow-hidden">
             <nav className="w-56 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
-              <div className="mb-8 flex items-center gap-2">
-                <svg className="w-8 h-8 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 2L2 20h20L12 2Z" />
-                  <path d="M12 10L6 18h12L12 10Z" />
-                </svg>
-                <h1 className="text-2xl font-bold text-white">CREST</h1>
-              </div>
               <ul className="space-y-2 text-base font-mono">
                 <li><a href="/" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item">Dashboard</a></li>
-                <li><a href="/watchlist" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item">Watchlist <span style={{filter: 'grayscale(100%)'}}>⭐</span></a></li>
+                <li><a href="/watchlist" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item">Watchlist</a></li>
                 <li><a href="/markets" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item">Markets</a></li>
                 <li><a href="/comps" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item">Comps</a></li>
                 <li><a href="/deals" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item">Deals</a></li>
-                <li className="pt-4 border-t border-gray-800"><a href="/settings" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item"><span style={{filter: 'grayscale(100%)'}}>⚙️</span> Settings</a></li>
+                <li className="pt-4 border-t border-gray-800"><a href="/settings" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item">Settings</a></li>
               </ul>
             </nav>
             <main className="flex-1 overflow-auto bg-gray-950 animate-fade-in">
