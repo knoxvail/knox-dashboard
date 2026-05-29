@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { loadMarkets, deleteMarket } from '@/lib/store/marketStore';
-import AddMarketForm from '@/components/forms/AddMarketForm';
+import { loadMarkets } from '@/lib/store/marketStore';
+import { getAssetsByMarket } from '@/lib/store/assetStore';
 import { useRouter } from 'next/navigation';
 
 const STATUS_LABELS = {
@@ -14,105 +14,113 @@ const STATUS_LABELS = {
 
 export default function MarketsPage() {
   const router = useRouter();
-  const [markets, setMarkets] = useState([]);
-  const [showForm, setShowForm] = useState(false);
+  const [regions, setRegions] = useState([]);
 
   useEffect(() => {
     loadAndDisplay();
   }, []);
 
   function loadAndDisplay() {
-    const data = loadMarkets();
-    setMarkets(data);
-  }
+    const allMarkets = loadMarkets();
 
-  function handleDelete(id) {
-    if (confirm('Delete this market?')) {
-      deleteMarket(id);
-      loadAndDisplay();
-    }
+    // Group markets by whether they have a market_id (parent market)
+    // If market_id exists, it's an asset. Otherwise, it's a region
+    const regionMap = {};
+
+    allMarkets.forEach(market => {
+      if (!market.market_id) {
+        // This is a region
+        regionMap[market.id] = {
+          ...market,
+          assets: []
+        };
+      }
+    });
+
+    allMarkets.forEach(market => {
+      if (market.market_id && regionMap[market.market_id]) {
+        // This is an asset belonging to a region
+        regionMap[market.market_id].assets.push(market);
+      }
+    });
+
+    setRegions(Object.values(regionMap));
   }
 
   return (
     <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-white">Markets</h1>
-        <button
-          onClick={() => setShowForm(true)}
-          className="px-4 py-2.5 bg-gray-700 text-white rounded-lg text-sm font-medium hover:bg-gray-600 shadow-md transition-all duration-200"
-        >
-          + Add Market
-        </button>
-      </div>
+      <h1 className="text-3xl font-bold text-white mb-6">Market Regions</h1>
 
-      {markets.length === 0 ? (
-        <p className="text-gray-400">No markets yet. Add one from the map or here.</p>
+      {regions.length === 0 ? (
+        <p className="text-gray-400">No market regions yet. Create one from the map.</p>
       ) : (
-        <div className="grid gap-4">
-          {markets.map((market, i) => (
+        <div className="grid gap-8">
+          {regions.map((region, i) => (
             <div
-              key={market.id}
-              className="bg-gray-900 border border-gray-800 rounded-2xl p-5 hover:border-gray-700 cursor-pointer group animate-fade-in card-hover"
+              key={region.id}
+              className="bg-gray-900 border border-gray-800 rounded-2xl p-6 animate-fade-in card-hover"
               style={{ animationDelay: `${i * 30}ms` }}
-              onClick={() => router.push(`/markets/${market.id}`)}
             >
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-white group-hover:text-gray-200 transition-colors duration-200">
-                    {market.name}
-                  </h3>
-                  <p className="text-sm text-gray-400 mt-1.5">{market.address}</p>
-                </div>
-                <div className="flex gap-2 items-center">
-                  {market.score && (
-                    <div className="bg-gray-800/50 rounded-full px-3 py-1.5">
-                      <p className="text-sm font-mono text-gray-300 font-semibold">{market.score}</p>
-                    </div>
-                  )}
-                  <div className={`badge badge-${market.status}`}>
-                    {STATUS_LABELS[market.status]}
+              {/* Region Header */}
+              <div className="mb-6 pb-4 border-b border-gray-800">
+                <h2
+                  className="text-2xl font-bold text-white cursor-pointer hover:text-gray-200 transition-colors"
+                  onClick={() => router.push(`/markets/${region.id}`)}
+                >
+                  {region.name}
+                </h2>
+              </div>
+
+              {/* Assets List */}
+              {region.assets.length > 0 ? (
+                <div className="mb-6">
+                  <p className="text-xs text-gray-500 font-medium uppercase mb-4">Properties in Region ({region.assets.length})</p>
+                  <div className="space-y-2">
+                    {region.assets.map(asset => (
+                      <div
+                        key={asset.id}
+                        className="flex justify-between items-center p-3 bg-gray-800/30 rounded-lg hover:bg-gray-800/50 transition-colors cursor-pointer list-item"
+                        onClick={() => router.push(`/?asset=${asset.id}`)}
+                      >
+                        <div className="flex-1">
+                          <p className="text-sm text-gray-200 font-medium">{asset.name}</p>
+                          <p className="text-xs text-gray-400">{asset.address}</p>
+                        </div>
+                        <div className={`badge badge-${asset.status}`}>
+                          {STATUS_LABELS[asset.status]}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
-              <div className="flex gap-4 mt-4 text-xs text-gray-500 font-medium">
-                <span>{market.asset_class}</span>
-              </div>
-              <div className="flex gap-2 mt-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    router.push(`/markets/${market.id}`);
-                  }}
-                  className="text-xs px-3 py-1.5 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors duration-200 font-medium"
-                >
-                  View Details
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(market.id);
-                  }}
-                  className="text-xs px-3 py-1.5 bg-red-600/20 text-red-300 rounded-lg hover:bg-red-600/30 transition-colors duration-200 font-medium"
-                >
-                  Delete
-                </button>
+              ) : (
+                <div className="mb-6 p-4 bg-gray-800/20 rounded-lg">
+                  <p className="text-sm text-gray-400">No properties yet in this region</p>
+                </div>
+              )}
+
+              {/* Region Details */}
+              <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-800">
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase mb-1">Coordinates</p>
+                  <p className="text-sm font-mono text-gray-300">{region.lat?.toFixed(4)}, {region.lng?.toFixed(4)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 font-medium uppercase mb-1">Total Assets</p>
+                  <p className="text-sm font-mono text-gray-300">{region.assets.length}</p>
+                </div>
+                <div className="text-right">
+                  <button
+                    onClick={() => router.push(`/markets/${region.id}`)}
+                    className="text-xs px-3 py-1.5 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors font-medium"
+                  >
+                    View Region
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
-      )}
-
-      {showForm && (
-        <AddMarketForm
-          onClose={() => {
-            setShowForm(false);
-            loadAndDisplay();
-          }}
-          onSuccess={() => {
-            loadAndDisplay();
-            setShowForm(false);
-          }}
-        />
       )}
     </div>
   );
