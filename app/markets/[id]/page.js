@@ -29,41 +29,41 @@ export default function MarketDetailPage() {
   if (!market) {
     return (
       <div className="p-6">
-        <p className="text-gray-500">Market not found.</p>
+        <p className="text-gray-400">Market not found.</p>
       </div>
     );
   }
 
   return (
     <div className="p-6">
-      <h1 className="text-3xl font-bold mb-6">{market.name}</h1>
+      <h1 className="text-3xl font-bold mb-6 text-white">{market.name}</h1>
 
       <div className="grid grid-cols-2 gap-6 mb-8">
-        <div className="bg-white rounded border border-gray-200 p-4">
-          <p className="text-xs text-gray-600 font-mono uppercase mb-1">Address</p>
-          <p className="text-lg">{market.address}</p>
+        <div className="bg-gray-950 rounded border border-gray-800 p-4">
+          <p className="text-xs text-gray-500 font-mono uppercase mb-1">Address</p>
+          <p className="text-lg text-gray-100">{market.address}</p>
         </div>
 
-        <div className="bg-white rounded border border-gray-200 p-4">
-          <p className="text-xs text-gray-600 font-mono uppercase mb-1">Coordinates</p>
-          <p className="text-sm font-mono">{market.lat.toFixed(4)}, {market.lng.toFixed(4)}</p>
+        <div className="bg-gray-950 rounded border border-gray-800 p-4">
+          <p className="text-xs text-gray-500 font-mono uppercase mb-1">Coordinates</p>
+          <p className="text-sm font-mono text-gray-300">{market.lat.toFixed(4)}, {market.lng.toFixed(4)}</p>
         </div>
 
-        <div className="bg-white rounded border border-gray-200 p-4">
-          <p className="text-xs text-gray-600 font-mono uppercase mb-1">Status</p>
-          <p className="text-lg font-mono">{STATUS_LABELS[market.status]}</p>
+        <div className="bg-gray-950 rounded border border-gray-800 p-4">
+          <p className="text-xs text-gray-500 font-mono uppercase mb-1">Status</p>
+          <p className="text-lg font-mono text-gray-100">{STATUS_LABELS[market.status]}</p>
         </div>
 
-        <div className="bg-white rounded border border-gray-200 p-4">
-          <p className="text-xs text-gray-600 font-mono uppercase mb-1">Asset Class</p>
-          <p className="text-lg font-mono">{ASSET_CLASS_LABELS[market.asset_class]}</p>
+        <div className="bg-gray-950 rounded border border-gray-800 p-4">
+          <p className="text-xs text-gray-500 font-mono uppercase mb-1">Asset Class</p>
+          <p className="text-lg font-mono text-gray-100">{ASSET_CLASS_LABELS[market.asset_class]}</p>
         </div>
       </div>
 
       {market.notes && (
-        <div className="bg-white rounded border border-gray-200 p-4 mb-8">
-          <p className="text-xs text-gray-600 font-mono uppercase mb-2">Notes</p>
-          <p className="text-sm text-gray-700">{market.notes}</p>
+        <div className="bg-gray-950 rounded border border-gray-800 p-4 mb-8">
+          <p className="text-xs text-gray-500 font-mono uppercase mb-2">Notes</p>
+          <p className="text-sm text-gray-400">{market.notes}</p>
         </div>
       )}
 

@@ -88,26 +88,26 @@ export default function MapView({ markets }) {
     <div className="relative w-full h-full">
       <div ref={mapRef} className="w-full h-full" />
 
-      <div className="absolute top-4 left-4 bg-white rounded shadow-lg p-3 text-sm">
-        <p className="font-mono text-gray-600">Click map to add location</p>
+      <div className="absolute top-4 left-4 bg-gray-950 border border-gray-800 rounded shadow-lg p-3 text-sm">
+        <p className="font-mono text-gray-400">Click map to add location</p>
       </div>
 
-      <div className="absolute bottom-4 right-4 bg-white rounded shadow-lg p-3 space-y-2">
+      <div className="absolute bottom-4 right-4 bg-gray-950 border border-gray-800 rounded shadow-lg p-3 space-y-2">
         <div className="flex items-center gap-2 text-sm">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: STATUS_COLORS.scouting }} />
-          <span className="font-mono text-gray-700">Scouting</span>
+          <span className="font-mono text-gray-400">Scouting</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: STATUS_COLORS.active }} />
-          <span className="font-mono text-gray-700">Active</span>
+          <span className="font-mono text-gray-400">Active</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: STATUS_COLORS.passed }} />
-          <span className="font-mono text-gray-700">Passed</span>
+          <span className="font-mono text-gray-400">Passed</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: STATUS_COLORS.closed }} />
-          <span className="font-mono text-gray-700">Closed</span>
+          <span className="font-mono text-gray-400">Closed</span>
         </div>
       </div>
 

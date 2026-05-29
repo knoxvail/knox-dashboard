@@ -95,18 +95,18 @@ export default function AddMarketForm({ market = null, onClose, onSuccess }) {
   return (
     <>
       <div
-        className="fixed inset-0 bg-black bg-opacity-30 z-40"
+        className="fixed inset-0 bg-black bg-opacity-50 z-40"
         onClick={onClose}
       />
       <div className="fixed inset-0 flex items-center justify-center z-50">
-        <div className="bg-white rounded shadow-lg w-96 p-6 max-h-96 overflow-y-auto">
-          <h2 className="text-lg font-bold mb-4">
+        <div className="bg-gray-950 border border-gray-800 rounded shadow-lg w-96 p-6 max-h-96 overflow-y-auto">
+          <h2 className="text-lg font-bold mb-4 text-white">
             {market ? 'Edit Market' : 'Add Market'}
           </h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-mono text-gray-700 mb-1">
+              <label className="block text-sm font-mono text-gray-300 mb-1">
                 Address *
               </label>
               <input
@@ -116,13 +116,13 @@ export default function AddMarketForm({ market = null, onClose, onSuccess }) {
                 onChange={(e) =>
                   setFormData(prev => ({ ...prev, address: e.target.value }))
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
                 placeholder="Search address..."
               />
             </div>
 
             <div>
-              <label className="block text-sm font-mono text-gray-700 mb-1">
+              <label className="block text-sm font-mono text-gray-300 mb-1">
                 Market Name *
               </label>
               <input
@@ -131,14 +131,14 @@ export default function AddMarketForm({ market = null, onClose, onSuccess }) {
                 onChange={(e) =>
                   setFormData(prev => ({ ...prev, name: e.target.value }))
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
                 placeholder="e.g., Austin CBD"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-mono text-gray-700 mb-1">
+                <label className="block text-sm font-mono text-gray-300 mb-1">
                   Asset Class
                 </label>
                 <select
@@ -146,7 +146,7 @@ export default function AddMarketForm({ market = null, onClose, onSuccess }) {
                   onChange={(e) =>
                     setFormData(prev => ({ ...prev, asset_class: e.target.value }))
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                  className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
                 >
                   <option value="multifamily">Multifamily</option>
                   <option value="mixed-use">Mixed-Use</option>
@@ -155,7 +155,7 @@ export default function AddMarketForm({ market = null, onClose, onSuccess }) {
               </div>
 
               <div>
-                <label className="block text-sm font-mono text-gray-700 mb-1">
+                <label className="block text-sm font-mono text-gray-300 mb-1">
                   Status
                 </label>
                 <select
@@ -163,7 +163,7 @@ export default function AddMarketForm({ market = null, onClose, onSuccess }) {
                   onChange={(e) =>
                     setFormData(prev => ({ ...prev, status: e.target.value }))
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                  className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
                 >
                   <option value="scouting">Scouting</option>
                   <option value="active">Active</option>
@@ -174,7 +174,7 @@ export default function AddMarketForm({ market = null, onClose, onSuccess }) {
             </div>
 
             <div>
-              <label className="block text-sm font-mono text-gray-700 mb-1">
+              <label className="block text-sm font-mono text-gray-300 mb-1">
                 Notes
               </label>
               <textarea
@@ -182,7 +182,7 @@ export default function AddMarketForm({ market = null, onClose, onSuccess }) {
                 onChange={(e) =>
                   setFormData(prev => ({ ...prev, notes: e.target.value }))
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
                 rows="3"
               />
             </div>
@@ -191,14 +191,14 @@ export default function AddMarketForm({ market = null, onClose, onSuccess }) {
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded text-sm font-mono hover:bg-gray-50"
+                className="flex-1 px-4 py-2 border border-gray-700 bg-gray-900 text-gray-300 rounded text-sm font-mono hover:bg-gray-800"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={syncing}
-                className="flex-1 px-4 py-2 bg-gray-900 text-white rounded text-sm font-mono hover:bg-gray-800 disabled:opacity-50"
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-mono hover:bg-blue-700 disabled:opacity-50"
               >
                 {syncing ? 'Saving...' : 'Save'}
               </button>
