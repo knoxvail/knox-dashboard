@@ -5,10 +5,10 @@ import MarketDrawer from './MarketDrawer';
 import AddMarketForm from '../forms/AddMarketForm';
 
 const STATUS_COLORS = {
-  scouting: '#3b82f6',
-  active: '#eab308',
+  scouting: '#6366f1',
+  active: '#f59e0b',
   passed: '#ef4444',
-  closed: '#22c55e',
+  closed: '#10b981',
 };
 
 export default function MapView({ markets }) {
@@ -128,26 +128,26 @@ export default function MapView({ markets }) {
     <div className="relative w-full h-full">
       <div ref={mapRef} className="w-full h-full" />
 
-      <div className="absolute top-4 left-4 bg-gray-950 border border-gray-800 rounded shadow-lg p-3 text-sm">
-        <p className="font-mono text-gray-400">Click map to add location</p>
+      <div className="absolute top-4 left-4 bg-gray-900 border border-gray-800 rounded-xl shadow-lg p-4 text-sm">
+        <p className="text-gray-400 font-medium">Click map to add location</p>
       </div>
 
-      <div className="absolute bottom-4 right-4 bg-gray-950 border border-gray-800 rounded shadow-lg p-3 space-y-2">
+      <div className="absolute bottom-4 right-4 bg-gray-900 border border-gray-800 rounded-xl shadow-lg p-4 space-y-3">
         <div className="flex items-center gap-2 text-sm">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: STATUS_COLORS.scouting }} />
-          <span className="font-mono text-gray-400">Scouting</span>
+          <span className="text-gray-300 font-medium">Scouting</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: STATUS_COLORS.active }} />
-          <span className="font-mono text-gray-400">Active</span>
+          <span className="text-gray-300 font-medium">Active</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: STATUS_COLORS.passed }} />
-          <span className="font-mono text-gray-400">Passed</span>
+          <span className="text-gray-300 font-medium">Passed</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: STATUS_COLORS.closed }} />
-          <span className="font-mono text-gray-400">Closed</span>
+          <span className="text-gray-300 font-medium">Closed</span>
         </div>
       </div>
 
@@ -156,15 +156,15 @@ export default function MapView({ markets }) {
       )}
 
       {showNameInput && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center" onClick={() => setShowNameInput(false)}>
-          <div className="bg-gray-950 border border-gray-800 rounded shadow-lg w-96 p-6 animate-fade-in" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold mb-4 text-white">Name this Asset</h2>
+        <div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center" onClick={() => setShowNameInput(false)}>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-96 p-6 animate-fade-in-up" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold mb-5 text-white">Name this Asset</h2>
             <input
               type="text"
               value={assetName}
               onChange={(e) => setAssetName(e.target.value)}
               placeholder="e.g., Downtown Tulsa Apt Complex"
-              className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100 mb-4"
+              className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 mb-6 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && assetName.trim()) {
@@ -176,7 +176,7 @@ export default function MapView({ markets }) {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowNameInput(false)}
-                className="flex-1 px-4 py-2 border border-gray-700 bg-gray-900 text-gray-300 rounded text-sm font-mono hover:bg-gray-800"
+                className="flex-1 px-4 py-2.5 border border-gray-700 bg-gray-800 text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors duration-200"
               >
                 Cancel
               </button>
@@ -187,7 +187,7 @@ export default function MapView({ markets }) {
                     setShowAddForm(true);
                   }
                 }}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-mono hover:bg-blue-700 disabled:opacity-50"
+                className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors duration-200"
                 disabled={!assetName.trim()}
               >
                 Next

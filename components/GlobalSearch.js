@@ -94,23 +94,23 @@ export default function GlobalSearch() {
           onFocus={() => setIsOpen(true)}
           onBlur={() => setTimeout(() => setIsOpen(false), 100)}
           placeholder="Search markets, comps, assets..."
-          className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all duration-200"
+          className="w-full px-4 py-2 bg-gray-900/50 border-b-2 border-gray-700 rounded-lg text-gray-100 placeholder-gray-500 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
         />
       </div>
 
       {isOpen && results.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-gray-900 border border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 animate-fade-in">
+        <div className="absolute top-full left-0 right-0 mt-2 bg-gray-900 border border-gray-800 rounded-xl shadow-lg overflow-hidden z-50 animate-fade-in-up">
           {results.map((result, i) => (
             <button
               key={i}
               onClick={() => handleSelect(result)}
-              className="w-full px-4 py-3 text-left hover:bg-gray-800 border-b border-gray-800 last:border-b-0 transition-colors duration-150 flex justify-between items-center group"
+              className="w-full px-4 py-3 text-left hover:bg-gray-800/50 border-b border-gray-800/50 last:border-b-0 transition-colors duration-150 flex justify-between items-center group"
             >
               <div>
-                <p className="text-gray-100 text-sm font-medium group-hover:text-white">{result.label}</p>
+                <p className="text-gray-100 text-sm font-medium group-hover:text-indigo-300">{result.label}</p>
                 <p className="text-gray-500 text-xs">{result.sublabel}</p>
               </div>
-              <span className="text-xs font-mono text-gray-600 bg-gray-800 px-2 py-1 rounded">
+              <span className="text-xs font-mono text-gray-600 bg-gray-800 px-2 py-1 rounded-lg">
                 {result.type[0].toUpperCase()}
               </span>
             </button>
@@ -119,7 +119,7 @@ export default function GlobalSearch() {
       )}
 
       {isOpen && query && results.length === 0 && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-gray-900 border border-gray-700 rounded-lg shadow-lg p-4 z-50 text-center text-gray-400 text-sm animate-fade-in">
+        <div className="absolute top-full left-0 right-0 mt-2 bg-gray-900 border border-gray-800 rounded-xl shadow-lg p-4 z-50 text-center text-gray-400 text-sm animate-fade-in-up">
           No results found
         </div>
       )}

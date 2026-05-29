@@ -10,21 +10,26 @@
 
 html {
   scroll-behavior: smooth;
-  background: #0a0a0a;
+  background: #0d0d0d;
 }
 
 body {
-  background-color: #0a0a0a;
-  color: #e5e5e5;
-  font-family: 'Inter', sans-serif;
+  background-color: #0d0d0d;
+  color: #f5f5f5;
+  font-family: 'Geist Sans', sans-serif;
+  line-height: 1.5;
 }
 
 code, pre {
   font-family: 'IBM Plex Mono', monospace;
 }
 
-/* Dark sleek theme */
+/* Dark premium theme */
 .text-muted {
+  @apply text-gray-400;
+}
+
+.text-secondary {
   @apply text-gray-400;
 }
 
@@ -40,45 +45,62 @@ code, pre {
   @apply bg-gray-900;
 }
 
+/* Premium badge styles */
 .badge {
-  @apply inline-block px-2 py-1 rounded text-sm font-mono font-medium;
+  @apply inline-block px-3 py-1 rounded-full text-xs font-semibold;
 }
 
 .badge-scouting {
-  @apply bg-blue-900/40 text-blue-300 border border-blue-800;
+  @apply bg-indigo-600/20 text-indigo-300;
 }
 
 .badge-active {
-  @apply bg-yellow-900/40 text-yellow-300 border border-yellow-800;
+  @apply bg-amber-600/20 text-amber-300;
 }
 
 .badge-passed {
-  @apply bg-red-900/40 text-red-300 border border-red-800;
+  @apply bg-red-600/20 text-red-300;
 }
 
 .badge-closed {
-  @apply bg-green-900/40 text-green-300 border border-green-800;
+  @apply bg-emerald-600/20 text-emerald-300;
 }
 
+/* Form inputs with bottom-border style */
 input, textarea, select {
-  @apply bg-gray-950 border border-gray-800 text-gray-100 rounded;
+  @apply bg-gray-900/50 border-b-2 border-gray-700 text-gray-100 rounded-lg px-3 py-2.5 transition-colors duration-200;
+  font-family: 'Geist Sans', sans-serif;
 }
 
 input:focus, textarea:focus, select:focus {
-  @apply outline-none border-gray-700 ring-1 ring-gray-700;
+  @apply outline-none border-b-2 border-indigo-500;
 }
 
+input::placeholder, textarea::placeholder {
+  @apply text-gray-500;
+}
+
+/* Buttons */
 button {
   @apply transition-all duration-200;
 }
 
-a {
-  @apply text-blue-400 hover:text-blue-300 transition-colors duration-200;
+button:active {
+  @apply scale-95;
 }
 
-/* Animations */
+a {
+  @apply text-indigo-400 hover:text-indigo-300 transition-colors duration-200;
+}
+
+/* Premium animations */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -87,30 +109,48 @@ a {
   to { opacity: 1; transform: translateX(0); }
 }
 
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3); }
-  50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+@keyframes slideInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(99, 102, 241, 0.6); }
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.3s ease-out;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s ease-out;
 }
 
 .animate-slide-left {
   animation: slideInLeft 0.3s ease-out;
 }
 
-.animate-pulse-glow {
-  animation: pulse-glow 2s infinite;
+.animate-slide-up {
+  animation: slideInUp 0.4s ease-out;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s ease-out;
+}
+
+.animate-glow {
+  animation: glowPulse 2s infinite;
 }
 
 /* Smooth transitions */
 input, textarea, select, button {
   @apply transition-all duration-200;
-}
-
-button:active {
-  @apply scale-95;
 }
 
 /* Dark scrollbar */
@@ -120,7 +160,7 @@ button:active {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0a0a0a;
+  background: #0d0d0d;
 }
 
 ::-webkit-scrollbar-thumb {

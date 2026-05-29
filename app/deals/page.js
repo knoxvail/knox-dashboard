@@ -44,72 +44,72 @@ export default function DealsPage() {
 
   const scoreRecommendation = scoreResult ? getRecommendation(scoreResult.score) : null;
   const recommendationColors = {
-    green: 'bg-green-900/40 border-green-800 text-green-300',
-    yellow: 'bg-yellow-900/40 border-yellow-800 text-yellow-300',
-    red: 'bg-red-900/40 border-red-800 text-red-300',
+    green: 'bg-emerald-600/20 text-emerald-300',
+    yellow: 'bg-amber-600/20 text-amber-300',
+    red: 'bg-red-600/20 text-red-300',
   };
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold mb-6 text-white">Deal Scoring</h1>
+      <h1 className="text-3xl font-bold mb-6 text-white">Deal Scoring</h1>
 
       <div className="grid grid-cols-2 gap-6">
-        <div className="bg-gray-950 border border-gray-800 rounded p-6">
-          <h2 className="text-lg font-bold text-white mb-4">Analyze Deal</h2>
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+          <h2 className="text-lg font-semibold text-white mb-5">Analyze Deal</h2>
 
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div>
-              <label className="block text-sm font-mono text-gray-300 mb-1">Market</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Market</label>
               <select
                 value={selectedMarket}
                 onChange={(e) => setSelectedMarket(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
               >
                 {markets.map(m => (
                   <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
               </select>
-              <p className="text-xs text-gray-500 mt-1 font-mono">
+              <p className="text-xs text-gray-500 mt-2 font-medium">
                 {selectedMarket && `Comps: ${getCompsByMarket(selectedMarket).length}`}
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-mono text-gray-300 mb-1">Cap Rate %</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Cap Rate %</label>
                 <input
                   type="number"
                   value={deal.cap_rate}
                   onChange={(e) => setDeal(prev => ({ ...prev, cap_rate: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                   step="0.01"
                 />
               </div>
               <div>
-                <label className="block text-sm font-mono text-gray-300 mb-1">Rent/SF</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Rent/SF</label>
                 <input
                   type="number"
                   value={deal.rent_per_sf}
                   onChange={(e) => setDeal(prev => ({ ...prev, rent_per_sf: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                   step="0.01"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-mono text-gray-300 mb-1">Vacancy %</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Vacancy %</label>
               <input
                 type="number"
                 value={deal.vacancy_rate}
                 onChange={(e) => setDeal(prev => ({ ...prev, vacancy_rate: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                 step="0.01"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-mono text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
                 Location Quality (0-100)
               </label>
               <input
@@ -125,7 +125,7 @@ export default function DealsPage() {
 
             <button
               onClick={handleScore}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded text-sm font-mono hover:bg-blue-700"
+              className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors duration-200"
             >
               Calculate Score
             </button>
@@ -133,38 +133,38 @@ export default function DealsPage() {
         </div>
 
         {scoreResult && (
-          <div className="bg-gray-950 border border-gray-800 rounded p-6">
-            <h2 className="text-lg font-bold text-white mb-4">Score Result</h2>
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+            <h2 className="text-lg font-semibold text-white mb-5">Score Result</h2>
 
-            <div className={`border rounded p-4 mb-4 ${recommendationColors[scoreRecommendation.color]}`}>
-              <p className="text-sm font-mono font-bold">RECOMMENDATION</p>
-              <p className="text-3xl font-bold">{scoreRecommendation.status}</p>
+            <div className={`rounded-xl p-5 mb-5 ${recommendationColors[scoreRecommendation.color]}`}>
+              <p className="text-xs font-medium uppercase tracking-wide">Recommendation</p>
+              <p className="text-4xl font-bold mt-2">{scoreRecommendation.status}</p>
             </div>
 
-            <div className="bg-gray-900 rounded p-4 mb-4">
-              <p className="text-gray-400 font-mono text-sm mb-2">Overall Score</p>
-              <p className="text-4xl font-bold text-white">{scoreResult.score}</p>
-              <div className="w-full bg-gray-800 rounded h-2 mt-2">
+            <div className="bg-gray-800/50 rounded-xl p-5 mb-5 border border-gray-800">
+              <p className="text-gray-400 font-medium text-xs mb-2">Overall Score</p>
+              <p className="text-5xl font-bold text-white">{scoreResult.score}</p>
+              <div className="w-full bg-gray-800 rounded-full h-2 mt-3">
                 <div
-                  className="bg-blue-600 h-2 rounded"
+                  className="bg-indigo-600 h-2 rounded-full"
                   style={{ width: `${Math.min(scoreResult.score, 100)}%` }}
                 />
               </div>
             </div>
 
             <div>
-              <p className="text-gray-400 font-mono text-sm mb-3">Breakdown</p>
+              <p className="text-gray-400 font-medium text-xs mb-3">Breakdown</p>
               {Object.entries(scoreResult.breakdown).map(([key, value]) => {
                 const label = key.replace(/([A-Z])/g, ' $1').trim();
                 return (
-                  <div key={key} className="mb-2">
+                  <div key={key} className="mb-3">
                     <div className="flex justify-between text-xs">
-                      <span className="text-gray-400">{label}</span>
-                      <span className="text-gray-300 font-mono">{Math.round(value)}</span>
+                      <span className="text-gray-300 font-medium">{label}</span>
+                      <span className="text-gray-300 font-mono font-semibold">{Math.round(value)}</span>
                     </div>
-                    <div className="w-full bg-gray-800 rounded h-1">
+                    <div className="w-full bg-gray-800 rounded-full h-1 mt-1">
                       <div
-                        className="bg-gray-500 h-1 rounded"
+                        className="bg-indigo-600 h-1 rounded-full"
                         style={{ width: `${Math.min(value, 100)}%` }}
                       />
                     </div>

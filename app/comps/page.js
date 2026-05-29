@@ -55,17 +55,17 @@ export default function CompsPage() {
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-white">Comps</h1>
+        <h1 className="text-3xl font-bold text-white">Comps</h1>
         <div className="space-x-2">
           <button
             onClick={() => setShowAddForm(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded text-sm font-mono hover:bg-blue-700"
+            className="px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-md transition-all duration-200"
           >
             + Add Comp
           </button>
           <button
             onClick={() => setShowImport(true)}
-            className="px-4 py-2 bg-gray-700 text-white rounded text-sm font-mono hover:bg-gray-600"
+            className="px-4 py-2.5 bg-gray-800 text-white rounded-lg text-sm font-medium hover:bg-gray-700 transition-all duration-200"
           >
             📤 Import CSV
           </button>
@@ -74,11 +74,11 @@ export default function CompsPage() {
 
       <div className="flex gap-4 mb-6">
         <div>
-          <label className="block text-sm text-gray-400 mb-2">Type</label>
+          <label className="block text-sm font-medium text-gray-300 mb-2">Type</label>
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="bg-gray-900 border border-gray-700 text-gray-100 rounded text-sm px-3 py-2"
+            className="bg-gray-900/50 border-b-2 border-gray-700 text-gray-100 rounded-lg text-sm px-3 py-2.5 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
           >
             <option value="all">All Types</option>
             <option value="sold">Sold</option>
@@ -87,11 +87,11 @@ export default function CompsPage() {
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-2">Market</label>
+          <label className="block text-sm font-medium text-gray-300 mb-2">Market</label>
           <select
             value={filterMarket}
             onChange={(e) => setFilterMarket(e.target.value)}
-            className="bg-gray-900 border border-gray-700 text-gray-100 rounded text-sm px-3 py-2"
+            className="bg-gray-900/50 border-b-2 border-gray-700 text-gray-100 rounded-lg text-sm px-3 py-2.5 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
           >
             <option value="all">All Markets</option>
             {markets.map(m => (
@@ -101,11 +101,11 @@ export default function CompsPage() {
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-2">Sort By</label>
+          <label className="block text-sm font-medium text-gray-300 mb-2">Sort By</label>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            className="bg-gray-900 border border-gray-700 text-gray-100 rounded text-sm px-3 py-2"
+            className="bg-gray-900/50 border-b-2 border-gray-700 text-gray-100 rounded-lg text-sm px-3 py-2.5 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
           >
             <option value="date">Date</option>
             <option value="price">Sale Price</option>
@@ -117,42 +117,42 @@ export default function CompsPage() {
       {filteredComps.length === 0 ? (
         <p className="text-gray-400">No comps yet. Add one manually or import from CSV.</p>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-800">
-                <th className="text-left px-4 py-2 font-mono text-gray-400">Address</th>
-                <th className="text-left px-4 py-2 font-mono text-gray-400">Type</th>
-                <th className="text-left px-4 py-2 font-mono text-gray-400">Date</th>
-                <th className="text-right px-4 py-2 font-mono text-gray-400">Sale Price</th>
-                <th className="text-right px-4 py-2 font-mono text-gray-400">Price/SF</th>
-                <th className="text-right px-4 py-2 font-mono text-gray-400">Cap Rate</th>
-                <th className="text-right px-4 py-2 font-mono text-gray-400">Rent/SF</th>
-                <th className="text-right px-4 py-2 font-mono text-gray-400">Actions</th>
+              <tr className="border-b border-gray-800 bg-gray-950">
+                <th className="text-left px-5 py-3 font-medium text-gray-300">Address</th>
+                <th className="text-left px-5 py-3 font-medium text-gray-300">Type</th>
+                <th className="text-left px-5 py-3 font-medium text-gray-300">Date</th>
+                <th className="text-right px-5 py-3 font-medium text-gray-300">Sale Price</th>
+                <th className="text-right px-5 py-3 font-medium text-gray-300">Price/SF</th>
+                <th className="text-right px-5 py-3 font-medium text-gray-300">Cap Rate</th>
+                <th className="text-right px-5 py-3 font-medium text-gray-300">Rent/SF</th>
+                <th className="text-right px-5 py-3 font-medium text-gray-300">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredComps.map(comp => (
-                <tr key={comp.id} className="border-b border-gray-800 hover:bg-gray-900">
-                  <td className="px-4 py-3 text-gray-100">{comp.address}</td>
-                  <td className="px-4 py-3 text-gray-300 font-mono">{COMP_TYPE_LABELS[comp.comp_type]}</td>
-                  <td className="px-4 py-3 text-gray-300 font-mono">{new Date(comp.date).toLocaleDateString()}</td>
-                  <td className="px-4 py-3 text-right text-gray-300 font-mono">
+                <tr key={comp.id} className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors duration-200">
+                  <td className="px-5 py-3 text-gray-100 font-medium">{comp.address}</td>
+                  <td className="px-5 py-3 text-gray-300 font-mono text-xs">{COMP_TYPE_LABELS[comp.comp_type]}</td>
+                  <td className="px-5 py-3 text-gray-300 font-mono text-xs">{new Date(comp.date).toLocaleDateString()}</td>
+                  <td className="px-5 py-3 text-right text-gray-300 font-mono text-xs">
                     {comp.sale_price ? `$${comp.sale_price.toLocaleString()}` : '—'}
                   </td>
-                  <td className="px-4 py-3 text-right text-gray-300 font-mono">
+                  <td className="px-5 py-3 text-right text-gray-300 font-mono text-xs">
                     {comp.price_per_sf ? `$${comp.price_per_sf.toFixed(2)}` : '—'}
                   </td>
-                  <td className="px-4 py-3 text-right text-gray-300 font-mono">
+                  <td className="px-5 py-3 text-right text-gray-300 font-mono text-xs">
                     {comp.cap_rate ? `${(comp.cap_rate * 100).toFixed(2)}%` : '—'}
                   </td>
-                  <td className="px-4 py-3 text-right text-gray-300 font-mono">
+                  <td className="px-5 py-3 text-right text-gray-300 font-mono text-xs">
                     {comp.rent_per_sf ? `$${comp.rent_per_sf.toFixed(2)}` : '—'}
                   </td>
-                  <td className="px-4 py-3 text-right space-x-2">
+                  <td className="px-5 py-3 text-right space-x-2">
                     <button
                       onClick={() => handleDelete(comp.id)}
-                      className="text-red-400 hover:text-red-300"
+                      className="text-red-400 hover:text-red-300 text-xs font-medium transition-colors duration-200"
                     >
                       Delete
                     </button>

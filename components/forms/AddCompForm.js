@@ -51,21 +51,21 @@ export default function AddCompForm({ markets, onClose }) {
 
   return (
     <>
-      <div className="fixed inset-0 bg-black bg-opacity-50 z-40" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
       <div className="fixed inset-0 flex items-center justify-center z-50">
-        <div className="bg-gray-950 border border-gray-800 rounded shadow-lg w-full max-w-2xl p-6 max-h-96 overflow-y-auto">
-          <h2 className="text-lg font-bold mb-4 text-white">Add Comp</h2>
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl p-6 max-h-96 overflow-y-auto animate-fade-in-up">
+          <h2 className="text-lg font-semibold mb-5 text-white">Add Comp</h2>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-mono text-gray-300 mb-1">Market *</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Market *</label>
                 <select
                   value={formData.market_id}
                   onChange={(e) =>
                     setFormData(prev => ({ ...prev, market_id: e.target.value }))
                   }
-                  className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                 >
                   {markets.map(m => (
                     <option key={m.id} value={m.id}>{m.name}</option>
@@ -74,14 +74,14 @@ export default function AddCompForm({ markets, onClose }) {
               </div>
 
               <div>
-                <label className="block text-sm font-mono text-gray-300 mb-1">Type *</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Type *</label>
                 <select
                   value={compType}
                   onChange={(e) => {
                     setCompType(e.target.value);
                     setFormData(prev => ({ ...prev, comp_type: e.target.value }));
                   }}
-                  className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                 >
                   <option value="sold">Sold</option>
                   <option value="lease">Lease</option>
@@ -91,26 +91,26 @@ export default function AddCompForm({ markets, onClose }) {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-mono text-gray-300 mb-1">Address *</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Address *</label>
                 <input
                   type="text"
                   value={formData.address}
                   onChange={(e) =>
                     setFormData(prev => ({ ...prev, address: e.target.value }))
                   }
-                  className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-mono text-gray-300 mb-1">Date *</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Date *</label>
                 <input
                   type="date"
                   value={formData.date}
                   onChange={(e) =>
                     setFormData(prev => ({ ...prev, date: e.target.value }))
                   }
-                  className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                 />
               </div>
             </div>
@@ -118,38 +118,38 @@ export default function AddCompForm({ markets, onClose }) {
             {compType === 'sold' ? (
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-mono text-gray-300 mb-1">Sale Price</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Sale Price</label>
                   <input
                     type="number"
                     value={formData.sale_price}
                     onChange={(e) =>
                       setFormData(prev => ({ ...prev, sale_price: e.target.value }))
                     }
-                    className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                     placeholder="$"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-mono text-gray-300 mb-1">Price/SF</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Price/SF</label>
                   <input
                     type="number"
                     value={formData.price_per_sf}
                     onChange={(e) =>
                       setFormData(prev => ({ ...prev, price_per_sf: e.target.value }))
                     }
-                    className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                     step="0.01"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-mono text-gray-300 mb-1">Cap Rate %</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Cap Rate %</label>
                   <input
                     type="number"
                     value={formData.cap_rate}
                     onChange={(e) =>
                       setFormData(prev => ({ ...prev, cap_rate: e.target.value }))
                     }
-                    className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                     step="0.01"
                   />
                 </div>
@@ -157,26 +157,26 @@ export default function AddCompForm({ markets, onClose }) {
             ) : (
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-mono text-gray-300 mb-1">Rent/SF</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Rent/SF</label>
                   <input
                     type="number"
                     value={formData.rent_per_sf}
                     onChange={(e) =>
                       setFormData(prev => ({ ...prev, rent_per_sf: e.target.value }))
                     }
-                    className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                     step="0.01"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-mono text-gray-300 mb-1">Vacancy %</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Vacancy %</label>
                   <input
                     type="number"
                     value={formData.vacancy_rate}
                     onChange={(e) =>
                       setFormData(prev => ({ ...prev, vacancy_rate: e.target.value }))
                     }
-                    className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                    className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                     step="0.01"
                   />
                 </div>
@@ -184,28 +184,28 @@ export default function AddCompForm({ markets, onClose }) {
             )}
 
             <div>
-              <label className="block text-sm font-mono text-gray-300 mb-1">Notes</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Notes</label>
               <textarea
                 value={formData.notes}
                 onChange={(e) =>
                   setFormData(prev => ({ ...prev, notes: e.target.value }))
                 }
-                className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                 rows="2"
               />
             </div>
 
-            <div className="flex gap-2 pt-4">
+            <div className="flex gap-2 pt-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 px-4 py-2 border border-gray-700 bg-gray-900 text-gray-300 rounded text-sm font-mono hover:bg-gray-800"
+                className="flex-1 px-4 py-2.5 border border-gray-700 bg-gray-800 text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors duration-200"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-mono hover:bg-blue-700"
+                className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors duration-200"
               >
                 Save Comp
               </button>

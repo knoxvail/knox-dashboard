@@ -125,18 +125,18 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
   return (
     <>
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-40"
+        className="fixed inset-0 bg-black/40 z-40"
         onClick={onClose}
       />
       <div className="fixed inset-0 flex items-center justify-center z-50">
-        <div className="bg-gray-950 border border-gray-800 rounded shadow-lg w-96 p-6">
-          <h2 className="text-lg font-bold mb-4 text-white">
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-96 p-6 animate-fade-in-up">
+          <h2 className="text-lg font-semibold mb-5 text-white">
             {market ? 'Edit Asset' : 'Add Asset'}
           </h2>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-sm font-mono text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
                 Address *
               </label>
               <input
@@ -146,13 +146,13 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                 onChange={(e) =>
                   setFormData(prev => ({ ...prev, address: e.target.value }))
                 }
-                className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                 placeholder="Search address..."
               />
             </div>
 
             <div>
-              <label className="block text-sm font-mono text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
                 Asset Name *
               </label>
               <input
@@ -161,13 +161,13 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                 onChange={(e) =>
                   setFormData(prev => ({ ...prev, name: e.target.value }))
                 }
-                className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                 placeholder="e.g., Austin CBD"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-mono text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
                 Market
               </label>
               <select
@@ -179,7 +179,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                     setFormData(prev => ({ ...prev, market_id: e.target.value }));
                   }
                 }}
-                className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
               >
                 <option value="">Select a market...</option>
                 {markets.map(m => (
@@ -191,7 +191,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-mono text-gray-300 mb-1">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
                   Asset Class
                 </label>
                 <select
@@ -199,7 +199,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                   onChange={(e) =>
                     setFormData(prev => ({ ...prev, asset_class: e.target.value }))
                   }
-                  className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                 >
                   <option value="multifamily">Multifamily</option>
                   <option value="mixed-use">Mixed-Use</option>
@@ -208,7 +208,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
               </div>
 
               <div>
-                <label className="block text-sm font-mono text-gray-300 mb-1">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
                   Status
                 </label>
                 <select
@@ -216,7 +216,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                   onChange={(e) =>
                     setFormData(prev => ({ ...prev, status: e.target.value }))
                   }
-                  className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                  className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                 >
                   <option value="scouting">Scouting</option>
                   <option value="active">Active</option>
@@ -227,7 +227,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
             </div>
 
             <div>
-              <label className="block text-sm font-mono text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
                 Notes
               </label>
               <textarea
@@ -235,23 +235,23 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
                 onChange={(e) =>
                   setFormData(prev => ({ ...prev, notes: e.target.value }))
                 }
-                className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                 rows="3"
               />
             </div>
 
-            <div className="flex gap-2 pt-4">
+            <div className="flex gap-2 pt-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 px-4 py-2 border border-gray-700 bg-gray-900 text-gray-300 rounded text-sm font-mono hover:bg-gray-800"
+                className="flex-1 px-4 py-2.5 border border-gray-700 bg-gray-800 text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors duration-200"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={syncing}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-mono hover:bg-blue-700 disabled:opacity-50"
+                className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors duration-200"
               >
                 {syncing ? 'Saving...' : 'Save'}
               </button>
@@ -263,18 +263,18 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
       {showNewMarketModal && (
         <>
           <div
-            className="fixed inset-0 bg-black bg-opacity-50 z-40"
+            className="fixed inset-0 bg-black/40 z-40"
             onClick={() => setShowNewMarketModal(false)}
           />
           <div className="fixed inset-0 flex items-center justify-center z-50">
-            <div className="bg-gray-950 border border-gray-800 rounded shadow-lg w-96 p-6 animate-fade-in">
-              <h2 className="text-lg font-bold mb-4 text-white">Create New Market</h2>
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl w-96 p-6 animate-fade-in-up">
+              <h2 className="text-lg font-semibold mb-5 text-white">Create New Market</h2>
               <input
                 type="text"
                 value={newMarketName}
                 onChange={(e) => setNewMarketName(e.target.value)}
                 placeholder="e.g., Austin CBD, Tulsa Suburbs"
-                className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100 mb-4"
+                className="w-full px-3 py-2.5 border-b-2 border-gray-700 bg-gray-900/50 rounded-lg text-sm text-gray-100 mb-6 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && newMarketName.trim()) {
@@ -285,14 +285,14 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowNewMarketModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-700 bg-gray-900 text-gray-300 rounded text-sm font-mono hover:bg-gray-800"
+                  className="flex-1 px-4 py-2.5 border border-gray-700 bg-gray-800 text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors duration-200"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCreateMarket}
                   disabled={!newMarketName.trim()}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-mono hover:bg-blue-700 disabled:opacity-50"
+                  className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors duration-200"
                 >
                   Create
                 </button>

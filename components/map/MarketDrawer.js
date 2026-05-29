@@ -37,55 +37,55 @@ export default function MarketDrawer({ market, onClose }) {
   return (
     <>
       <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-40"
+        className="fixed inset-0 bg-black/40 z-40"
         onClick={onClose}
       />
-      <div className="fixed right-0 top-0 bottom-0 w-96 bg-gray-950 border-l border-gray-800 shadow-lg z-50 overflow-y-auto flex flex-col">
+      <div className="fixed right-0 top-0 bottom-0 w-96 bg-gray-900 border-l border-gray-800 shadow-lg z-50 overflow-y-auto flex flex-col animate-fade-in">
         <div className="p-6 border-b border-gray-800 flex justify-between items-start">
-          <h2 className="text-xl font-bold text-white">{market.name}</h2>
+          <h2 className="text-xl font-semibold text-white">{market.name}</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-200"
+            className="text-gray-400 hover:text-gray-200 transition-colors duration-200"
           >
             ✕
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-5">
           <div>
-            <p className="text-xs text-gray-500 font-mono uppercase">Address</p>
-            <p className="text-sm text-gray-300">{market.address}</p>
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Address</p>
+            <p className="text-sm text-gray-300 font-medium mt-1">{market.address}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-xs text-gray-500 font-mono uppercase">Status</p>
-              <p className="text-sm font-mono text-gray-300">{STATUS_LABELS[market.status]}</p>
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Status</p>
+              <p className="text-sm font-mono text-gray-300 font-semibold mt-1">{STATUS_LABELS[market.status]}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 font-mono uppercase">Asset Class</p>
-              <p className="text-sm font-mono text-gray-300">{ASSET_CLASS_LABELS[market.asset_class]}</p>
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Asset Class</p>
+              <p className="text-sm font-mono text-gray-300 font-semibold mt-1">{ASSET_CLASS_LABELS[market.asset_class]}</p>
             </div>
           </div>
 
           {market.score && (
             <div>
-              <p className="text-xs text-gray-500 font-mono uppercase">Score</p>
-              <p className="text-lg font-mono font-bold text-white">{market.score}</p>
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Score</p>
+              <p className="text-2xl font-mono font-bold text-indigo-400 mt-1">{market.score}</p>
             </div>
           )}
 
           {market.notes && (
             <div>
-              <p className="text-xs text-gray-500 font-mono uppercase">Notes</p>
-              <p className="text-sm text-gray-400">{market.notes}</p>
+              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Notes</p>
+              <p className="text-sm text-gray-400 mt-2 p-3 bg-gray-800/50 rounded-lg border border-gray-800">{market.notes}</p>
             </div>
           )}
 
           <div className="pt-4 space-y-2">
             <button
               onClick={() => setIsEditing(true)}
-              className="w-full px-4 py-2 bg-gray-800 text-gray-100 rounded text-sm font-mono hover:bg-gray-700 border border-gray-700"
+              className="w-full px-4 py-2.5 bg-gray-800 text-gray-100 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors duration-200"
             >
               Edit
             </button>
@@ -94,7 +94,7 @@ export default function MarketDrawer({ market, onClose }) {
                 router.push(`/markets/${market.id}`);
                 onClose();
               }}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded text-sm font-mono hover:bg-blue-700"
+              className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors duration-200"
             >
               View Full Details
             </button>
