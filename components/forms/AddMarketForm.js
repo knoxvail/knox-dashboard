@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { addMarket, updateMarket } from '@/lib/store/marketStore';
 
-export default function AddMarketForm({ market = null, prefilledLocation = null, onClose, onSuccess }) {
+export default function AddMarketForm({ market = null, assetName = '', prefilledLocation = null, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
-    name: '',
+    name: assetName || '',
     address: prefilledLocation?.address || '',
     lat: prefilledLocation?.lat || null,
     lng: prefilledLocation?.lng || null,

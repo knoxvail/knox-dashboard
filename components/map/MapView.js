@@ -17,7 +17,9 @@ export default function MapView({ markets }) {
   const markersRef = useRef({});
   const [selectedMarket, setSelectedMarket] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showNameInput, setShowNameInput] = useState(false);
   const [clickedLocation, setClickedLocation] = useState(null);
+  const [assetName, setAssetName] = useState('');
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -34,7 +36,7 @@ export default function MapView({ markets }) {
         fullscreenControl: false,
       });
 
-      // Add click listener to create new market
+      // Add click listener to create new asset
       mapInstance.current.addListener('click', async (e) => {
         const lat = e.latLng.lat();
         const lng = e.latLng.lng();
@@ -50,7 +52,8 @@ export default function MapView({ markets }) {
           setClickedLocation({ lat, lng, address: `${lat.toFixed(4)}, ${lng.toFixed(4)}` });
         }
 
-        setShowAddForm(true);
+        setAssetName('');
+        setShowNameInput(true);
       });
 
       // Render markers
@@ -152,16 +155,61 @@ export default function MapView({ markets }) {
         <MarketDrawer market={selectedMarket} onClose={() => setSelectedMarket(null)} />
       )}
 
+      {showNameInput && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center" onClick={() => setShowNameInput(false)}>
+          <div className="bg-gray-950 border border-gray-800 rounded shadow-lg w-96 p-6 animate-fade-in" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-4 text-white">Name this Asset</h2>
+            <input
+              type="text"
+              value={assetName}
+              onChange={(e) => setAssetName(e.target.value)}
+              placeholder="e.g., Downtown Tulsa Apt Complex"
+              className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100 mb-4"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && assetName.trim()) {
+                  setShowNameInput(false);
+                  setShowAddForm(true);
+                }
+              }}
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowNameInput(false)}
+                className="flex-1 px-4 py-2 border border-gray-700 bg-gray-900 text-gray-300 rounded text-sm font-mono hover:bg-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (assetName.trim()) {
+                    setShowNameInput(false);
+                    setShowAddForm(true);
+                  }
+                }}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-mono hover:bg-blue-700 disabled:opacity-50"
+                disabled={!assetName.trim()}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddForm && (
         <AddMarketForm
+          assetName={assetName}
           prefilledLocation={clickedLocation}
           onClose={() => {
             setShowAddForm(false);
             setClickedLocation(null);
+            setAssetName('');
           }}
           onSuccess={() => {
             setShowAddForm(false);
             setClickedLocation(null);
+            setAssetName('');
           }}
         />
       )}
