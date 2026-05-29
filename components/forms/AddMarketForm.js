@@ -99,7 +99,7 @@ export default function AddMarketForm({ market = null, onClose, onSuccess }) {
         onClick={onClose}
       />
       <div className="fixed inset-0 flex items-center justify-center z-50">
-        <div className="bg-gray-950 border border-gray-800 rounded shadow-lg w-96 p-6 max-h-96 overflow-y-auto">
+        <div className="bg-gray-950 border border-gray-800 rounded shadow-lg w-96 p-6">
           <h2 className="text-lg font-bold mb-4 text-white">
             {market ? 'Edit Market' : 'Add Market'}
           </h2>
