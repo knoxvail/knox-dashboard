@@ -1,42 +1,9 @@
 'use client';
 
 import './globals.css';
-import { useState, useRef, useEffect } from 'react';
 import GlobalSearch from '@/components/GlobalSearch';
 
 export default function RootLayout({ children }) {
-  const [searchOpen, setSearchOpen] = useState(false);
-  const searchInputRef = useRef(null);
-
-  useEffect(() => {
-    function handleKeyPress(e) {
-      // Don't trigger if user is typing in an input/textarea
-      const target = e.target;
-      if (target.matches('input, textarea, [contenteditable="true"]')) {
-        return;
-      }
-
-      // Start search on any printable character
-      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        searchInputRef.current?.focus();
-        // The character will be typed after focus
-      }
-
-      // Cmd+K or Ctrl+K to focus search
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      }
-
-      // ESC to blur search
-      if (e.key === 'Escape') {
-        searchInputRef.current?.blur();
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, []);
 
   return (
     <html lang="en">
@@ -50,7 +17,7 @@ export default function RootLayout({ children }) {
           {/* Top Search Bar */}
           <div className="h-16 bg-gray-950 border-b border-gray-800 flex items-center justify-center px-4">
             <div className="w-full max-w-xl">
-              <GlobalSearch ref={searchInputRef} />
+              <GlobalSearch />
             </div>
           </div>
 

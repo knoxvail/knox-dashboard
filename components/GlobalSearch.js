@@ -6,19 +6,38 @@ import { loadMarkets } from '@/lib/store/marketStore';
 import { loadComps } from '@/lib/store/compStore';
 import { loadAssets } from '@/lib/store/assetStore';
 
-const GlobalSearch = ({ ref }) => {
+export default function GlobalSearch() {
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const inputRef = useRef(null);
 
-  // Forward ref from parent
+  // Set up global keyboard listener
   useEffect(() => {
-    if (ref) {
-      ref.current = inputRef.current;
+    function handleKeyDown(e) {
+      const target = e.target;
+
+      // Don't intercept if typing in input/textarea
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      // Any alphanumeric key focuses search
+      if (/^[a-zA-Z0-9 ]$/.test(e.key)) {
+        inputRef.current?.focus();
+      }
+
+      // ESC to blur
+      if (e.key === 'Escape') {
+        inputRef.current?.blur();
+        setQuery('');
+      }
     }
-  }, [ref]);
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -109,6 +128,4 @@ const GlobalSearch = ({ ref }) => {
       )}
     </div>
   );
-};
-
-export default GlobalSearch;
+}
