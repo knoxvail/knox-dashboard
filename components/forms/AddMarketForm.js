@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { addMarket, updateMarket } from '@/lib/store/marketStore';
+import { addMarket, updateMarket, loadMarkets } from '@/lib/store/marketStore';
 
 export default function AddMarketForm({ market = null, assetName = '', prefilledLocation = null, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
@@ -11,12 +11,42 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
     lng: prefilledLocation?.lng || null,
     asset_class: 'multifamily',
     status: 'scouting',
+    market_id: '',
     notes: '',
     ...market,
   });
   const [syncing, setSyncing] = useState(false);
+  const [markets, setMarkets] = useState([]);
+  const [showNewMarketModal, setShowNewMarketModal] = useState(false);
+  const [newMarketName, setNewMarketName] = useState('');
   const autocompleteRef = useRef(null);
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    setMarkets(loadMarkets());
+  }, []);
+
+  function handleCreateMarket() {
+    if (!newMarketName.trim()) {
+      alert('Please enter a market name');
+      return;
+    }
+
+    const newMarket = addMarket({
+      name: newMarketName,
+      address: '',
+      lat: prefilledLocation?.lat || 0,
+      lng: prefilledLocation?.lng || 0,
+      asset_class: 'multifamily',
+      status: 'scouting',
+      notes: '',
+    });
+
+    setMarkets([...markets, newMarket]);
+    setFormData(prev => ({ ...prev, market_id: newMarket.id }));
+    setNewMarketName('');
+    setShowNewMarketModal(false);
+  }
 
   useEffect(() => {
     if (!inputRef.current) return;
@@ -136,6 +166,29 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
               />
             </div>
 
+            <div>
+              <label className="block text-sm font-mono text-gray-300 mb-1">
+                Market
+              </label>
+              <select
+                value={formData.market_id}
+                onChange={(e) => {
+                  if (e.target.value === 'new') {
+                    setShowNewMarketModal(true);
+                  } else {
+                    setFormData(prev => ({ ...prev, market_id: e.target.value }));
+                  }
+                }}
+                className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100"
+              >
+                <option value="">Select a market...</option>
+                {markets.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+                <option value="new">+ Add New Market</option>
+              </select>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-mono text-gray-300 mb-1">
@@ -206,6 +259,48 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
           </form>
         </div>
       </div>
+
+      {showNewMarketModal && (
+        <>
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-40"
+            onClick={() => setShowNewMarketModal(false)}
+          />
+          <div className="fixed inset-0 flex items-center justify-center z-50">
+            <div className="bg-gray-950 border border-gray-800 rounded shadow-lg w-96 p-6 animate-fade-in">
+              <h2 className="text-lg font-bold mb-4 text-white">Create New Market</h2>
+              <input
+                type="text"
+                value={newMarketName}
+                onChange={(e) => setNewMarketName(e.target.value)}
+                placeholder="e.g., Austin CBD, Tulsa Suburbs"
+                className="w-full px-3 py-2 border border-gray-700 bg-gray-900 rounded text-sm text-gray-100 mb-4"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newMarketName.trim()) {
+                    handleCreateMarket();
+                  }
+                }}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowNewMarketModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-700 bg-gray-900 text-gray-300 rounded text-sm font-mono hover:bg-gray-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateMarket}
+                  disabled={!newMarketName.trim()}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-mono hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Create
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }
