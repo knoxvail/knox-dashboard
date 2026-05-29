@@ -38,7 +38,7 @@ module.exports = {
       },
       fontFamily: {
         mono: ['IBM Plex Mono', 'monospace'],
-        sans: ['Geist Sans', 'sans-serif'],
+        sans: ['IBM Plex Mono', 'monospace'],
       },
       boxShadow: {
         sm: '0 1px 3px rgba(0, 0, 0, 0.4)',

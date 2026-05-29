@@ -24,7 +24,7 @@ export default function RootLayout({ children }) {
           {/* Main Content Area */}
           <div className="flex flex-1 overflow-hidden">
             <nav className="w-48 bg-gray-950 border-r border-gray-800 p-4 overflow-y-auto">
-              <h1 className="text-lg font-bold mb-6 text-white">CRE Research</h1>
+              <h1 className="text-lg font-bold mb-6 text-white">CREST</h1>
               <ul className="space-y-1 text-sm font-mono">
                 <li><a href="/" className="block px-3 py-2.5 rounded-lg hover:bg-gray-800/50 text-gray-300 hover:text-white transition-colors duration-200 animate-fade-in">Dashboard</a></li>
                 <li><a href="/watchlist" className="block px-3 py-2.5 rounded-lg hover:bg-gray-800/50 text-gray-300 hover:text-white transition-colors duration-200 animate-fade-in">Watchlist ⭐</a></li>
