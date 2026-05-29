@@ -48,44 +48,57 @@ export default function MarketsPage() {
       {markets.length === 0 ? (
         <p className="text-gray-400">No markets yet. Add one from the map or here.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-800">
-                <th className="text-left px-4 py-2 font-mono text-gray-400">Name</th>
-                <th className="text-left px-4 py-2 font-mono text-gray-400">Address</th>
-                <th className="text-left px-4 py-2 font-mono text-gray-400">Status</th>
-                <th className="text-left px-4 py-2 font-mono text-gray-400">Asset Class</th>
-                <th className="text-left px-4 py-2 font-mono text-gray-400">Score</th>
-                <th className="text-right px-4 py-2 font-mono text-gray-400">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {markets.map(market => (
-                <tr key={market.id} className="border-b border-gray-800 hover:bg-gray-900">
-                  <td className="px-4 py-3 text-gray-100">{market.name}</td>
-                  <td className="px-4 py-3 text-gray-400">{market.address}</td>
-                  <td className="px-4 py-3 font-mono text-gray-300">{STATUS_LABELS[market.status]}</td>
-                  <td className="px-4 py-3 font-mono text-gray-300">{market.asset_class}</td>
-                  <td className="px-4 py-3 font-mono text-gray-300">{market.score || '—'}</td>
-                  <td className="px-4 py-3 text-right space-x-2">
-                    <button
-                      onClick={() => router.push(`/markets/${market.id}`)}
-                      className="text-blue-400 hover:text-blue-300"
-                    >
-                      View
-                    </button>
-                    <button
-                      onClick={() => handleDelete(market.id)}
-                      className="text-red-400 hover:text-red-300"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="grid gap-3">
+          {markets.map((market, i) => (
+            <div
+              key={market.id}
+              className="bg-gray-950 border border-gray-800 rounded-lg p-4 hover:border-gray-700 hover:bg-gray-900 transition-all duration-200 cursor-pointer group animate-fade-in"
+              style={{ animationDelay: `${i * 30}ms` }}
+              onClick={() => router.push(`/markets/${market.id}`)}
+            >
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition-colors duration-200">
+                    {market.name}
+                  </h3>
+                  <p className="text-sm text-gray-400 mt-1">{market.address}</p>
+                </div>
+                <div className="flex gap-2 items-center">
+                  {market.score && (
+                    <div className="bg-blue-900/40 border border-blue-800 rounded px-3 py-1">
+                      <p className="text-sm font-mono text-blue-300 font-bold">{market.score}</p>
+                    </div>
+                  )}
+                  <div className={`badge badge-${market.status}`}>
+                    {STATUS_LABELS[market.status]}
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-4 mt-3 text-xs text-gray-500 font-mono">
+                <span>{market.asset_class}</span>
+              </div>
+              <div className="flex gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push(`/markets/${market.id}`);
+                  }}
+                  className="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors duration-200"
+                >
+                  View Details
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(market.id);
+                  }}
+                  className="text-xs px-3 py-1 bg-red-900/40 text-red-300 rounded hover:bg-red-900/60 transition-colors duration-200 border border-red-800"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
