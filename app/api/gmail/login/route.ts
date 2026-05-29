@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 
-const SITE_URL = "https://knox-dashboard-pnsj.vercel.app";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://knox-dashboard-pnsj.vercel.app";
 
 export async function GET(request: NextRequest) {
   const state = crypto.randomBytes(16).toString("hex");

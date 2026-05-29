@@ -3,7 +3,7 @@ import crypto from "crypto";
 
 export async function GET(request: NextRequest) {
   const clientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID;
-  const redirectUri = process.env.SPOTIFY_REDIRECT_URI;
+  const redirectUri = process.env.SPOTIFY_REDIRECT_URI || `${process.env.NEXT_PUBLIC_SITE_URL || "https://knox-dashboard-pnsj.vercel.app"}/api/spotify/callback`;
 
   const state = crypto.randomBytes(16).toString("hex");
 
