@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import MarketDrawer from './MarketDrawer';
 import AddMarketForm from '../forms/AddMarketForm';
+import { loadAssets } from '@/lib/store/assetStore';
 
 const STATUS_COLORS = {
   scouting: '#6366f1',
@@ -11,7 +12,7 @@ const STATUS_COLORS = {
   closed: '#10b981',
 };
 
-export default function MapView({ markets }) {
+export default function MapView({ markets, selectedAssetId = null }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markersRef = useRef({});
@@ -70,6 +71,17 @@ export default function MapView({ markets }) {
   useEffect(() => {
     renderMarkers();
   }, [markets]);
+
+  useEffect(() => {
+    if (selectedAssetId && mapInstance.current) {
+      const assets = loadAssets();
+      const asset = assets?.find(a => a.id === selectedAssetId);
+      if (asset && asset.lat && asset.lng) {
+        mapInstance.current.setCenter({ lat: asset.lat, lng: asset.lng });
+        mapInstance.current.setZoom(15);
+      }
+    }
+  }, [selectedAssetId]);
 
   function renderMarkers() {
     if (!mapInstance.current) return;

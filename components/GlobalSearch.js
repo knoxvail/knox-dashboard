@@ -74,7 +74,7 @@ export default function GlobalSearch() {
     } else if (result.type === 'comp') {
       router.push(`/comps`);
     } else if (result.type === 'asset') {
-      router.push(`/watchlist`);
+      router.push(`/?asset=${result.data.id}`);
     }
     setQuery('');
     setIsOpen(false);
