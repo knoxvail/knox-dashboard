@@ -96,9 +96,6 @@ export default function GlobalSearch() {
           placeholder="Search markets, comps, assets..."
           className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all duration-200"
         />
-        <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 font-mono text-xs">
-          ⌘K
-        </span>
       </div>
 
       {isOpen && results.length > 0 && (
