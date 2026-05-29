@@ -183,11 +183,18 @@ function TaskItem({
       }}
     >
       {isEditing ? (
-        <input
-          ref={inputRef}
+        <textarea
+          ref={inputRef as any}
           value={inputValue}
           onChange={e => setInputValue(e.target.value)}
-          onKeyDown={handleKeyDown}
+          onKeyDown={e => {
+            if (e.key === "Enter" && e.ctrlKey) {
+              handleSubmit();
+            } else if (e.key === "Escape") {
+              setInputValue(task.title);
+              onCancelEdit();
+            }
+          }}
           onBlur={handleSubmit}
           placeholder="Task name..."
           style={{
@@ -201,6 +208,9 @@ function TaskItem({
             outline: "none",
             borderRadius: 2,
             minWidth: 0,
+            resize: "none",
+            overflow: "hidden",
+            lineHeight: "1.5",
           }}
         />
       ) : (
