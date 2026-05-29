@@ -94,7 +94,7 @@ export default function GlobalSearch() {
           onFocus={() => setIsOpen(true)}
           onBlur={() => setTimeout(() => setIsOpen(false), 100)}
           placeholder="Search markets, comps, assets..."
-          className="w-full px-4 py-2 bg-gray-900/50 border-b-2 border-gray-700 rounded-lg text-gray-100 placeholder-gray-500 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200"
+          className="w-full px-5 py-3.5 bg-gray-900/50 border-b-2 border-gray-700 rounded-lg text-base text-gray-100 placeholder-gray-500 focus:border-b-2 focus:border-indigo-500 outline-none transition-colors duration-200 font-semibold"
         />
       </div>
 
@@ -104,13 +104,13 @@ export default function GlobalSearch() {
             <button
               key={i}
               onClick={() => handleSelect(result)}
-              className="w-full px-4 py-3 text-left hover:bg-gray-800/50 border-b border-gray-800/50 last:border-b-0 transition-colors duration-150 flex justify-between items-center group"
+              className="w-full px-5 py-4 text-left hover:bg-gray-800/50 border-b border-gray-800/50 last:border-b-0 transition-colors duration-150 flex justify-between items-center group"
             >
               <div>
-                <p className="text-gray-100 text-sm font-medium group-hover:text-indigo-300">{result.label}</p>
-                <p className="text-gray-500 text-xs">{result.sublabel}</p>
+                <p className="text-gray-100 text-base font-medium group-hover:text-indigo-300">{result.label}</p>
+                <p className="text-gray-500 text-sm">{result.sublabel}</p>
               </div>
-              <span className="text-xs font-mono text-gray-600 bg-gray-800 px-2 py-1 rounded-lg">
+              <span className="text-sm font-mono text-gray-600 bg-gray-800 px-3 py-1.5 rounded-lg font-semibold">
                 {result.type[0].toUpperCase()}
               </span>
             </button>
