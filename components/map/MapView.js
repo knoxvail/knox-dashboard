@@ -91,6 +91,28 @@ export default function MapView({ markets }) {
         },
       });
 
+      marker.addListener('mouseover', () => {
+        marker.setIcon({
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 10,
+          fillColor: STATUS_COLORS[market.status] || '#808080',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 3,
+        });
+      });
+
+      marker.addListener('mouseout', () => {
+        marker.setIcon({
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: STATUS_COLORS[market.status] || '#808080',
+          fillOpacity: 0.8,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+        });
+      });
+
       marker.addListener('click', () => {
         setSelectedMarket(market);
       });
