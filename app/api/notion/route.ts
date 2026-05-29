@@ -71,3 +71,42 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed" }, { status: 500 });
   }
 }
+
+export async function PUT(request: Request) {
+  const token = process.env.NOTION_TOKEN;
+  const dbId = process.env.NOTION_DB_ID;
+  if (!token || !dbId) return NextResponse.json({ error: "No token" }, { status: 401 });
+
+  const { title, status } = await request.json();
+
+  try {
+    const notionRes = await fetch("https://api.notion.com/v1/pages", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        parent: { database_id: dbId },
+        properties: {
+          Name: {
+            title: [{ text: { content: title } }],
+          },
+          Status: {
+            status: { name: status },
+          },
+        },
+      }),
+    });
+
+    if (!notionRes.ok) {
+      const err = await notionRes.json();
+      return NextResponse.json({ error: err }, { status: notionRes.status });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json({ error: "Failed" }, { status: 500 });
+  }
+}

@@ -136,6 +136,70 @@ function TaskList({ tasks, onComplete }: { tasks: Task[]; onComplete: (id: strin
   );
 }
 
+function AddTaskInput({ onAdd }: { onAdd: (title: string) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 50);
+  }, [open]);
+
+  const submit = async () => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    setLoading(true);
+    await onAdd(trimmed);
+    setValue("");
+    setOpen(false);
+    setLoading(false);
+  };
+
+  if (!open) return (
+    <button onClick={() => setOpen(true)} style={{
+      background: "none", border: "none", cursor: "pointer",
+      padding: 0, marginTop: 10, display: "flex", alignItems: "center", gap: 6,
+    }}
+      onMouseEnter={e => (e.currentTarget.querySelector("span")!.style.color = "#888")}
+      onMouseLeave={e => (e.currentTarget.querySelector("span")!.style.color = "#444")}
+    >
+      <span style={{ color: "#444", fontSize: 16, lineHeight: 1, transition: "color 0.2s" }}>+</span>
+      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.15em", color: "#444", textTransform: "uppercase" as const, transition: "color 0.2s" }}>ADD NEW</span>
+    </button>
+  );
+
+  return (
+    <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") { setOpen(false); setValue(""); } }}
+        placeholder="New task..."
+        style={{
+          flex: 1, background: "#1a1a1a", border: "1px solid #333",
+          color: "#ccc", fontSize: 12, padding: "5px 8px",
+          fontFamily: "'DM Sans', sans-serif", outline: "none",
+          borderRadius: 2,
+        }}
+      />
+      <button onClick={submit} disabled={loading} style={{
+        background: "#1e1e1e", border: "1px solid #505050",
+        color: "#aaa", fontSize: 11, padding: "4px 10px",
+        cursor: "pointer", borderRadius: 2, flexShrink: 0,
+        fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.1em",
+      }}>
+        {loading ? "..." : "ADD"}
+      </button>
+      <button onClick={() => { setOpen(false); setValue(""); }} style={{
+        background: "none", border: "none", color: "#555",
+        fontSize: 14, cursor: "pointer", padding: "0 4px",
+      }}>✕</button>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const clock = useClock();
   const [headlines, setHeadlines] = useState<Headline[]>([]);
@@ -148,6 +212,7 @@ export default function Dashboard() {
   const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ connected: false });
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [showPlaylists, setShowPlaylists] = useState(false);
+  const [volume, setVolume] = useState(50);
   const [loading, setLoading] = useState(true);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -230,6 +295,15 @@ export default function Dashboard() {
     await fetchStatic();
   };
 
+  const addTask = async (title: string, status: "Short Term" | "Long Term") => {
+    await fetch("/api/notion", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, status }),
+    });
+    await fetchStatic();
+  };
+
   const archiveEmail = async (id: string) => {
     setEmails(prev => prev.filter(e => e.id !== id));
     await fetch("/api/gmail", {
@@ -247,6 +321,15 @@ export default function Dashboard() {
       body: JSON.stringify({ action }),
     });
     setTimeout(fetchSpotify, 500);
+  };
+
+  const setSpotifyVolume = async (v: number) => {
+    setVolume(v);
+    await fetch(`/api/spotify/volume`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ volume: v }),
+    });
   };
 
   const playPlaylist = async (uri: string) => {
@@ -376,7 +459,7 @@ export default function Dashboard() {
           </Panel>
         </div>
 
-        {/* Tasks - 3/4, split into two columns */}
+        {/* Tasks */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, minHeight: 0 }}>
           <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <PanelHeader label="Short Term" right={
@@ -393,6 +476,7 @@ export default function Dashboard() {
                 ))
               ) : <TaskList tasks={shortTerm} onComplete={completeTask} />}
             </div>
+            <AddTaskInput onAdd={(title) => addTask(title, "Short Term")} />
           </Panel>
 
           <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -410,6 +494,7 @@ export default function Dashboard() {
                 ))
               ) : <TaskList tasks={longTerm} onComplete={completeTask} />}
             </div>
+            <AddTaskInput onAdd={(title) => addTask(title, "Long Term")} />
           </Panel>
         </div>
 
@@ -501,6 +586,16 @@ export default function Dashboard() {
                       onMouseLeave={e => (e.currentTarget.style.color = "#777")}
                     >{btn.label}</button>
                   ))}
+                </div>
+                {/* Volume slider */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444" }}>VOL</span>
+                  <input
+                    type="range" min={0} max={100} value={volume}
+                    onChange={e => setSpotifyVolume(Number(e.target.value))}
+                    style={{ flex: 1, accentColor: "#888", cursor: "pointer", height: 2 }}
+                  />
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444", width: 24, textAlign: "right" }}>{volume}</span>
                 </div>
               </div>
             )}
