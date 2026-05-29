@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 import { getMarketById, updateMarket, loadMarkets } from '@/lib/store/marketStore';
-import { useParams } from 'next/navigation';
 
 const STATUS_LABELS = {
   scouting: 'Scouting',
@@ -76,6 +76,7 @@ function EditableField({ label, value, onChange, onSave, type = 'text' }) {
 }
 
 export default function MarketDetailPage() {
+  const router = useRouter();
   const params = useParams();
   const [market, setMarket] = useState(null);
   const [assets, setAssets] = useState([]);
@@ -161,7 +162,13 @@ export default function MarketDetailPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="p-6 border-b border-gray-800">
+      <div className="p-6 border-b border-gray-800 flex items-center gap-4">
+        <button
+          onClick={() => router.back()}
+          className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg transition-all duration-200 text-sm font-medium"
+        >
+          ← Back
+        </button>
         <h1 className="text-4xl font-bold text-white">{market.name}</h1>
       </div>
 

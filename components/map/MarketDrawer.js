@@ -41,8 +41,13 @@ export default function MarketDrawer({ market, onClose }) {
         onClick={onClose}
       />
       <div className="fixed right-0 top-0 bottom-0 w-96 bg-gray-900 border-l border-gray-800 shadow-lg z-50 overflow-y-auto flex flex-col animate-slide-right">
-        <div className="p-6 border-b border-gray-800 flex justify-between items-start">
-          <h2 className="text-xl font-semibold text-white">{market.name}</h2>
+        <div className="p-6 border-b border-gray-800 flex justify-between items-center">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg transition-all duration-200 text-sm font-medium"
+          >
+            ← Back
+          </button>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-200 transition-colors duration-200"
