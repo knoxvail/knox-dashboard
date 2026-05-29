@@ -9,36 +9,55 @@ async function gmailFetch(endpoint: string, token: string) {
   });
 }
 
+async function fetchEmails(token: string) {
+  const listRes = await gmailFetch("/users/me/messages?maxResults=8&q=in:inbox", token);
+  if (!listRes.ok) throw new Error("list_failed");
+
+  const listData = await listRes.json();
+  const messages = listData.messages || [];
+
+  return Promise.all(
+    messages.map(async (msg: { id: string; threadId: string }) => {
+      const msgRes = await gmailFetch(
+        `/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+        token
+      );
+      const msgData = await msgRes.json();
+      const headers = msgData.payload?.headers || [];
+      const get = (name: string) => headers.find((h: any) => h.name === name)?.value || "";
+
+      const from = get("From").replace(/<.*>/, "").trim() || get("From");
+      const subject = get("Subject") || "(no subject)";
+      const date = new Date(get("Date")).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const link = `https://mail.google.com/mail/u/1/#all/${msg.threadId}`;
+
+      return { id: msg.id, from, subject, date, link };
+    })
+  );
+}
+
 export async function GET(request: NextRequest) {
   const token = request.cookies.get("gmail_access_token")?.value;
   if (!token) return NextResponse.json({ connected: false, emails: [] });
 
   try {
     const listRes = await gmailFetch("/users/me/messages?maxResults=8&q=in:inbox", token);
-    if (listRes.status === 401) return NextResponse.json({ connected: false, expired: true, emails: [] });
 
-    const listData = await listRes.json();
-    const messages = listData.messages || [];
+    if (listRes.status === 401) {
+      const refreshed = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/gmail/refresh`, {
+        method: "POST",
+        headers: { cookie: request.headers.get("cookie") || "" },
+      });
+      if (!refreshed.ok) return NextResponse.json({ connected: false, expired: true, emails: [] });
 
-    const emails = await Promise.all(
-      messages.map(async (msg: { id: string; threadId: string }) => {
-        const msgRes = await gmailFetch(
-          `/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
-          token
-        );
-        const msgData = await msgRes.json();
-        const headers = msgData.payload?.headers || [];
-        const get = (name: string) => headers.find((h: any) => h.name === name)?.value || "";
+      const newToken = refreshed.headers.get("set-cookie")?.match(/gmail_access_token=([^;]+)/)?.[1];
+      if (!newToken) return NextResponse.json({ connected: false, expired: true, emails: [] });
 
-        const from = get("From").replace(/<.*>/, "").trim() || get("From");
-        const subject = get("Subject") || "(no subject)";
-        const date = new Date(get("Date")).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-        const link = `https://mail.google.com/mail/u/1/#all/${msg.threadId}`;
+      const emails = await fetchEmails(newToken);
+      return NextResponse.json({ connected: true, emails });
+    }
 
-        return { id: msg.id, from, subject, date, link };
-      })
-    );
-
+    const emails = await fetchEmails(token);
     return NextResponse.json({ connected: true, emails });
   } catch {
     return NextResponse.json({ connected: false, emails: [] });
