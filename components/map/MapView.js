@@ -128,10 +128,6 @@ export default function MapView({ markets }) {
     <div className="relative w-full h-full">
       <div ref={mapRef} className="w-full h-full" />
 
-      <div className="absolute top-4 left-4 bg-gray-900 border border-gray-800 rounded-xl shadow-lg p-4 text-sm">
-        <p className="text-gray-400 font-medium">Click map to add location</p>
-      </div>
-
       <div className="absolute bottom-4 right-4 bg-gray-900 border border-gray-800 rounded-xl shadow-lg p-4 space-y-3">
         <div className="flex items-center gap-2 text-sm">
           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: STATUS_COLORS.scouting }} />
