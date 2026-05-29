@@ -93,9 +93,22 @@ export default function GlobalSearch() {
           }}
           onFocus={() => setIsOpen(true)}
           onBlur={() => setTimeout(() => setIsOpen(false), 100)}
+          onKeyDown={(e) => {
+            if (e.key === 'Backspace' && query.length === 0) {
+              setQuery('');
+            }
+          }}
           placeholder="Search markets, comps, assets..."
-          className="w-full px-5 py-3.5 bg-gray-900/50 border-b-2 border-gray-700 rounded-lg text-base text-gray-100 placeholder-gray-500 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200 font-semibold"
+          className="w-full px-5 py-3.5 pr-10 bg-gray-900/50 border-b-2 border-gray-700 rounded-lg text-base text-gray-100 placeholder-gray-500 focus:border-b-2 focus:border-gray-500 outline-none transition-colors duration-200 font-semibold"
         />
+        {query && (
+          <button
+            onClick={() => setQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors duration-200"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {isOpen && results.length > 0 && (
