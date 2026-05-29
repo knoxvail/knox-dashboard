@@ -110,7 +110,123 @@ function DoneButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-function TaskList({ tasks, onComplete }: { tasks: Task[]; onComplete: (id: string) => void }) {
+function TaskItem({
+  task,
+  isEditing,
+  onEdit,
+  onComplete,
+  onStartEdit,
+  onCancelEdit,
+}: {
+  task: Task;
+  isEditing: boolean;
+  onEdit: (id: string, newTitle: string) => Promise<void>;
+  onComplete: (id: string) => void;
+  onStartEdit: (id: string) => void;
+  onCancelEdit: () => void;
+}) {
+  const [inputValue, setInputValue] = useState(task.title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing) {
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [isEditing]);
+
+  const handleSubmit = async () => {
+    const trimmed = inputValue.trim();
+    if (trimmed && trimmed !== task.title) {
+      await onEdit(task.id, trimmed);
+    }
+    onCancelEdit();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      handleSubmit();
+    } else if (e.key === "Escape") {
+      setInputValue(task.title);
+      onCancelEdit();
+    }
+  };
+
+  return (
+    <div
+      style={{
+        borderLeft: "1px solid #2a2a2a",
+        paddingLeft: 10,
+        transition: "border-color 0.2s, padding-left 0.2s",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 8,
+        marginBottom: 10,
+      }}
+      onMouseEnter={e => {
+        if (!isEditing) {
+          (e.currentTarget as HTMLElement).style.borderLeftColor = "#777";
+          (e.currentTarget as HTMLElement).style.paddingLeft = "12px";
+        }
+      }}
+      onMouseLeave={e => {
+        if (!isEditing) {
+          (e.currentTarget as HTMLElement).style.borderLeftColor = "#2a2a2a";
+          (e.currentTarget as HTMLElement).style.paddingLeft = "10px";
+        }
+      }}
+    >
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          value={inputValue}
+          onChange={e => setInputValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={handleSubmit}
+          placeholder="Task name..."
+          style={{
+            flex: 1,
+            background: "#1a1a1a",
+            border: "1px solid #333",
+            color: "#ccc",
+            fontSize: 12,
+            padding: "5px 8px",
+            fontFamily: "'DM Sans', sans-serif",
+            outline: "none",
+            borderRadius: 2,
+            minWidth: 0,
+          }}
+        />
+      ) : (
+        <p
+          onClick={() => onStartEdit(task.id)}
+          style={{
+            margin: 0,
+            fontSize: 13,
+            color: "#b0b0b0",
+            lineHeight: 1.5,
+            minWidth: 0,
+            cursor: "pointer",
+            flex: 1,
+            transition: "color 0.2s",
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLElement).style.color = "#d0d0d0";
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLElement).style.color = "#b0b0b0";
+          }}
+        >
+          {task.title}
+        </p>
+      )}
+      <DoneButton onClick={() => onComplete(task.id)} />
+    </div>
+  );
+}
+
+function TaskList({ tasks, onComplete, onEdit }: { tasks: Task[]; onComplete: (id: string) => void; onEdit: (id: string, newTitle: string) => Promise<void> }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
   if (tasks.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <p style={{ color: "#444", fontSize: 12, textAlign: "center" }}>None</p>
@@ -119,18 +235,15 @@ function TaskList({ tasks, onComplete }: { tasks: Task[]; onComplete: (id: strin
   return (
     <>
       {tasks.map((t) => (
-        <div key={t.id} style={{
-          borderLeft: "1px solid #2a2a2a", paddingLeft: 10,
-          transition: "border-color 0.2s, padding-left 0.2s",
-          display: "flex", alignItems: "flex-start",
-          justifyContent: "space-between", gap: 8, marginBottom: 10,
-        }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderLeftColor = "#777"; (e.currentTarget as HTMLElement).style.paddingLeft = "12px"; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderLeftColor = "#2a2a2a"; (e.currentTarget as HTMLElement).style.paddingLeft = "10px"; }}
-        >
-          <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.5, minWidth: 0 }}>{t.title}</p>
-          <DoneButton onClick={() => onComplete(t.id)} />
-        </div>
+        <TaskItem
+          key={t.id}
+          task={t}
+          isEditing={editingId === t.id}
+          onEdit={onEdit}
+          onComplete={onComplete}
+          onStartEdit={(id) => setEditingId(id)}
+          onCancelEdit={() => setEditingId(null)}
+        />
       ))}
     </>
   );
@@ -293,6 +406,26 @@ export default function Dashboard() {
       body: JSON.stringify({ id }),
     });
     await fetchStatic();
+  };
+
+  const editTask = async (id: string, newTitle: string) => {
+    // Optimistic update
+    setShortTerm(prev => prev.map(t => t.id === id ? { ...t, title: newTitle } : t));
+    setLongTerm(prev => prev.map(t => t.id === id ? { ...t, title: newTitle } : t));
+
+    // API call
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, title: newTitle, action: "update" }),
+      });
+      if (!res.ok) {
+        await fetchStatic(); // Revert on error
+      }
+    } catch {
+      await fetchStatic(); // Revert on error
+    }
   };
 
   const addTask = async (title: string, status: "Short Term" | "Long Term") => {
@@ -474,7 +607,7 @@ export default function Dashboard() {
                     <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 8}%` }} />
                   </div>
                 ))
-              ) : <TaskList tasks={shortTerm} onComplete={completeTask} />}
+              ) : <TaskList tasks={shortTerm} onComplete={completeTask} onEdit={editTask} />}
             </div>
             <AddTaskInput onAdd={(title) => addTask(title, "Short Term")} />
           </Panel>
@@ -492,7 +625,7 @@ export default function Dashboard() {
                     <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 8}%` }} />
                   </div>
                 ))
-              ) : <TaskList tasks={longTerm} onComplete={completeTask} />}
+              ) : <TaskList tasks={longTerm} onComplete={completeTask} onEdit={editTask} />}
             </div>
             <AddTaskInput onAdd={(title) => addTask(title, "Long Term")} />
           </Panel>

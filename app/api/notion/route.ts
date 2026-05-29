@@ -48,26 +48,68 @@ export async function POST(request: Request) {
   const token = process.env.NOTION_TOKEN;
   if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
 
-  const { id } = await request.json();
-
   try {
-    const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Notion-Version": "2022-06-28",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ archived: true }),
-    });
+    const { id, title, action } = await request.json();
 
-    if (!notionRes.ok) {
-      const err = await notionRes.json();
-      return NextResponse.json({ error: err }, { status: notionRes.status });
+    // Handle task completion (archive)
+    if (action === "complete") {
+      if (!id) return NextResponse.json({ error: "Missing task id" }, { status: 400 });
+
+      const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ archived: true }),
+      });
+
+      if (!notionRes.ok) {
+        const err = await notionRes.json();
+        return NextResponse.json({ error: err }, { status: notionRes.status });
+      }
+
+      return NextResponse.json({ success: true });
     }
 
-    return NextResponse.json({ success: true });
-  } catch {
+    // Handle task update (edit)
+    if (action === "update") {
+      if (!id || !title) {
+        return NextResponse.json({ error: "Missing id or title" }, { status: 400 });
+      }
+
+      if (typeof title !== "string" || title.trim().length === 0) {
+        return NextResponse.json({ error: "Invalid title" }, { status: 400 });
+      }
+
+      const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          properties: {
+            Name: {
+              title: [{ text: { content: title.trim() } }],
+            },
+          },
+        }),
+      });
+
+      if (!notionRes.ok) {
+        const err = await notionRes.json();
+        return NextResponse.json({ error: err }, { status: notionRes.status });
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+  } catch (error) {
+    console.error("POST /api/notion error:", error);
     return NextResponse.json({ error: "Failed" }, { status: 500 });
   }
 }
