@@ -101,7 +101,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
       <div className="fixed inset-0 flex items-center justify-center z-50">
         <div className="bg-gray-950 border border-gray-800 rounded shadow-lg w-96 p-6">
           <h2 className="text-lg font-bold mb-4 text-white">
-            {market ? 'Edit Market' : 'Add Market'}
+            {market ? 'Edit Asset' : 'Add Asset'}
           </h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -123,7 +123,7 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
 
             <div>
               <label className="block text-sm font-mono text-gray-300 mb-1">
-                Market Name *
+                Asset Name *
               </label>
               <input
                 type="text"
