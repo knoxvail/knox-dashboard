@@ -6,12 +6,19 @@ import { loadMarkets } from '@/lib/store/marketStore';
 import { loadComps } from '@/lib/store/compStore';
 import { loadAssets } from '@/lib/store/assetStore';
 
-export default function GlobalSearch() {
+const GlobalSearch = ({ ref }) => {
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const inputRef = useRef(null);
+
+  // Forward ref from parent
+  useEffect(() => {
+    if (ref) {
+      ref.current = inputRef.current;
+    }
+  }, [ref]);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -102,4 +109,6 @@ export default function GlobalSearch() {
       )}
     </div>
   );
-}
+};
+
+export default GlobalSearch;
