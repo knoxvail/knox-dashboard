@@ -23,16 +23,20 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
   const inputRef = useRef(null);
 
   useEffect(() => {
-    setMarkets(loadMarkets());
+    const loadData = async () => {
+      const marketsData = await loadMarkets();
+      setMarkets(marketsData);
+    };
+    loadData();
   }, []);
 
-  function handleCreateMarket() {
+  async function handleCreateMarket() {
     if (!newMarketName.trim()) {
       alert('Please enter a market name');
       return;
     }
 
-    const newMarket = addMarket({
+    const newMarket = await addMarket({
       name: newMarketName,
       address: '',
       lat: prefilledLocation?.lat || 0,
@@ -94,9 +98,9 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
     try {
       let savedMarket;
       if (market) {
-        savedMarket = updateMarket(market.id, formData);
+        savedMarket = await updateMarket(market.id, formData);
       } else {
-        savedMarket = addMarket(formData);
+        savedMarket = await addMarket(formData);
       }
 
       // Sync to Notion via API route

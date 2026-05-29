@@ -2,8 +2,16 @@
 
 import './globals.css';
 import GlobalSearch from '@/components/GlobalSearch';
+import { usePathname } from 'next/navigation';
 
 export default function RootLayout({ children }) {
+  const pathname = usePathname();
+
+  const isActive = (href) => {
+    if (href === '/' && pathname === '/') return true;
+    if (href !== '/' && pathname.startsWith(href)) return true;
+    return false;
+  };
 
   return (
     <html lang="en">
@@ -31,13 +39,13 @@ export default function RootLayout({ children }) {
           {/* Main Content Area */}
           <div className="flex flex-1 overflow-hidden">
             <nav className="w-56 bg-gray-950 border-r border-gray-800 p-6 overflow-y-auto">
-              <ul className="space-y-2 text-base font-mono">
-                <li><a href="/" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item">Dashboard</a></li>
-                <li><a href="/watchlist" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item">Watchlist</a></li>
-                <li><a href="/markets" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item">Markets</a></li>
-                <li><a href="/comps" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item">Comps</a></li>
-                <li><a href="/deals" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item">Deals</a></li>
-                <li className="pt-4 border-t border-gray-800"><a href="/settings" className="block px-4 py-3.5 rounded-xl hover:bg-gray-800 border border-transparent hover:border-gray-700 text-gray-300 hover:text-white transition-all duration-200 animate-fade-in font-semibold list-item">Settings</a></li>
+              <ul className="space-y-1 text-base">
+                <li><a href="/" className={`block px-4 py-2.5 rounded-lg transition-all duration-200 animate-fade-in font-medium list-item ${isActive('/') ? 'border-l-2 border-indigo-600 bg-gray-900/30 text-white' : 'hover:bg-gray-800/50 text-gray-300 hover:text-white'}`}>Dashboard</a></li>
+                <li><a href="/watchlist" className={`block px-4 py-2.5 rounded-lg transition-all duration-200 animate-fade-in font-medium list-item ${isActive('/watchlist') ? 'border-l-2 border-indigo-600 bg-gray-900/30 text-white' : 'hover:bg-gray-800/50 text-gray-300 hover:text-white'}`}>Watchlist</a></li>
+                <li><a href="/markets" className={`block px-4 py-2.5 rounded-lg transition-all duration-200 animate-fade-in font-medium list-item ${isActive('/markets') ? 'border-l-2 border-indigo-600 bg-gray-900/30 text-white' : 'hover:bg-gray-800/50 text-gray-300 hover:text-white'}`}>Markets</a></li>
+                <li><a href="/comps" className={`block px-4 py-2.5 rounded-lg transition-all duration-200 animate-fade-in font-medium list-item ${isActive('/comps') ? 'border-l-2 border-indigo-600 bg-gray-900/30 text-white' : 'hover:bg-gray-800/50 text-gray-300 hover:text-white'}`}>Comps</a></li>
+                <li><a href="/deals" className={`block px-4 py-2.5 rounded-lg transition-all duration-200 animate-fade-in font-medium list-item ${isActive('/deals') ? 'border-l-2 border-indigo-600 bg-gray-900/30 text-white' : 'hover:bg-gray-800/50 text-gray-300 hover:text-white'}`}>Deals</a></li>
+                <li className="pt-3 border-t border-gray-800"><a href="/settings" className={`block px-4 py-2.5 rounded-lg transition-all duration-200 animate-fade-in font-medium list-item ${isActive('/settings') ? 'border-l-2 border-indigo-600 bg-gray-900/30 text-white' : 'hover:bg-gray-800/50 text-gray-300 hover:text-white'}`}>Settings</a></li>
               </ul>
             </nav>
             <main className="flex-1 overflow-auto bg-gray-950 animate-fade-in">

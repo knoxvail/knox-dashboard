@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { MarkerClusterer } from '@googlemaps/markerclusterer';
 import MarketDrawer from './MarketDrawer';
 import AddMarketForm from '../forms/AddMarketForm';
 import { loadAssets } from '@/lib/store/assetStore';
@@ -16,6 +17,7 @@ export default function MapView({ markets, selectedAssetId = null }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markersRef = useRef({});
+  const clustererRef = useRef(null);
   const [selectedMarket, setSelectedMarket] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showNameInput, setShowNameInput] = useState(false);
@@ -73,28 +75,38 @@ export default function MapView({ markets, selectedAssetId = null }) {
   }, [markets]);
 
   useEffect(() => {
-    if (selectedAssetId && mapInstance.current) {
-      const assets = loadAssets();
-      const asset = assets?.find(a => a.id === selectedAssetId);
-      if (asset && asset.lat && asset.lng) {
-        mapInstance.current.setCenter({ lat: asset.lat, lng: asset.lng });
-        mapInstance.current.setZoom(15);
+    const focusAsset = async () => {
+      if (selectedAssetId && mapInstance.current) {
+        const assets = await loadAssets();
+        const asset = assets?.find(a => a.id === selectedAssetId);
+        if (asset && asset.lat && asset.lng) {
+          mapInstance.current.setCenter({ lat: asset.lat, lng: asset.lng });
+          mapInstance.current.setZoom(15);
+        }
       }
-    }
+    };
+    focusAsset();
   }, [selectedAssetId]);
 
   function renderMarkers() {
     if (!mapInstance.current) return;
 
+    // Clear old markers
     Object.values(markersRef.current).forEach(marker => marker.setMap(null));
     markersRef.current = {};
 
+    // Dispose old clusterer
+    if (clustererRef.current) {
+      clustererRef.current.clearMarkers();
+    }
+
+    // Create new markers
+    const markers = [];
     markets.forEach(market => {
       if (!market.lat || !market.lng) return;
 
       const marker = new google.maps.Marker({
         position: { lat: market.lat, lng: market.lng },
-        map: mapInstance.current,
         title: market.name,
         icon: {
           path: google.maps.SymbolPath.CIRCLE,
@@ -133,7 +145,19 @@ export default function MapView({ markets, selectedAssetId = null }) {
       });
 
       markersRef.current[market.id] = marker;
+      markers.push(marker);
     });
+
+    // Create clusterer with markers
+    if (clustererRef.current) {
+      clustererRef.current.clearMarkers();
+      clustererRef.current.addMarkers(markers);
+    } else {
+      clustererRef.current = new MarkerClusterer({
+        map: mapInstance.current,
+        markers,
+      });
+    }
   }
 
   return (

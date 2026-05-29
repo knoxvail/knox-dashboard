@@ -14,19 +14,25 @@ export default function Dashboard() {
   const [selectedAsset, setSelectedAsset] = useState(null);
 
   useEffect(() => {
-    const markets = loadMarkets();
-    setMarkets(markets);
-    setLoading(false);
+    const loadData = async () => {
+      const markets = await loadMarkets();
+      setMarkets(markets);
+      setLoading(false);
+    };
+    loadData();
   }, []);
 
   useEffect(() => {
-    const assetId = searchParams.get('asset');
-    if (assetId) {
-      const asset = getAssetById(assetId);
-      setSelectedAsset(asset);
-    } else {
-      setSelectedAsset(null);
-    }
+    const loadAsset = async () => {
+      const assetId = searchParams.get('asset');
+      if (assetId) {
+        const asset = await getAssetById(assetId);
+        setSelectedAsset(asset);
+      } else {
+        setSelectedAsset(null);
+      }
+    };
+    loadAsset();
   }, [searchParams]);
 
   return (

@@ -45,27 +45,31 @@ export default function GlobalSearch() {
       return;
     }
 
-    const q = query.toLowerCase();
-    const markets = loadMarkets();
-    const comps = loadComps();
-    const assets = loadAssets();
+    const performSearch = async () => {
+      const q = query.toLowerCase();
+      const markets = await loadMarkets();
+      const comps = loadComps();
+      const assets = await loadAssets();
 
-    const marketResults = markets
-      .filter(m => m.name.toLowerCase().includes(q) || m.address.toLowerCase().includes(q))
-      .slice(0, 3)
-      .map(m => ({ type: 'market', data: m, label: m.name, sublabel: m.address }));
+      const marketResults = markets
+        .filter(m => m.name.toLowerCase().includes(q) || m.address.toLowerCase().includes(q))
+        .slice(0, 3)
+        .map(m => ({ type: 'market', data: m, label: m.name, sublabel: m.address }));
 
-    const compResults = comps
-      .filter(c => c.address.toLowerCase().includes(q))
-      .slice(0, 3)
-      .map(c => ({ type: 'comp', data: c, label: c.address, sublabel: `${c.comp_type} • ${new Date(c.date).toLocaleDateString()}` }));
+      const compResults = comps
+        .filter(c => c.address.toLowerCase().includes(q))
+        .slice(0, 3)
+        .map(c => ({ type: 'comp', data: c, label: c.address, sublabel: `${c.comp_type} • ${new Date(c.date).toLocaleDateString()}` }));
 
-    const assetResults = assets
-      .filter(a => a.address.toLowerCase().includes(q))
-      .slice(0, 3)
-      .map(a => ({ type: 'asset', data: a, label: a.address, sublabel: a.watched ? '⭐ Watched' : 'Asset' }));
+      const assetResults = assets
+        .filter(a => a.address.toLowerCase().includes(q))
+        .slice(0, 3)
+        .map(a => ({ type: 'asset', data: a, label: a.address, sublabel: a.watched ? '⭐ Watched' : 'Asset' }));
 
-    setResults([...marketResults, ...compResults, ...assetResults].slice(0, 8));
+      setResults([...marketResults, ...compResults, ...assetResults].slice(0, 8));
+    };
+
+    performSearch();
   }, [query]);
 
   function handleSelect(result) {

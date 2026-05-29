@@ -20,8 +20,8 @@ export default function MarketsPage() {
     loadAndDisplay();
   }, []);
 
-  function loadAndDisplay() {
-    const allMarkets = loadMarkets();
+  async function loadAndDisplay() {
+    const allMarkets = await loadMarkets();
 
     // Group markets by whether they have a market_id (parent market)
     // If market_id exists, it's an asset. Otherwise, it's a region

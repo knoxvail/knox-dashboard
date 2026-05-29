@@ -12,17 +12,18 @@ export default function WatchlistPage() {
     loadAndDisplay();
   }, []);
 
-  function loadAndDisplay() {
-    const allAssets = loadAssets();
+  async function loadAndDisplay() {
+    const allAssets = await loadAssets();
     const watched = allAssets.filter(a => a.watched);
     setWatchlist(watched);
-    setMarkets(loadMarkets());
+    const marketsData = await loadMarkets();
+    setMarkets(marketsData);
   }
 
-  function handleRemove(id) {
+  async function handleRemove(id) {
     if (confirm('Remove from watchlist?')) {
-      toggleWatched(id);
-      loadAndDisplay();
+      await toggleWatched(id);
+      await loadAndDisplay();
     }
   }
 

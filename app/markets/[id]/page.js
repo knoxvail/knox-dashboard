@@ -84,16 +84,19 @@ export default function MarketDetailPage() {
   const [mapInstance, setMapInstance] = useState(null);
 
   useEffect(() => {
-    const data = getMarketById(params.id);
-    setMarket(data);
+    const loadData = async () => {
+      const data = await getMarketById(params.id);
+      setMarket(data);
 
-    // Load assets for this region
-    if (data && !data.market_id) {
-      // This is a region, load its assets
-      const allMarkets = loadMarkets();
-      const regionAssets = allMarkets.filter(m => m.market_id === data.id);
-      setAssets(regionAssets);
-    }
+      // Load assets for this region
+      if (data && !data.market_id) {
+        // This is a region, load its assets
+        const allMarkets = await loadMarkets();
+        const regionAssets = allMarkets.filter(m => m.market_id === data.id);
+        setAssets(regionAssets);
+      }
+    };
+    loadData();
   }, [params.id]);
 
   // Initialize map
@@ -143,10 +146,10 @@ export default function MarketDetailPage() {
     };
   }, [market, assets, mapRef]);
 
-  const handleSave = (field, value) => {
+  const handleSave = async (field, value) => {
     if (market) {
       const updated = { ...market, [field]: value };
-      updateMarket(market.id, { [field]: value });
+      await updateMarket(market.id, { [field]: value });
       setMarket(updated);
     }
   };

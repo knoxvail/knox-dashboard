@@ -17,11 +17,14 @@ export default function DealsPage() {
   const [scoreResult, setScoreResult] = useState(null);
 
   useEffect(() => {
-    const marketsData = loadMarkets();
-    setMarkets(marketsData);
-    if (marketsData.length > 0) {
-      setSelectedMarket(marketsData[0].id);
-    }
+    const loadData = async () => {
+      const marketsData = await loadMarkets();
+      setMarkets(marketsData);
+      if (marketsData.length > 0) {
+        setSelectedMarket(marketsData[0].id);
+      }
+    };
+    loadData();
   }, []);
 
   function handleScore() {

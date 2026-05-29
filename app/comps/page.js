@@ -24,15 +24,16 @@ export default function CompsPage() {
     loadAndDisplay();
   }, []);
 
-  function loadAndDisplay() {
+  async function loadAndDisplay() {
     setComps(loadComps());
-    setMarkets(loadMarkets());
+    const marketsData = await loadMarkets();
+    setMarkets(marketsData);
   }
 
-  function handleDelete(id) {
+  async function handleDelete(id) {
     if (confirm('Delete this comp?')) {
       deleteComp(id);
-      loadAndDisplay();
+      await loadAndDisplay();
     }
   }
 
