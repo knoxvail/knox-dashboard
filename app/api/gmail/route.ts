@@ -9,6 +9,27 @@ async function gmailFetch(endpoint: string, token: string) {
   });
 }
 
+async function refreshGmailToken(refreshToken: string) {
+  try {
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: process.env.GOOGLE_CLIENT_ID!,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      }).toString(),
+    });
+
+    if (!tokenResponse.ok) return null;
+    const tokenData = await tokenResponse.json();
+    return tokenData.access_token;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchEmails(token: string) {
   const listRes = await gmailFetch("/users/me/messages?maxResults=8&q=in:inbox", token);
   if (!listRes.ok) throw new Error("list_failed");
@@ -29,7 +50,8 @@ async function fetchEmails(token: string) {
       const from = get("From").replace(/<.*>/, "").trim() || get("From");
       const subject = get("Subject") || "(no subject)";
       const date = new Date(get("Date")).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      const link = `https://mail.google.com/mail/u/1/#all/${msg.threadId}`;
+      const userIndex = process.env.GMAIL_USER_INDEX || "0";
+      const link = `https://mail.google.com/mail/u/${userIndex}/#all/${msg.threadId}`;
 
       return { id: msg.id, from, subject, date, link };
     })
@@ -44,17 +66,23 @@ export async function GET(request: NextRequest) {
     const listRes = await gmailFetch("/users/me/messages?maxResults=8&q=in:inbox", token);
 
     if (listRes.status === 401) {
-      const refreshed = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/gmail/refresh`, {
-        method: "POST",
-        headers: { cookie: request.headers.get("cookie") || "" },
-      });
-      if (!refreshed.ok) return NextResponse.json({ connected: false, expired: true, emails: [] });
+      const refreshToken = request.cookies.get("gmail_refresh_token")?.value;
+      if (!refreshToken) return NextResponse.json({ connected: false, expired: true, emails: [] });
 
-      const newToken = refreshed.headers.get("set-cookie")?.match(/gmail_access_token=([^;]+)/)?.[1];
+      const newToken = await refreshGmailToken(refreshToken);
       if (!newToken) return NextResponse.json({ connected: false, expired: true, emails: [] });
 
       const emails = await fetchEmails(newToken);
-      return NextResponse.json({ connected: true, emails });
+      const response = NextResponse.json({ connected: true, emails });
+      response.cookies.set({
+        name: "gmail_access_token",
+        value: newToken,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 3600,
+      });
+      return response;
     }
 
     const emails = await fetchEmails(token);

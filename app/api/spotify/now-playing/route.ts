@@ -7,6 +7,30 @@ async function spotifyFetch(endpoint: string, token: string) {
   });
 }
 
+async function refreshSpotifyToken(refreshToken: string) {
+  try {
+    const tokenResponse = await fetch("https://accounts.spotify.com/api/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Authorization: `Basic ${Buffer.from(
+          `${process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+        ).toString("base64")}`,
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+      }).toString(),
+    });
+
+    if (!tokenResponse.ok) return null;
+    const tokenData = await tokenResponse.json();
+    return tokenData.access_token;
+  } catch {
+    return null;
+  }
+}
+
 function buildPlayerResponse(data: any) {
   return NextResponse.json({
     connected: true,
@@ -31,21 +55,37 @@ export async function GET(request: NextRequest) {
     if (res.status === 204) return NextResponse.json({ connected: true, playing: false });
 
     if (res.status === 401) {
-      const refreshed = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/spotify/refresh`, {
-        method: "POST",
-        headers: { cookie: request.headers.get("cookie") || "" },
-      });
-      if (!refreshed.ok) return NextResponse.json({ connected: false, expired: true });
+      const refreshToken = request.cookies.get("spotify_refresh_token")?.value;
+      if (!refreshToken) return NextResponse.json({ connected: false, expired: true });
 
-      const newToken = refreshed.headers.get("set-cookie")?.match(/spotify_access_token=([^;]+)/)?.[1];
+      const newToken = await refreshSpotifyToken(refreshToken);
       if (!newToken) return NextResponse.json({ connected: false, expired: true });
 
+      const response = NextResponse.json({ connected: true, playing: false });
+      response.cookies.set({
+        name: "spotify_access_token",
+        value: newToken,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 3600,
+      });
+
       const retry = await spotifyFetch("/me/player", newToken);
-      if (retry.status === 204) return NextResponse.json({ connected: true, playing: false });
+      if (retry.status === 204) return response;
       if (!retry.ok) return NextResponse.json({ connected: false, expired: true });
 
       const data = await retry.json();
-      return buildPlayerResponse(data);
+      const playerResponse = buildPlayerResponse(data);
+      playerResponse.cookies.set({
+        name: "spotify_access_token",
+        value: newToken,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 3600,
+      });
+      return playerResponse;
     }
 
     const data = await res.json();

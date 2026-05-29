@@ -77,9 +77,21 @@ export async function PUT(request: Request) {
   const dbId = process.env.NOTION_DB_ID;
   if (!token || !dbId) return NextResponse.json({ error: "No token" }, { status: 401 });
 
-  const { title, status } = await request.json();
-
   try {
+    const { title, status } = await request.json();
+
+    if (!title || !status) {
+      return NextResponse.json({ error: "Missing title or status" }, { status: 400 });
+    }
+
+    if (typeof title !== "string" || title.trim().length === 0) {
+      return NextResponse.json({ error: "Invalid title" }, { status: 400 });
+    }
+
+    if (status !== "Short Term" && status !== "Long Term") {
+      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
+
     const notionRes = await fetch("https://api.notion.com/v1/pages", {
       method: "POST",
       headers: {
@@ -91,7 +103,7 @@ export async function PUT(request: Request) {
         parent: { database_id: dbId },
         properties: {
           Name: {
-            title: [{ text: { content: title } }],
+            title: [{ text: { content: title.trim() } }],
           },
           Status: {
             status: { name: status },
@@ -106,7 +118,8 @@ export async function PUT(request: Request) {
     }
 
     return NextResponse.json({ success: true });
-  } catch {
-    return NextResponse.json({ error: "Failed" }, { status: 500 });
+  } catch (error) {
+    console.error("PUT /api/notion error:", error);
+    return NextResponse.json({ error: "Failed to create task" }, { status: 500 });
   }
 }

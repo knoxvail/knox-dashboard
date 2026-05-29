@@ -26,15 +26,33 @@ export async function POST(request: NextRequest) {
   const token = request.cookies.get("spotify_access_token")?.value;
   if (!token) return NextResponse.json({ error: "Not connected" }, { status: 401 });
 
-  const { uri } = await request.json();
-  await fetch("https://api.spotify.com/v1/me/player/play", {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ context_uri: uri }),
-  });
+  try {
+    const { uri } = await request.json();
 
-  return NextResponse.json({ success: true });
+    if (!uri || typeof uri !== "string") {
+      return NextResponse.json({ error: "Invalid playlist URI" }, { status: 400 });
+    }
+
+    if (!uri.startsWith("spotify:")) {
+      return NextResponse.json({ error: "Invalid Spotify URI" }, { status: 400 });
+    }
+
+    const res = await fetch("https://api.spotify.com/v1/me/player/play", {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ context_uri: uri }),
+    });
+
+    if (!res.ok && res.status !== 204) {
+      return NextResponse.json({ error: "Failed to play playlist" }, { status: res.status });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("POST /api/spotify/playlists error:", error);
+    return NextResponse.json({ error: "Failed to play playlist" }, { status: 500 });
+  }
 }

@@ -56,9 +56,10 @@ export async function GET() {
           displayDate = isToday ? "Today" : isTomorrow ? "Tomorrow" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
           if (isDatetime) {
+            const tz = process.env.TZ || "America/Los_Angeles";
             displayTime = d.toLocaleTimeString("en-US", {
               hour: "numeric", minute: "2-digit", hour12: true,
-              timeZone: "America/Los_Angeles"
+              timeZone: tz
             });
           }
         }
