@@ -15,16 +15,28 @@ export async function POST(request: NextRequest) {
     }).toString(),
   });
 
+  if (!tokenResponse.ok) {
+    const error = await tokenResponse.json();
+    console.error("Gmail token refresh failed:", error);
+    return NextResponse.json({ error: "Token refresh failed" }, { status: 401 });
+  }
+
   const tokenData = await tokenResponse.json();
+
+  if (!tokenData.access_token) {
+    console.error("No access token in response:", tokenData);
+    return NextResponse.json({ error: "Invalid token response" }, { status: 401 });
+  }
+
   const response = NextResponse.json({ success: true });
 
   response.cookies.set({
     name: "gmail_access_token",
     value: tokenData.access_token,
     httpOnly: true,
-    secure: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: tokenData.expires_in,
+    maxAge: tokenData.expires_in || 3600,
   });
 
   return response;

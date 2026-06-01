@@ -72,7 +72,17 @@ export async function GET(request: NextRequest) {
       const newToken = await refreshGmailToken(refreshToken);
       if (!newToken) return NextResponse.json({ connected: false, expired: true, emails: [] });
 
-      const emails = await fetchEmails(newToken);
+      // Fetch emails with the new token
+      let emails: any[] = [];
+      try {
+        emails = await fetchEmails(newToken);
+      } catch (error) {
+        console.error("Error fetching emails after token refresh:", error);
+        // Continue anyway - at least the token is being refreshed
+      }
+
+      // Create response and set the new token
+      // This ensures the token is persisted regardless of fetchEmails success/failure
       const response = NextResponse.json({ connected: true, emails });
       response.cookies.set({
         name: "gmail_access_token",
