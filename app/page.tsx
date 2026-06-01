@@ -195,7 +195,6 @@ function TaskItem({
               onCancelEdit();
             }
           }}
-          onBlur={handleSubmit}
           placeholder="Task name..."
           style={{
             flex: 1,
