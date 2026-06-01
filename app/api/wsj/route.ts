@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 
-export const revalidate = 900; // cache 15 min
+export const revalidate = 0; // always fetch fresh
 
 export async function GET() {
   try {
     const res = await fetch(
       "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
-      { next: { revalidate: 900 } }
+      { cache: "no-store" }
     );
     const xml = await res.text();
 
