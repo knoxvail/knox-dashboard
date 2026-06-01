@@ -61,22 +61,47 @@ export async function GET(request: NextRequest) {
       const newToken = await refreshSpotifyToken(refreshToken);
       if (!newToken) return NextResponse.json({ connected: false, expired: true });
 
-      const response = NextResponse.json({ connected: true, playing: false });
-      response.cookies.set({
-        name: "spotify_access_token",
-        value: newToken,
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 3600,
-      });
+      // Retry with new token
+      let playerData = null;
+      try {
+        const retry = await spotifyFetch("/me/player", newToken);
+        if (retry.status === 204) {
+          playerData = null; // No active player
+        } else if (retry.ok) {
+          playerData = await retry.json();
+        } else {
+          // Token refresh succeeded but player data fetch failed - still persist the token
+          const response = NextResponse.json({ connected: true, playing: false });
+          response.cookies.set({
+            name: "spotify_access_token",
+            value: newToken,
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 3600,
+          });
+          return response;
+        }
+      } catch (error) {
+        console.error("Error fetching player data after Spotify token refresh:", error);
+        // Even if player fetch fails, persist the new token
+        const response = NextResponse.json({ connected: true, playing: false });
+        response.cookies.set({
+          name: "spotify_access_token",
+          value: newToken,
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+          maxAge: 3600,
+        });
+        return response;
+      }
 
-      const retry = await spotifyFetch("/me/player", newToken);
-      if (retry.status === 204) return response;
-      if (!retry.ok) return NextResponse.json({ connected: false, expired: true });
+      // Build response with new token set
+      const playerResponse = playerData
+        ? buildPlayerResponse(playerData)
+        : NextResponse.json({ connected: true, playing: false });
 
-      const data = await retry.json();
-      const playerResponse = buildPlayerResponse(data);
       playerResponse.cookies.set({
         name: "spotify_access_token",
         value: newToken,
