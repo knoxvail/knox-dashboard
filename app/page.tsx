@@ -91,19 +91,25 @@ function ConnectButton({ href, label }: { href: string; label: string }) {
 
 function DoneButton({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} style={{
-      background: "#1e1e1e",
-      border: "1px solid #505050",
-      cursor: "pointer",
-      color: "#aaa",
-      fontSize: 13,
-      fontWeight: 600,
-      padding: "3px 8px",
-      flexShrink: 0,
-      borderRadius: 3,
-      transition: "color 0.2s, border-color 0.2s, background 0.2s",
-      lineHeight: 1,
-    }}
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      style={{
+        background: "#1e1e1e",
+        border: "1px solid #505050",
+        cursor: "pointer",
+        color: "#aaa",
+        fontSize: 13,
+        fontWeight: 600,
+        padding: "3px 8px",
+        flexShrink: 0,
+        borderRadius: 3,
+        transition: "color 0.2s, border-color 0.2s, background 0.2s",
+        lineHeight: 1,
+        pointerEvents: "auto",
+      }}
       onMouseEnter={e => { (e.currentTarget.style.color = "#fff"); (e.currentTarget.style.borderColor = "#aaa"); (e.currentTarget.style.background = "#2a2a2a"); }}
       onMouseLeave={e => { (e.currentTarget.style.color = "#aaa"); (e.currentTarget.style.borderColor = "#505050"); (e.currentTarget.style.background = "#1e1e1e"); }}
     >✓</button>
