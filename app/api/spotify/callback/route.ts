@@ -46,7 +46,9 @@ export async function GET(request: NextRequest) {
       httpOnly: true,
       secure: true,
       sameSite: "lax",
-      maxAge: tokenData.expires_in,
+      // 30 days so the cookie outlives the 1-hour token. A stale value triggers
+      // the server's 401 -> refresh path instead of logging the user out.
+      maxAge: 60 * 60 * 24 * 30,
     });
 
     if (tokenData.refresh_token) {

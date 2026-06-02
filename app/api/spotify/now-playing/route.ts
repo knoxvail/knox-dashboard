@@ -45,77 +45,66 @@ function buildPlayerResponse(data: any) {
   });
 }
 
+function setAccessCookie(response: NextResponse, value: string) {
+  response.cookies.set({
+    name: "spotify_access_token",
+    value,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    // Keep the cookie for 30 days so it survives past the access token's 1-hour
+    // lifetime. A stale value just triggers the 401 -> refresh path rather than
+    // silently dropping us back to "Connect to Spotify".
+    maxAge: 60 * 60 * 24 * 30,
+  });
+}
+
+async function refreshAndFetch(refreshToken: string) {
+  const newToken = await refreshSpotifyToken(refreshToken);
+  if (!newToken) return NextResponse.json({ connected: false, expired: true });
+
+  let playerData: any = null;
+  try {
+    const retry = await spotifyFetch("/me/player", newToken);
+    if (retry.ok && retry.status !== 204) {
+      playerData = await retry.json();
+    }
+  } catch (error) {
+    console.error("Error fetching player data after Spotify token refresh:", error);
+  }
+
+  const response = playerData
+    ? buildPlayerResponse(playerData)
+    : NextResponse.json({ connected: true, playing: false });
+  setAccessCookie(response, newToken);
+  return response;
+}
+
 export async function GET(request: NextRequest) {
   const token = request.cookies.get("spotify_access_token")?.value;
-  if (!token) return NextResponse.json({ connected: false });
+  const refreshToken = request.cookies.get("spotify_refresh_token")?.value;
+
+  // No credentials at all -> genuinely disconnected.
+  if (!token && !refreshToken) return NextResponse.json({ connected: false });
+
+  // Access token cookie expired/was deleted but the refresh token is still
+  // valid -> refresh proactively instead of reporting "not connected".
+  if (!token && refreshToken) return refreshAndFetch(refreshToken);
 
   try {
-    const res = await spotifyFetch("/me/player", token);
+    const res = await spotifyFetch("/me/player", token!);
 
     if (res.status === 204) return NextResponse.json({ connected: true, playing: false });
 
     if (res.status === 401) {
-      const refreshToken = request.cookies.get("spotify_refresh_token")?.value;
       if (!refreshToken) return NextResponse.json({ connected: false, expired: true });
-
-      const newToken = await refreshSpotifyToken(refreshToken);
-      if (!newToken) return NextResponse.json({ connected: false, expired: true });
-
-      // Retry with new token
-      let playerData = null;
-      try {
-        const retry = await spotifyFetch("/me/player", newToken);
-        if (retry.status === 204) {
-          playerData = null; // No active player
-        } else if (retry.ok) {
-          playerData = await retry.json();
-        } else {
-          // Token refresh succeeded but player data fetch failed - still persist the token
-          const response = NextResponse.json({ connected: true, playing: false });
-          response.cookies.set({
-            name: "spotify_access_token",
-            value: newToken,
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            maxAge: 3600,
-          });
-          return response;
-        }
-      } catch (error) {
-        console.error("Error fetching player data after Spotify token refresh:", error);
-        // Even if player fetch fails, persist the new token
-        const response = NextResponse.json({ connected: true, playing: false });
-        response.cookies.set({
-          name: "spotify_access_token",
-          value: newToken,
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "lax",
-          maxAge: 3600,
-        });
-        return response;
-      }
-
-      // Build response with new token set
-      const playerResponse = playerData
-        ? buildPlayerResponse(playerData)
-        : NextResponse.json({ connected: true, playing: false });
-
-      playerResponse.cookies.set({
-        name: "spotify_access_token",
-        value: newToken,
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 3600,
-      });
-      return playerResponse;
+      return refreshAndFetch(refreshToken);
     }
 
     const data = await res.json();
     return buildPlayerResponse(data);
   } catch {
+    if (refreshToken) return refreshAndFetch(refreshToken);
     return NextResponse.json({ connected: false });
   }
 }

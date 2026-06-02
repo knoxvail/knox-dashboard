@@ -58,46 +58,68 @@ async function fetchEmails(token: string) {
   );
 }
 
+function setAccessCookie(response: NextResponse, value: string) {
+  response.cookies.set({
+    name: "gmail_access_token",
+    value,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    // Keep the cookie around for 30 days so it survives even after the
+    // underlying access token expires. The value may be stale, but that just
+    // triggers the 401 -> refresh path instead of silently logging the user out.
+    maxAge: 60 * 60 * 24 * 30,
+  });
+}
+
+async function refreshAndFetch(refreshToken: string) {
+  const newToken = await refreshGmailToken(refreshToken);
+  if (!newToken) {
+    return NextResponse.json({ connected: false, expired: true, emails: [] });
+  }
+
+  let emails: any[] = [];
+  try {
+    emails = await fetchEmails(newToken);
+  } catch (error) {
+    console.error("Error fetching emails after token refresh:", error);
+    // Continue anyway - the important thing is that the refreshed token persists.
+  }
+
+  const response = NextResponse.json({ connected: true, emails });
+  setAccessCookie(response, newToken);
+  return response;
+}
+
 export async function GET(request: NextRequest) {
   const token = request.cookies.get("gmail_access_token")?.value;
-  if (!token) return NextResponse.json({ connected: false, emails: [] });
+  const refreshToken = request.cookies.get("gmail_refresh_token")?.value;
+
+  // No credentials at all -> genuinely disconnected.
+  if (!token && !refreshToken) {
+    return NextResponse.json({ connected: false, emails: [] });
+  }
+
+  // The access token cookie expired/was deleted, but we still have a refresh
+  // token. Refresh proactively instead of reporting "not connected".
+  if (!token && refreshToken) {
+    return refreshAndFetch(refreshToken);
+  }
 
   try {
-    const listRes = await gmailFetch("/users/me/messages?maxResults=8&q=in:inbox", token);
+    const listRes = await gmailFetch("/users/me/messages?maxResults=8&q=in:inbox", token!);
 
     if (listRes.status === 401) {
-      const refreshToken = request.cookies.get("gmail_refresh_token")?.value;
       if (!refreshToken) return NextResponse.json({ connected: false, expired: true, emails: [] });
-
-      const newToken = await refreshGmailToken(refreshToken);
-      if (!newToken) return NextResponse.json({ connected: false, expired: true, emails: [] });
-
-      // Fetch emails with the new token
-      let emails: any[] = [];
-      try {
-        emails = await fetchEmails(newToken);
-      } catch (error) {
-        console.error("Error fetching emails after token refresh:", error);
-        // Continue anyway - at least the token is being refreshed
-      }
-
-      // Create response and set the new token
-      // This ensures the token is persisted regardless of fetchEmails success/failure
-      const response = NextResponse.json({ connected: true, emails });
-      response.cookies.set({
-        name: "gmail_access_token",
-        value: newToken,
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 3600,
-      });
-      return response;
+      return refreshAndFetch(refreshToken);
     }
 
-    const emails = await fetchEmails(token);
+    const emails = await fetchEmails(token!);
     return NextResponse.json({ connected: true, emails });
   } catch {
+    // Network/parse error with a token that looked valid. Try a refresh as a
+    // last resort before giving up.
+    if (refreshToken) return refreshAndFetch(refreshToken);
     return NextResponse.json({ connected: false, emails: [] });
   }
 }
