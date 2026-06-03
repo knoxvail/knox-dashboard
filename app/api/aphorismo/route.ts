@@ -21,6 +21,12 @@ export async function GET() {
       },
       body: JSON.stringify({
         page_size: 100,
+        filter: {
+          property: "Category",
+          select: {
+            equals: "aphorismo"
+          }
+        }
       }),
       cache: "no-store",
     });

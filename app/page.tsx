@@ -809,7 +809,7 @@ export default function Dashboard() {
               <Tag>APHORISMO</Tag>
               <span style={{ color: "#222" }}>|</span>
               <p style={{ margin: 0, fontSize: 13, color: "#686868", fontStyle: "italic", minWidth: 0 }}>
-                &ldquo;{aphorismo}&rdquo;
+                {aphorismo}
               </p>
             </>
           ) : (
@@ -836,7 +836,7 @@ export default function Dashboard() {
               >←</button>
               <div style={{ textAlign: "right", minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 13, color: "#686868", fontStyle: "italic" }}>
-                  &ldquo;{allVerses[verseIndex]?.text || verse.text}&rdquo;
+                  {allVerses[verseIndex]?.text || verse.text}
                 </p>
                 <span style={{
                   fontFamily: "'Barlow Condensed', sans-serif",
