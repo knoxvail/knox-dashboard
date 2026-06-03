@@ -4,38 +4,37 @@ export const revalidate = 0;
 
 export async function GET() {
   const token = process.env.NOTION_TOKEN;
-  const dbId = "1dbc40abce39801fb289d13710cdacb7"; // Aphorisms database
+  const pageId = "1dbc40abce39802fb289d13710cdacb7"; // Person page with aphorism child pages
 
-  if (!token || !dbId) {
+  if (!token || !pageId) {
     return NextResponse.json({ aphorismo: null });
   }
 
   try {
-    const res = await fetch(`https://api.notion.com/v1/databases/${dbId}/query`, {
-      method: "POST",
+    // Query all child blocks of the Person page
+    const res = await fetch(`https://api.notion.com/v1/blocks/${pageId}/children`, {
+      method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
         "Notion-Version": "2022-06-28",
-        "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        page_size: 100,
-      }),
       cache: "no-store",
     });
 
-    const data = await res.json();
-    const aphorisms = (data.results || [])
-      .map((page: any) => {
-        const titleProp = Object.values(page.properties).find(
-          (p: any) => p.type === "title"
-        ) as any;
-        const aphorismo =
-          titleProp?.title?.map((t: any) => t.plain_text).join("") || "";
+    if (!res.ok) {
+      const error = await res.json();
+      console.error("Notion API error:", error);
+      return NextResponse.json({ aphorismo: null });
+    }
 
-        return aphorismo;
-      })
-      .filter((text: string) => text.length > 0);
+    const data = await res.json();
+    const pages = data.results || [];
+
+    // Extract titles from child pages
+    const aphorisms = pages
+      .filter((block: any) => block.type === "child_page")
+      .map((block: any) => block.child_page?.title || "")
+      .filter((title: string) => title.length > 0);
 
     if (aphorisms.length === 0) {
       return NextResponse.json({ aphorismo: null, count: 0 });
