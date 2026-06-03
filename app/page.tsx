@@ -344,6 +344,7 @@ export default function Dashboard() {
   const [shortTerm, setShortTerm] = useState<Task[]>([]);
   const [longTerm, setLongTerm] = useState<Task[]>([]);
   const [verse, setVerse] = useState<Verse | null>(null);
+  const [aphorismo, setAphorismo] = useState<string | null>(null);
   const [emails, setEmails] = useState<Email[]>([]);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [events, setEvents] = useState<Event[]>([]);
@@ -357,16 +358,18 @@ export default function Dashboard() {
   const fetchStatic = useCallback(async () => {
     setLoading(true);
     try {
-      const [hRes, tRes, vRes] = await Promise.all([
+      const [hRes, tRes, vRes, aRes] = await Promise.all([
         fetch("/api/wsj"),
         fetch("/api/notion"),
         fetch("/api/verse"),
+        fetch("/api/aphorismo"),
       ]);
-      const [hData, tData, vData] = await Promise.all([hRes.json(), tRes.json(), vRes.json()]);
+      const [hData, tData, vData, aData] = await Promise.all([hRes.json(), tRes.json(), vRes.json(), aRes.json()]);
       setHeadlines(hData.headlines || []);
       setShortTerm(tData.shortTerm || []);
       setLongTerm(tData.longTerm || []);
       setVerse(vData);
+      setAphorismo(aData.aphorismo || null);
     } catch {}
     setLoading(false);
   }, []);
@@ -767,27 +770,51 @@ export default function Dashboard() {
         marginTop: 12,
         display: "flex",
         alignItems: "center",
-        justifyContent: "center",
-        gap: 16,
+        justifyContent: "space-between",
+        gap: 24,
+        minHeight: 60,
       }}>
-        {verse ? (
-          <>
-            <Tag>DAILY WORD</Tag>
-            <span style={{ color: "#222" }}>|</span>
-            <p style={{ margin: 0, fontSize: 13, color: "#686868", fontStyle: "italic", maxWidth: 600 }}>
-              &ldquo;{verse.text}&rdquo;
-            </p>
-            <span style={{ color: "#222" }}>|</span>
-            <span style={{
-              fontFamily: "'Barlow Condensed', sans-serif",
-              fontSize: 14, fontWeight: 500,
-              color: "#aaa", letterSpacing: "0.06em",
-              whiteSpace: "nowrap",
-            }}>{verse.ref}</span>
-          </>
-        ) : (
-          <div style={{ height: 8, width: 300, background: "#1e1e1e", borderRadius: 2 }} />
-        )}
+        {/* Left side - Aphorismo */}
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          {aphorismo ? (
+            <>
+              <Tag>APHORISMO</Tag>
+              <span style={{ color: "#222" }}>|</span>
+              <p style={{ margin: 0, fontSize: 13, color: "#686868", fontStyle: "italic", minWidth: 0 }}>
+                &ldquo;{aphorismo}&rdquo;
+              </p>
+            </>
+          ) : (
+            <div style={{ height: 8, width: 200, background: "#1e1e1e", borderRadius: 2 }} />
+          )}
+        </div>
+
+        <span style={{ color: "#222" }}>|</span>
+
+        {/* Right side - Daily Word */}
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12 }}>
+          {verse ? (
+            <>
+              <div style={{ textAlign: "right", minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 13, color: "#686868", fontStyle: "italic" }}>
+                  &ldquo;{verse.text}&rdquo;
+                </p>
+                <span style={{
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: 12, fontWeight: 500,
+                  color: "#777", letterSpacing: "0.06em",
+                  whiteSpace: "nowrap",
+                  display: "block",
+                  marginTop: 4,
+                }}>{verse.ref}</span>
+              </div>
+              <span style={{ color: "#222" }}>|</span>
+              <Tag>DAILY WORD</Tag>
+            </>
+          ) : (
+            <div style={{ height: 8, width: 200, background: "#1e1e1e", borderRadius: 2 }} />
+          )}
+        </div>
       </footer>
 
       <style>{`
