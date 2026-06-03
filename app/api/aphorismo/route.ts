@@ -37,25 +37,18 @@ export async function GET() {
       })
       .filter((text: string) => text.length > 0);
 
-    // Get today's aphorism based on day of year (cycles through list)
     if (aphorisms.length === 0) {
-      return NextResponse.json({ aphorismo: null, allAphorisms: [] });
+      return NextResponse.json({ aphorismo: null, count: 0 });
     }
 
-    const now = new Date();
-    const start = new Date(now.getFullYear(), 0, 0);
-    const diff = now.getTime() - start.getTime();
-    const oneDay = 1000 * 60 * 60 * 24;
-    const dayOfYear = Math.floor(diff / oneDay);
-    const index = dayOfYear % aphorisms.length;
-
+    // Return a random aphorism
+    const randomIndex = Math.floor(Math.random() * aphorisms.length);
     return NextResponse.json({
-      aphorismo: aphorisms[index],
-      allAphorisms: aphorisms,
-      dayOfYear
+      aphorismo: aphorisms[randomIndex],
+      count: aphorisms.length,
     });
   } catch (error) {
     console.error("Error fetching aphorismo:", error);
-    return NextResponse.json({ aphorismo: null });
+    return NextResponse.json({ aphorismo: null, count: 0 });
   }
 }

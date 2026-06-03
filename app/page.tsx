@@ -347,8 +347,7 @@ export default function Dashboard() {
   const [allVerses, setAllVerses] = useState<Verse[]>([]);
   const [verseIndex, setVerseIndex] = useState(0);
   const [aphorismo, setAphorismo] = useState<string | null>(null);
-  const [allAphorisms, setAllAphorisms] = useState<string[]>([]);
-  const [aphorismoIndex, setAphorismoIndex] = useState(0);
+  const [aphorismoLoading, setAphorismoLoading] = useState(false);
   const [emails, setEmails] = useState<Email[]>([]);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [events, setEvents] = useState<Event[]>([]);
@@ -376,8 +375,6 @@ export default function Dashboard() {
       setAllVerses(vData.allVerses || []);
       setVerseIndex(vData.dayOfYear || 0);
       setAphorismo(aData.aphorismo || null);
-      setAllAphorisms(aData.allAphorisms || []);
-      setAphorismoIndex(aData.dayOfYear || 0);
     } catch {}
     setLoading(false);
   }, []);
@@ -419,6 +416,16 @@ export default function Dashboard() {
       const data = await res.json();
       setPlaylists(data.playlists || []);
     } catch {}
+  }, []);
+
+  const rerollAphorismo = useCallback(async () => {
+    setAphorismoLoading(true);
+    try {
+      const res = await fetch("/api/aphorismo");
+      const data = await res.json();
+      setAphorismo(data.aphorismo || null);
+    } catch {}
+    setAphorismoLoading(false);
   }, []);
 
   useEffect(() => {
@@ -784,35 +791,26 @@ export default function Dashboard() {
       }}>
         {/* Left side - Aphorismo */}
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-          {aphorismo && allAphorisms.length > 0 ? (
+          {aphorismo ? (
             <>
               <button
-                onClick={() => setAphorismoIndex((i) => (i - 1 + allAphorisms.length) % allAphorisms.length)}
+                onClick={rerollAphorismo}
+                disabled={aphorismoLoading}
                 style={{
-                  background: "none", border: "none", cursor: "pointer",
-                  color: "#666", fontSize: 12, padding: "4px 8px",
+                  background: "none", border: "1px solid #444", cursor: "pointer",
+                  color: "#777", fontSize: 11, padding: "4px 8px",
                   fontFamily: "'JetBrains Mono', monospace",
-                  transition: "color 0.15s", flexShrink: 0,
+                  transition: "all 0.15s", flexShrink: 0,
+                  opacity: aphorismoLoading ? 0.5 : 1,
                 }}
-                onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
-                onMouseLeave={e => (e.currentTarget.style.color = "#666")}
-              >←</button>
+                onMouseEnter={e => !aphorismoLoading && (e.currentTarget.style.borderColor = "#999", e.currentTarget.style.color = "#aaa")}
+                onMouseLeave={e => !aphorismoLoading && (e.currentTarget.style.borderColor = "#444", e.currentTarget.style.color = "#777")}
+              >⟳</button>
               <Tag>APHORISMO</Tag>
               <span style={{ color: "#222" }}>|</span>
               <p style={{ margin: 0, fontSize: 13, color: "#686868", fontStyle: "italic", minWidth: 0 }}>
-                &ldquo;{allAphorisms[aphorismoIndex]}&rdquo;
+                &ldquo;{aphorismo}&rdquo;
               </p>
-              <button
-                onClick={() => setAphorismoIndex((i) => (i + 1) % allAphorisms.length)}
-                style={{
-                  background: "none", border: "none", cursor: "pointer",
-                  color: "#666", fontSize: 12, padding: "4px 8px",
-                  fontFamily: "'JetBrains Mono', monospace",
-                  transition: "color 0.15s", flexShrink: 0,
-                }}
-                onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
-                onMouseLeave={e => (e.currentTarget.style.color = "#666")}
-              >→</button>
             </>
           ) : (
             <div style={{ height: 8, width: 200, background: "#1e1e1e", borderRadius: 2 }} />
