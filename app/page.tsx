@@ -344,7 +344,11 @@ export default function Dashboard() {
   const [shortTerm, setShortTerm] = useState<Task[]>([]);
   const [longTerm, setLongTerm] = useState<Task[]>([]);
   const [verse, setVerse] = useState<Verse | null>(null);
+  const [allVerses, setAllVerses] = useState<Verse[]>([]);
+  const [verseIndex, setVerseIndex] = useState(0);
   const [aphorismo, setAphorismo] = useState<string | null>(null);
+  const [allAphorisms, setAllAphorisms] = useState<string[]>([]);
+  const [aphorismoIndex, setAphorismoIndex] = useState(0);
   const [emails, setEmails] = useState<Email[]>([]);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [events, setEvents] = useState<Event[]>([]);
@@ -368,8 +372,12 @@ export default function Dashboard() {
       setHeadlines(hData.headlines || []);
       setShortTerm(tData.shortTerm || []);
       setLongTerm(tData.longTerm || []);
-      setVerse(vData);
+      setVerse(vData.verse || vData); // handle both old and new format
+      setAllVerses(vData.allVerses || []);
+      setVerseIndex(vData.dayOfYear || 0);
       setAphorismo(aData.aphorismo || null);
+      setAllAphorisms(aData.allAphorisms || []);
+      setAphorismoIndex(aData.dayOfYear || 0);
     } catch {}
     setLoading(false);
   }, []);
@@ -776,13 +784,35 @@ export default function Dashboard() {
       }}>
         {/* Left side - Aphorismo */}
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-          {aphorismo ? (
+          {aphorismo && allAphorisms.length > 0 ? (
             <>
+              <button
+                onClick={() => setAphorismoIndex((i) => (i - 1 + allAphorisms.length) % allAphorisms.length)}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  color: "#666", fontSize: 12, padding: "4px 8px",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  transition: "color 0.15s", flexShrink: 0,
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+                onMouseLeave={e => (e.currentTarget.style.color = "#666")}
+              >←</button>
               <Tag>APHORISMO</Tag>
               <span style={{ color: "#222" }}>|</span>
               <p style={{ margin: 0, fontSize: 13, color: "#686868", fontStyle: "italic", minWidth: 0 }}>
-                &ldquo;{aphorismo}&rdquo;
+                &ldquo;{allAphorisms[aphorismoIndex]}&rdquo;
               </p>
+              <button
+                onClick={() => setAphorismoIndex((i) => (i + 1) % allAphorisms.length)}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  color: "#666", fontSize: 12, padding: "4px 8px",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  transition: "color 0.15s", flexShrink: 0,
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+                onMouseLeave={e => (e.currentTarget.style.color = "#666")}
+              >→</button>
             </>
           ) : (
             <div style={{ height: 8, width: 200, background: "#1e1e1e", borderRadius: 2 }} />
@@ -793,11 +823,22 @@ export default function Dashboard() {
 
         {/* Right side - Daily Word */}
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12 }}>
-          {verse ? (
+          {verse && allVerses.length > 0 ? (
             <>
+              <button
+                onClick={() => setVerseIndex((i) => (i - 1 + allVerses.length) % allVerses.length)}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  color: "#666", fontSize: 12, padding: "4px 8px",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  transition: "color 0.15s", flexShrink: 0,
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+                onMouseLeave={e => (e.currentTarget.style.color = "#666")}
+              >←</button>
               <div style={{ textAlign: "right", minWidth: 0 }}>
                 <p style={{ margin: 0, fontSize: 13, color: "#686868", fontStyle: "italic" }}>
-                  &ldquo;{verse.text}&rdquo;
+                  &ldquo;{allVerses[verseIndex]?.text || verse.text}&rdquo;
                 </p>
                 <span style={{
                   fontFamily: "'Barlow Condensed', sans-serif",
@@ -806,10 +847,21 @@ export default function Dashboard() {
                   whiteSpace: "nowrap",
                   display: "block",
                   marginTop: 4,
-                }}>{verse.ref}</span>
+                }}>{allVerses[verseIndex]?.ref || verse.ref}</span>
               </div>
               <span style={{ color: "#222" }}>|</span>
               <Tag>DAILY WORD</Tag>
+              <button
+                onClick={() => setVerseIndex((i) => (i + 1) % allVerses.length)}
+                style={{
+                  background: "none", border: "none", cursor: "pointer",
+                  color: "#666", fontSize: 12, padding: "4px 8px",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  transition: "color 0.15s", flexShrink: 0,
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+                onMouseLeave={e => (e.currentTarget.style.color = "#666")}
+              >→</button>
             </>
           ) : (
             <div style={{ height: 8, width: 200, background: "#1e1e1e", borderRadius: 2 }} />

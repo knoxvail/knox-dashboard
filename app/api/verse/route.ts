@@ -47,5 +47,6 @@ export async function GET() {
     (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000
   );
   const verse = VERSES[dayOfYear % VERSES.length];
-  return NextResponse.json(verse);
+  // Return both the daily verse and all verses for manual cycling
+  return NextResponse.json({ verse, allVerses: VERSES, dayOfYear });
 }

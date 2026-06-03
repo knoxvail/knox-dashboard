@@ -39,7 +39,7 @@ export async function GET() {
 
     // Get today's aphorism based on day of year (cycles through list)
     if (aphorisms.length === 0) {
-      return NextResponse.json({ aphorismo: null });
+      return NextResponse.json({ aphorismo: null, allAphorisms: [] });
     }
 
     const now = new Date();
@@ -49,7 +49,11 @@ export async function GET() {
     const dayOfYear = Math.floor(diff / oneDay);
     const index = dayOfYear % aphorisms.length;
 
-    return NextResponse.json({ aphorismo: aphorisms[index] });
+    return NextResponse.json({
+      aphorismo: aphorisms[index],
+      allAphorisms: aphorisms,
+      dayOfYear
+    });
   } catch (error) {
     console.error("Error fetching aphorismo:", error);
     return NextResponse.json({ aphorismo: null });
