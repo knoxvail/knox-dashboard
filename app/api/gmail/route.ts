@@ -51,8 +51,8 @@ async function fetchEmails(token: string) {
       const subject = get("Subject") || "(no subject)";
       const date = new Date(get("Date")).toLocaleDateString("en-US", { month: "short", day: "numeric" });
       const userIndex = process.env.GMAIL_USER_INDEX || "0";
-      // Fixed link format to open thread in Gmail inbox
-      const link = `https://mail.google.com/mail/u/${userIndex}/#inbox/${msg.threadId}`;
+      // Use #all so the link works regardless of which label the email is under
+      const link = `https://mail.google.com/mail/u/${userIndex}/#all/${msg.threadId}`;
 
       return { id: msg.id, from, subject, date, link };
     })
