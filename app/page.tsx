@@ -14,26 +14,29 @@ type NowPlaying = {
 };
 type Playlist = { id: string; name: string; uri: string; image?: string };
 
-function useCursor() {
-  const [pos, setPos] = useState({ x: -100, y: -100 });
-  const [clicking, setClicking] = useState(false);
+function CustomCursor() {
+  const ref = useRef<HTMLDivElement>(null);
   const [hovering, setHovering] = useState(false);
+  const [clicking, setClicking] = useState(false);
 
   useEffect(() => {
-    const move = (e: MouseEvent) => setPos({ x: e.clientX, y: e.clientY });
+    const el = ref.current;
+    if (el) el.style.transform = "translate3d(-100px,-100px,0) translate(-50%,-50%)";
+    // Move the dot by writing transform straight to the DOM — no React render
+    // per mousemove, so it tracks the cursor with zero perceptible lag.
+    const move = (e: MouseEvent) => {
+      const n = ref.current;
+      if (n) n.style.transform = `translate3d(${e.clientX}px,${e.clientY}px,0) translate(-50%,-50%)`;
+    };
     const down = () => setClicking(true);
     const up = () => setClicking(false);
     const over = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
-      setHovering(
-        t.tagName === "BUTTON" || t.tagName === "A" ||
-        t.closest("button") !== null || t.closest("a") !== null ||
-        getComputedStyle(t).cursor === "pointer"
-      );
+      setHovering(t.tagName === "BUTTON" || t.tagName === "A" || !!t.closest("button") || !!t.closest("a"));
     };
 
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseover", over);
+    window.addEventListener("mousemove", move, { passive: true });
+    window.addEventListener("mouseover", over, { passive: true });
     window.addEventListener("mousedown", down);
     window.addEventListener("mouseup", up);
     return () => {
@@ -44,18 +47,15 @@ function useCursor() {
     };
   }, []);
 
-  return { pos, clicking, hovering };
-}
-
-function CustomCursor() {
-  const { pos, clicking, hovering } = useCursor();
   const dotSize = clicking ? 9 : hovering ? 7 : 5;
 
+  // transform is written imperatively above, so it's intentionally absent here
+  // (React re-renders for size/colour must not clobber the live position)
   return (
-    <div style={{
+    <div ref={ref} style={{
       position: "fixed",
-      left: pos.x - dotSize / 2,
-      top: pos.y - dotSize / 2,
+      top: 0,
+      left: 0,
       width: dotSize,
       height: dotSize,
       borderRadius: "50%",
@@ -65,6 +65,7 @@ function CustomCursor() {
         : "0 0 10px 2px rgba(90,200,225,0.4)",
       pointerEvents: "none",
       zIndex: 99999,
+      willChange: "transform",
       transition: "width 0.12s, height 0.12s, background 0.15s, box-shadow 0.15s",
     }} />
   );
@@ -87,14 +88,22 @@ function DotLake() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     let w = 0, h = 0, cols = 0, rows = 0, raf = 0;
     let buf = new Float32Array(0);   // per-cell extra glow from the wake
-    const GAP = 26;          // grid spacing between dots
+    const GAP = 16;          // grid spacing between dots (smaller = many more)
     const TIP_R = 80;        // glow radius right at the cursor tip
     const TRAIL_R = 58;      // glow radius along the wake
     const TRAIL_LIFE = 1400; // ms a wake point keeps glowing
-    const TRAIL_MAX = 72;    // max wake points retained
-    const AMBIENT = 0.16;    // faint brightness every dot always has
+    const TRAIL_MAX = 110;   // max wake points retained
+    const AMBIENT = 0.10;    // faint brightness every dot always has
     const FIELD_R = 135;     // radius of the cursor's distortion field
-    const PUSH_MAX = 20;     // max px a dot is pushed away from the cursor
+    const PUSH_MAX = 18;     // max px a dot is pushed away from the cursor
+
+    // precomputed style/size for the (constant) faint ambient dot
+    const aR = Math.round(30 + AMBIENT * 150);
+    const aG = Math.round(120 + AMBIENT * 130);
+    const aB = Math.round(150 + AMBIENT * 100);
+    const AMBIENT_STYLE = `rgba(${aR},${aG},${aB},${(0.10 + AMBIENT * 0.65).toFixed(3)})`;
+    const AMB_S = 0.8 + AMBIENT * 1.0;   // small dot side length
+    const AMB_HALF = AMB_S / 2;
 
     const resize = () => {
       const de = document.documentElement;
@@ -151,17 +160,17 @@ function DotLake() {
     };
 
     // draw the dot grid: every dot has a faint AMBIENT glow plus wake glow, and
-    // dots near the cursor are pushed aside so the grid flows as you move
+    // dots near the cursor are pushed aside so the grid flows as you move.
+    // Uses fillRect (cheaper than arc) since there are a lot of dots now.
     const render = () => {
       ctx.clearRect(0, 0, w, h);
       const mx = mouse.current.x, my = mouse.current.y;
       const pushing = field > 0.01;
       const push = PUSH_MAX * field;
+      ctx.fillStyle = AMBIENT_STYLE; // most dots are plain ambient — set once
       for (let cy = 0; cy < rows; cy++) {
         for (let cx = 0; cx < cols; cx++) {
-          let bb = AMBIENT + buf[cy * cols + cx];
-          if (bb <= 0.03) continue;
-          if (bb > 1) bb = 1;
+          const glow = buf[cy * cols + cx];
 
           let gx = cx * GAP, gy = cy * GAP;
           // distortion: shove the dot away from the cursor, strongest up close
@@ -176,14 +185,20 @@ function DotLake() {
             }
           }
 
-          // cyan-white bioluminescence
-          const rC = Math.round(30 + bb * 150);
-          const gC = Math.round(120 + bb * 130);
-          const bC = Math.round(150 + bb * 100);
-          ctx.fillStyle = `rgba(${rC},${gC},${bC},${0.16 + bb * 0.8})`;
-          ctx.beginPath();
-          ctx.arc(gx, gy, 0.9 + bb * 1.6, 0, Math.PI * 2);
-          ctx.fill();
+          if (glow <= 0.002) {
+            // plain faint dot — fillStyle is already AMBIENT_STYLE
+            ctx.fillRect(gx - AMB_HALF, gy - AMB_HALF, AMB_S, AMB_S);
+          } else {
+            let bb = AMBIENT + glow;
+            if (bb > 1) bb = 1;
+            const rC = Math.round(30 + bb * 150);
+            const gC = Math.round(120 + bb * 130);
+            const bC = Math.round(150 + bb * 100);
+            ctx.fillStyle = `rgba(${rC},${gC},${bC},${0.1 + bb * 0.75})`;
+            const s = 0.8 + bb * 1.7;
+            ctx.fillRect(gx - s / 2, gy - s / 2, s, s);
+            ctx.fillStyle = AMBIENT_STYLE; // reset for the next ambient dots
+          }
         }
       }
     };
