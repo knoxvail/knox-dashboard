@@ -93,6 +93,8 @@ function DotLake() {
     const TRAIL_LIFE = 1400; // ms a wake point keeps glowing
     const TRAIL_MAX = 72;    // max wake points retained
     const AMBIENT = 0.16;    // faint brightness every dot always has
+    const FIELD_R = 135;     // radius of the cursor's distortion field
+    const PUSH_MAX = 20;     // max px a dot is pushed away from the cursor
 
     const resize = () => {
       const de = document.documentElement;
@@ -110,6 +112,7 @@ function DotLake() {
     window.addEventListener("resize", resize);
 
     let lastMove = -1e9; // when the cursor last moved (ms)
+    let field = 0;       // distortion strength, eased 0..1 as the cursor moves
     const onMove = (e: MouseEvent) => {
       mouse.current.x = e.clientX;
       mouse.current.y = e.clientY;
@@ -147,21 +150,39 @@ function DotLake() {
       }
     };
 
-    // draw the dot grid: every dot has a faint AMBIENT glow, plus wake glow
+    // draw the dot grid: every dot has a faint AMBIENT glow plus wake glow, and
+    // dots near the cursor are pushed aside so the grid flows as you move
     const render = () => {
       ctx.clearRect(0, 0, w, h);
+      const mx = mouse.current.x, my = mouse.current.y;
+      const pushing = field > 0.01;
+      const push = PUSH_MAX * field;
       for (let cy = 0; cy < rows; cy++) {
         for (let cx = 0; cx < cols; cx++) {
           let bb = AMBIENT + buf[cy * cols + cx];
           if (bb <= 0.03) continue;
           if (bb > 1) bb = 1;
+
+          let gx = cx * GAP, gy = cy * GAP;
+          // distortion: shove the dot away from the cursor, strongest up close
+          if (pushing) {
+            const dx = gx - mx, dy = gy - my;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            if (d < FIELD_R && d > 0.01) {
+              const t = 1 - d / FIELD_R;
+              const off = t * t * push;
+              gx += (dx / d) * off;
+              gy += (dy / d) * off;
+            }
+          }
+
           // cyan-white bioluminescence
           const rC = Math.round(30 + bb * 150);
           const gC = Math.round(120 + bb * 130);
           const bC = Math.round(150 + bb * 100);
           ctx.fillStyle = `rgba(${rC},${gC},${bC},${0.16 + bb * 0.8})`;
           ctx.beginPath();
-          ctx.arc(cx * GAP, cy * GAP, 0.9 + bb * 1.6, 0, Math.PI * 2);
+          ctx.arc(gx, gy, 0.9 + bb * 1.6, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -174,8 +195,15 @@ function DotLake() {
       for (let i = 0; i < tr.length; i++) {
         if (now - tr[i].t < TRAIL_LIFE) { hasLive = true; break; }
       }
-      // "active" = cursor moved very recently, or a wake is still glowing
-      const active = now - lastMove < 250 || hasLive;
+      // ease the distortion strength toward 1 while moving, back to 0 when
+      // still, so the dots flow out and then relax back into the grid
+      const target = now - lastMove < 120 ? 1 : 0;
+      field += (target - field) * 0.14;
+      if (field < 0.005) field = 0;
+
+      // "active" = cursor moved recently, a wake is glowing, or dots are still
+      // relaxing back from a distortion
+      const active = now - lastMove < 250 || hasLive || field > 0.01;
 
       if (active) {
         buf.fill(0);
