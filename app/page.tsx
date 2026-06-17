@@ -59,10 +59,10 @@ function CustomCursor() {
       width: dotSize,
       height: dotSize,
       borderRadius: "50%",
-      background: hovering ? "#dfe8ff" : "#cfd8e8",
+      background: hovering ? "#d6fbff" : "#bff0f5",
       boxShadow: hovering
-        ? "0 0 12px 3px rgba(180,200,255,0.6)"
-        : "0 0 8px 2px rgba(150,170,210,0.4)",
+        ? "0 0 14px 4px rgba(120,230,255,0.55)"
+        : "0 0 10px 2px rgba(90,200,225,0.4)",
       pointerEvents: "none",
       zIndex: 99999,
       transition: "width 0.12s, height 0.12s, background 0.15s, box-shadow 0.15s",
@@ -70,12 +70,13 @@ function CustomCursor() {
   );
 }
 
-// "Black lake" dot-grid shader: a field of dim dots that ripple and catch
-// light as the cursor moves over them, like light skimming dark water.
+// "Black lake" — a near-black field of dots that only light up where the
+// cursor (the "stick") disturbs the water, leaving a luminescent wake that
+// trails behind and slowly fades, like bioluminescence in dark water.
 function DotLake() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const mouse = useRef({ x: -1000, y: -1000, lx: -1000, ly: -1000 });
-  const ripples = useRef<{ x: number; y: number; t: number }[]>([]);
+  const mouse = useRef({ x: -9999, y: -9999, lx: -9999, ly: -9999, active: false });
+  const trail = useRef<{ x: number; y: number; t: number }[]>([]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -84,12 +85,13 @@ function DotLake() {
     if (!ctx) return;
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    let w = 0, h = 0, raf = 0;
-    const GAP = 26;          // grid spacing
-    const LIGHT_R = 170;     // radius of the glow that follows the cursor
-    const RIPPLE_SPEED = 0.2;   // px per ms — how fast a ripple ring expands
-    const RIPPLE_LIFE = 1500;   // ms a ripple lives
-    const RIPPLE_BAND = 34;     // thickness of the ripple ring
+    let w = 0, h = 0, cols = 0, rows = 0, raf = 0;
+    let buf = new Float32Array(0);     // per-cell glow accumulation
+    const GAP = 24;          // grid spacing
+    const TIP_R = 70;        // glow radius right at the cursor tip
+    const TRAIL_R = 52;      // glow radius along the wake
+    const TRAIL_LIFE = 1400; // ms a wake point keeps glowing
+    const TRAIL_MAX = 64;    // max wake points retained
 
     const resize = () => {
       const de = document.documentElement;
@@ -99,75 +101,103 @@ function DotLake() {
       canvas.width = w * dpr; canvas.height = h * dpr;
       canvas.style.width = w + "px"; canvas.style.height = h + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      cols = Math.ceil(w / GAP) + 1;
+      rows = Math.ceil(h / GAP) + 1;
+      buf = new Float32Array(cols * rows);
     };
     resize();
     window.addEventListener("resize", resize);
 
+    let lastMove = -1e9; // when the cursor last moved (ms)
     const onMove = (e: MouseEvent) => {
       mouse.current.x = e.clientX;
       mouse.current.y = e.clientY;
+      mouse.current.active = true;
+      lastMove = performance.now();
       const dx = e.clientX - mouse.current.lx;
       const dy = e.clientY - mouse.current.ly;
-      // spawn a ripple once the cursor has travelled far enough
-      if (dx * dx + dy * dy > 420) {
-        ripples.current.push({ x: e.clientX, y: e.clientY, t: performance.now() });
-        if (ripples.current.length > 16) ripples.current.shift();
+      // drop a wake point every ~10px of travel
+      if (dx * dx + dy * dy > 100) {
+        trail.current.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+        if (trail.current.length > TRAIL_MAX) trail.current.shift();
         mouse.current.lx = e.clientX;
         mouse.current.ly = e.clientY;
       }
     };
+    const onLeave = () => { mouse.current.active = false; };
     window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseout", onLeave);
 
-    const start = performance.now();
-    const draw = (now: number) => {
+    // scatter a soft radial glow into the accumulation buffer (cheap — only
+    // touches the handful of cells inside the radius)
+    const splat = (px: number, py: number, radius: number, intensity: number) => {
+      const mincx = Math.max(0, Math.floor((px - radius) / GAP));
+      const maxcx = Math.min(cols - 1, Math.ceil((px + radius) / GAP));
+      const mincy = Math.max(0, Math.floor((py - radius) / GAP));
+      const maxcy = Math.min(rows - 1, Math.ceil((py + radius) / GAP));
+      const r2 = radius * radius;
+      for (let cx = mincx; cx <= maxcx; cx++) {
+        for (let cy = mincy; cy <= maxcy; cy++) {
+          const ddx = cx * GAP - px, ddy = cy * GAP - py;
+          const d2 = ddx * ddx + ddy * ddy;
+          if (d2 > r2) continue;
+          const f = 1 - Math.sqrt(d2) / radius;
+          buf[cy * cols + cx] += f * f * intensity;
+        }
+      }
+    };
+
+    // Renders one frame: the faint static surface plus whatever glow is in buf.
+    const render = () => {
       ctx.clearRect(0, 0, w, h);
-      const time = (now - start) / 1000;
-      const mx = mouse.current.x, my = mouse.current.y;
-      const rs = ripples.current;
-
-      for (let gx = 0; gx < w; gx += GAP) {
-        for (let gy = 0; gy < h; gy += GAP) {
-          // slow ambient shimmer so the "water" is never fully still
-          let bright = 0.05 + 0.018 * Math.sin(gx * 0.011 + gy * 0.013 + time * 0.7);
-
-          // soft light pooling around the cursor
-          const ldx = gx - mx, ldy = gy - my;
-          const ld = Math.sqrt(ldx * ldx + ldy * ldy);
-          if (ld < LIGHT_R) {
-            const f = 1 - ld / LIGHT_R;
-            bright += f * f * 0.55;
-          }
-
-          // expanding ripple rings from cursor movement
-          let grow = 0;
-          for (let i = 0; i < rs.length; i++) {
-            const r = rs[i];
-            const age = now - r.t;
-            if (age > RIPPLE_LIFE) continue;
-            const radius = age * RIPPLE_SPEED;
-            const rdx = gx - r.x, rdy = gy - r.y;
-            const rd = Math.sqrt(rdx * rdx + rdy * rdy);
-            const band = Math.abs(rd - radius);
-            if (band < RIPPLE_BAND) {
-              const fade = 1 - age / RIPPLE_LIFE;
-              const ring = (1 - band / RIPPLE_BAND) * fade;
-              bright += ring * 0.5;
-              grow += ring * 1.6;
-            }
-          }
-
-          if (bright <= 0.025) continue;
-          if (bright > 1) bright = 1;
-
-          // cool blue-white light on a black lake
-          const rC = Math.round(90 + bright * 130);
-          const gC = Math.round(110 + bright * 135);
-          const bC = Math.round(140 + bright * 115);
-          ctx.fillStyle = `rgba(${rC},${gC},${bC},${bright})`;
+      for (let cy = 0; cy < rows; cy++) {
+        for (let cx = 0; cx < cols; cx++) {
+          // very faint static "surface" so the dark water has a subtle texture
+          let b = 0.04 + buf[cy * cols + cx];
+          if (b <= 0.05) continue;
+          if (b > 1) b = 1;
+          // cyan-white bioluminescence
+          const rC = Math.round(30 + b * 150);
+          const gC = Math.round(120 + b * 130);
+          const bC = Math.round(150 + b * 100);
+          ctx.fillStyle = `rgba(${rC},${gC},${bC},${0.16 + b * 0.84})`;
           ctx.beginPath();
-          ctx.arc(gx, gy, 1 + grow + bright * 0.9, 0, Math.PI * 2);
+          ctx.arc(cx * GAP, cy * GAP, 0.8 + b * 1.7, 0, Math.PI * 2);
           ctx.fill();
         }
+      }
+    };
+
+    let idleDrawn = false;
+    const draw = (now: number) => {
+      const tr = trail.current;
+      let hasLive = false;
+      for (let i = 0; i < tr.length; i++) {
+        if (now - tr[i].t < TRAIL_LIFE) { hasLive = true; break; }
+      }
+      // "active" = cursor moved very recently, or a wake is still glowing
+      const active = now - lastMove < 250 || hasLive;
+
+      if (active) {
+        buf.fill(0);
+        for (let i = 0; i < tr.length; i++) {
+          const p = tr[i];
+          const age = now - p.t;
+          if (age > TRAIL_LIFE) continue;
+          const fade = 1 - age / TRAIL_LIFE;
+          splat(p.x, p.y, TRAIL_R * (0.55 + 0.45 * fade), 0.5 * fade);
+        }
+        if (mouse.current.active && now - lastMove < 250) {
+          splat(mouse.current.x, mouse.current.y, TIP_R, 0.95);
+        }
+        render();
+        idleDrawn = false;
+      } else if (!idleDrawn) {
+        // settle to the static surface once, then stop repainting so the
+        // backdrop-blur behind the panels isn't recomputed every frame
+        buf.fill(0);
+        render();
+        idleDrawn = true;
       }
       raf = requestAnimationFrame(draw);
     };
@@ -177,6 +207,7 @@ function DotLake() {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
       window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseout", onLeave);
     };
   }, []);
 
@@ -223,7 +254,11 @@ function Tag({ children, accent }: { children: React.ReactNode; accent?: boolean
 function Panel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <div style={{
-      background: "#111111",
+      // translucent so the lake's glow shows through, with a blur that turns it
+      // into a soft fog behind the content rather than a sharp distraction
+      background: "rgba(12,14,18,0.62)",
+      backdropFilter: "blur(9px)",
+      WebkitBackdropFilter: "blur(9px)",
       border: "1px solid #2a2a2a",
       position: "relative",
       padding: "18px 20px",
