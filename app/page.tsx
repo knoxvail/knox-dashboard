@@ -49,39 +49,142 @@ function useCursor() {
 
 function CustomCursor() {
   const { pos, clicking, hovering } = useCursor();
-  const size = hovering ? 36 : clicking ? 20 : 28;
-  const dotSize = clicking ? 6 : 4;
+  const dotSize = clicking ? 9 : hovering ? 7 : 5;
 
   return (
-    <>
-      {/* Outer ring */}
-      <div style={{
-        position: "fixed",
-        left: pos.x - size / 2,
-        top: pos.y - size / 2,
-        width: size,
-        height: size,
-        borderRadius: "50%",
-        border: `1px solid ${hovering ? "#aaa" : "#666"}`,
-        pointerEvents: "none",
-        zIndex: 99999,
-        transition: "width 0.15s, height 0.15s, left 0.15s, top 0.15s, border-color 0.15s",
-        mixBlendMode: "difference",
-      }} />
-      {/* Center dot */}
-      <div style={{
-        position: "fixed",
-        left: pos.x - dotSize / 2,
-        top: pos.y - dotSize / 2,
-        width: dotSize,
-        height: dotSize,
-        borderRadius: "50%",
-        background: hovering ? "#aaa" : "#666",
-        pointerEvents: "none",
-        zIndex: 99999,
-        transition: "width 0.1s, height 0.1s, background 0.15s",
-      }} />
-    </>
+    <div style={{
+      position: "fixed",
+      left: pos.x - dotSize / 2,
+      top: pos.y - dotSize / 2,
+      width: dotSize,
+      height: dotSize,
+      borderRadius: "50%",
+      background: hovering ? "#dfe8ff" : "#cfd8e8",
+      boxShadow: hovering
+        ? "0 0 12px 3px rgba(180,200,255,0.6)"
+        : "0 0 8px 2px rgba(150,170,210,0.4)",
+      pointerEvents: "none",
+      zIndex: 99999,
+      transition: "width 0.12s, height 0.12s, background 0.15s, box-shadow 0.15s",
+    }} />
+  );
+}
+
+// "Black lake" dot-grid shader: a field of dim dots that ripple and catch
+// light as the cursor moves over them, like light skimming dark water.
+function DotLake() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mouse = useRef({ x: -1000, y: -1000, lx: -1000, ly: -1000 });
+  const ripples = useRef<{ x: number; y: number; t: number }[]>([]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let w = 0, h = 0, raf = 0;
+    const GAP = 26;          // grid spacing
+    const LIGHT_R = 170;     // radius of the glow that follows the cursor
+    const RIPPLE_SPEED = 0.2;   // px per ms — how fast a ripple ring expands
+    const RIPPLE_LIFE = 1500;   // ms a ripple lives
+    const RIPPLE_BAND = 34;     // thickness of the ripple ring
+
+    const resize = () => {
+      const de = document.documentElement;
+      w = de.clientWidth || window.innerWidth;
+      h = de.clientHeight || window.innerHeight;
+      if (w < 2) w = 1280; // guard against bad viewport-width reads
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      canvas.style.width = w + "px"; canvas.style.height = h + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const onMove = (e: MouseEvent) => {
+      mouse.current.x = e.clientX;
+      mouse.current.y = e.clientY;
+      const dx = e.clientX - mouse.current.lx;
+      const dy = e.clientY - mouse.current.ly;
+      // spawn a ripple once the cursor has travelled far enough
+      if (dx * dx + dy * dy > 420) {
+        ripples.current.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+        if (ripples.current.length > 16) ripples.current.shift();
+        mouse.current.lx = e.clientX;
+        mouse.current.ly = e.clientY;
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+
+    const start = performance.now();
+    const draw = (now: number) => {
+      ctx.clearRect(0, 0, w, h);
+      const time = (now - start) / 1000;
+      const mx = mouse.current.x, my = mouse.current.y;
+      const rs = ripples.current;
+
+      for (let gx = 0; gx < w; gx += GAP) {
+        for (let gy = 0; gy < h; gy += GAP) {
+          // slow ambient shimmer so the "water" is never fully still
+          let bright = 0.05 + 0.018 * Math.sin(gx * 0.011 + gy * 0.013 + time * 0.7);
+
+          // soft light pooling around the cursor
+          const ldx = gx - mx, ldy = gy - my;
+          const ld = Math.sqrt(ldx * ldx + ldy * ldy);
+          if (ld < LIGHT_R) {
+            const f = 1 - ld / LIGHT_R;
+            bright += f * f * 0.55;
+          }
+
+          // expanding ripple rings from cursor movement
+          let grow = 0;
+          for (let i = 0; i < rs.length; i++) {
+            const r = rs[i];
+            const age = now - r.t;
+            if (age > RIPPLE_LIFE) continue;
+            const radius = age * RIPPLE_SPEED;
+            const rdx = gx - r.x, rdy = gy - r.y;
+            const rd = Math.sqrt(rdx * rdx + rdy * rdy);
+            const band = Math.abs(rd - radius);
+            if (band < RIPPLE_BAND) {
+              const fade = 1 - age / RIPPLE_LIFE;
+              const ring = (1 - band / RIPPLE_BAND) * fade;
+              bright += ring * 0.5;
+              grow += ring * 1.6;
+            }
+          }
+
+          if (bright <= 0.025) continue;
+          if (bright > 1) bright = 1;
+
+          // cool blue-white light on a black lake
+          const rC = Math.round(90 + bright * 130);
+          const gC = Math.round(110 + bright * 135);
+          const bC = Math.round(140 + bright * 115);
+          ctx.fillStyle = `rgba(${rC},${gC},${bC},${bright})`;
+          ctx.beginPath();
+          ctx.arc(gx, gy, 1 + grow + bright * 0.9, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("mousemove", onMove);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }}
+    />
   );
 }
 
@@ -604,6 +707,7 @@ export default function Dashboard() {
       fontFamily: "'DM Sans', sans-serif",
       cursor: "none",
     }}>
+      <DotLake />
       <CustomCursor />
       <div style={{
         position: "fixed", top: 0, left: 0, right: 0, height: 1,
@@ -611,7 +715,7 @@ export default function Dashboard() {
         animation: "scan 12s linear infinite", zIndex: 100, pointerEvents: "none",
       }} />
 
-      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px 12px" }}>
+      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px 12px", position: "relative", zIndex: 1 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#999", boxShadow: "0 0 8px #999" }} />
           <Tag accent>KNOX // COMMAND CENTER</Tag>
@@ -652,6 +756,8 @@ export default function Dashboard() {
         gap: 12,
         padding: "0 24px",
         minHeight: 0,
+        position: "relative",
+        zIndex: 1,
       }}>
 
         {/* Left column: WSJ + Up Next */}
@@ -861,6 +967,8 @@ export default function Dashboard() {
         justifyContent: "space-between",
         gap: 24,
         minHeight: 60,
+        position: "relative",
+        zIndex: 1,
       }}>
         {/* Left side - Aphorismo */}
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
@@ -940,7 +1048,7 @@ export default function Dashboard() {
         </div>
       </footer>
 
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400&family=DM+Sans:wght@300;400;500&display=swap');
         @keyframes scan {
           0% { transform: translateY(-2px); }
@@ -950,7 +1058,7 @@ export default function Dashboard() {
         body { margin: 0; overflow: hidden; }
         ::-webkit-scrollbar { width: 2px; }
         ::-webkit-scrollbar-thumb { background: #2a2a2a; }
-      `}</style>
+      ` }} />
     </div>
   );
 }
