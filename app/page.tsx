@@ -70,9 +70,9 @@ function CustomCursor() {
   );
 }
 
-// "Black lake" — pure black water that only lights up where the cursor (the
-// "stick") disturbs it, leaving a smooth luminescent wake that trails behind
-// and slowly fades, like bioluminescence in dark water.
+// "Black lake" — a faint grid of dots over dark water that brighten where the
+// cursor (the "stick") disturbs it, leaving a luminescent wake that trails
+// behind and slowly fades, like bioluminescence in dark water.
 function DotLake() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mouse = useRef({ x: -9999, y: -9999, lx: -9999, ly: -9999, active: false });
@@ -85,26 +85,14 @@ function DotLake() {
     if (!ctx) return;
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    let w = 0, h = 0, raf = 0;
-    const TIP_R = 95;        // glow radius right at the cursor tip
-    const TRAIL_R = 64;      // glow radius along the wake
-    const TRAIL_LIFE = 1500; // ms a wake point keeps glowing
-    const TRAIL_MAX = 80;    // max wake points retained
-
-    // A soft cyan glow sprite, built once, then stamped (additively) along the
-    // wake — smooth light instead of discrete dots.
-    const SP = 256;
-    const sprite = document.createElement("canvas");
-    sprite.width = SP; sprite.height = SP;
-    const sctx = sprite.getContext("2d");
-    if (sctx) {
-      const g = sctx.createRadialGradient(SP / 2, SP / 2, 0, SP / 2, SP / 2, SP / 2);
-      g.addColorStop(0, "rgba(200,250,255,0.95)");
-      g.addColorStop(0.25, "rgba(120,228,250,0.45)");
-      g.addColorStop(1, "rgba(80,200,230,0)");
-      sctx.fillStyle = g;
-      sctx.fillRect(0, 0, SP, SP);
-    }
+    let w = 0, h = 0, cols = 0, rows = 0, raf = 0;
+    let buf = new Float32Array(0);   // per-cell extra glow from the wake
+    const GAP = 26;          // grid spacing between dots
+    const TIP_R = 80;        // glow radius right at the cursor tip
+    const TRAIL_R = 58;      // glow radius along the wake
+    const TRAIL_LIFE = 1400; // ms a wake point keeps glowing
+    const TRAIL_MAX = 72;    // max wake points retained
+    const AMBIENT = 0.16;    // faint brightness every dot always has
 
     const resize = () => {
       const de = document.documentElement;
@@ -114,6 +102,9 @@ function DotLake() {
       canvas.width = w * dpr; canvas.height = h * dpr;
       canvas.style.width = w + "px"; canvas.style.height = h + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      cols = Math.ceil(w / GAP) + 1;
+      rows = Math.ceil(h / GAP) + 1;
+      buf = new Float32Array(cols * rows);
     };
     resize();
     window.addEventListener("resize", resize);
@@ -138,13 +129,45 @@ function DotLake() {
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseout", onLeave);
 
-    // stamp the glow sprite, scaled to a radius and faded by alpha
-    const stamp = (px: number, py: number, radius: number, alpha: number) => {
-      ctx.globalAlpha = alpha;
-      ctx.drawImage(sprite, px - radius, py - radius, radius * 2, radius * 2);
+    // scatter a soft radial glow into the buffer (only touches nearby cells)
+    const splat = (px: number, py: number, radius: number, intensity: number) => {
+      const a = Math.max(0, Math.floor((px - radius) / GAP));
+      const b = Math.min(cols - 1, Math.ceil((px + radius) / GAP));
+      const u = Math.max(0, Math.floor((py - radius) / GAP));
+      const v = Math.min(rows - 1, Math.ceil((py + radius) / GAP));
+      const r2 = radius * radius;
+      for (let cx = a; cx <= b; cx++) {
+        for (let cy = u; cy <= v; cy++) {
+          const ddx = cx * GAP - px, ddy = cy * GAP - py;
+          const d2 = ddx * ddx + ddy * ddy;
+          if (d2 > r2) continue;
+          const f = 1 - Math.sqrt(d2) / radius;
+          buf[cy * cols + cx] += f * f * intensity;
+        }
+      }
     };
 
-    let idleCleared = false;
+    // draw the dot grid: every dot has a faint AMBIENT glow, plus wake glow
+    const render = () => {
+      ctx.clearRect(0, 0, w, h);
+      for (let cy = 0; cy < rows; cy++) {
+        for (let cx = 0; cx < cols; cx++) {
+          let bb = AMBIENT + buf[cy * cols + cx];
+          if (bb <= 0.03) continue;
+          if (bb > 1) bb = 1;
+          // cyan-white bioluminescence
+          const rC = Math.round(30 + bb * 150);
+          const gC = Math.round(120 + bb * 130);
+          const bC = Math.round(150 + bb * 100);
+          ctx.fillStyle = `rgba(${rC},${gC},${bC},${0.16 + bb * 0.8})`;
+          ctx.beginPath();
+          ctx.arc(cx * GAP, cy * GAP, 0.9 + bb * 1.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    };
+
+    let idleDrawn = false;
     const draw = (now: number) => {
       const tr = trail.current;
       let hasLive = false;
@@ -155,28 +178,25 @@ function DotLake() {
       const active = now - lastMove < 250 || hasLive;
 
       if (active) {
-        ctx.globalCompositeOperation = "source-over";
-        ctx.clearRect(0, 0, w, h);
-        ctx.globalCompositeOperation = "lighter"; // additive — overlaps brighten
+        buf.fill(0);
         for (let i = 0; i < tr.length; i++) {
           const p = tr[i];
           const age = now - p.t;
           if (age > TRAIL_LIFE) continue;
           const fade = 1 - age / TRAIL_LIFE;
-          stamp(p.x, p.y, TRAIL_R * (0.5 + 0.5 * fade), 0.32 * fade);
+          splat(p.x, p.y, TRAIL_R * (0.55 + 0.45 * fade), 0.55 * fade);
         }
-        // bright disturbance right at the stick tip
         if (mouse.current.active && now - lastMove < 250) {
-          stamp(mouse.current.x, mouse.current.y, TIP_R, 0.55);
+          splat(mouse.current.x, mouse.current.y, TIP_R, 0.95);
         }
-        ctx.globalAlpha = 1;
-        idleCleared = false;
-      } else if (!idleCleared) {
-        // nothing glowing -> clear to pure black water and stop repainting,
-        // so the backdrop-blur behind the panels isn't recomputed every frame
-        ctx.globalCompositeOperation = "source-over";
-        ctx.clearRect(0, 0, w, h);
-        idleCleared = true;
+        render();
+        idleDrawn = false;
+      } else if (!idleDrawn) {
+        // settle to the faint static dot grid, then stop repainting so the
+        // backdrop-blur behind the panels isn't recomputed every frame
+        buf.fill(0);
+        render();
+        idleDrawn = true;
       }
       raf = requestAnimationFrame(draw);
     };
