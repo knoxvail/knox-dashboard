@@ -14,6 +14,77 @@ type NowPlaying = {
 };
 type Playlist = { id: string; name: string; uri: string; image?: string };
 
+function useCursor() {
+  const [pos, setPos] = useState({ x: -100, y: -100 });
+  const [clicking, setClicking] = useState(false);
+  const [hovering, setHovering] = useState(false);
+
+  useEffect(() => {
+    const move = (e: MouseEvent) => setPos({ x: e.clientX, y: e.clientY });
+    const down = () => setClicking(true);
+    const up = () => setClicking(false);
+    const over = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      setHovering(
+        t.tagName === "BUTTON" || t.tagName === "A" ||
+        t.closest("button") !== null || t.closest("a") !== null ||
+        getComputedStyle(t).cursor === "pointer"
+      );
+    };
+
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseover", over);
+    window.addEventListener("mousedown", down);
+    window.addEventListener("mouseup", up);
+    return () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseover", over);
+      window.removeEventListener("mousedown", down);
+      window.removeEventListener("mouseup", up);
+    };
+  }, []);
+
+  return { pos, clicking, hovering };
+}
+
+function CustomCursor() {
+  const { pos, clicking, hovering } = useCursor();
+  const size = hovering ? 36 : clicking ? 20 : 28;
+  const dotSize = clicking ? 6 : 4;
+
+  return (
+    <>
+      {/* Outer ring */}
+      <div style={{
+        position: "fixed",
+        left: pos.x - size / 2,
+        top: pos.y - size / 2,
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        border: `1px solid ${hovering ? "#aaa" : "#666"}`,
+        pointerEvents: "none",
+        zIndex: 99999,
+        transition: "width 0.15s, height 0.15s, left 0.15s, top 0.15s, border-color 0.15s",
+        mixBlendMode: "difference",
+      }} />
+      {/* Center dot */}
+      <div style={{
+        position: "fixed",
+        left: pos.x - dotSize / 2,
+        top: pos.y - dotSize / 2,
+        width: dotSize,
+        height: dotSize,
+        borderRadius: "50%",
+        background: hovering ? "#aaa" : "#666",
+        pointerEvents: "none",
+        zIndex: 99999,
+        transition: "width 0.1s, height 0.1s, background 0.15s",
+      }} />
+    </>
+  );
+}
+
 function useClock() {
   const [time, setTime] = useState({ h: "", m: "", s: "", date: "", day: "" });
   useEffect(() => {
@@ -531,7 +602,9 @@ export default function Dashboard() {
       backgroundImage: "linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px)",
       backgroundSize: "48px 48px",
       fontFamily: "'DM Sans', sans-serif",
+      cursor: "none",
     }}>
+      <CustomCursor />
       <div style={{
         position: "fixed", top: 0, left: 0, right: 0, height: 1,
         background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)",
@@ -873,7 +946,7 @@ export default function Dashboard() {
           0% { transform: translateY(-2px); }
           100% { transform: translateY(100vh); }
         }
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; cursor: none !important; }
         body { margin: 0; overflow: hidden; }
         ::-webkit-scrollbar { width: 2px; }
         ::-webkit-scrollbar-thumb { background: #2a2a2a; }
