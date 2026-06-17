@@ -1005,7 +1005,14 @@ export default function Dashboard() {
         zIndex: 1,
       }}>
         {/* Left side - Aphorismo */}
-        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        <div style={{
+          flex: 1, display: "flex", alignItems: "center", gap: 12, minWidth: 0,
+          background: "rgba(12,14,18,0.5)",
+          backdropFilter: "blur(7px)",
+          WebkitBackdropFilter: "blur(7px)",
+          border: "1px solid #2a2a2a",
+          padding: "10px 14px",
+        }}>
           {aphorismo ? (
             <>
               <button
@@ -1032,10 +1039,15 @@ export default function Dashboard() {
           )}
         </div>
 
-        <span style={{ color: "#222" }}>|</span>
-
         {/* Right side - Daily Word */}
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12 }}>
+        <div style={{
+          flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12, minWidth: 0,
+          background: "rgba(12,14,18,0.5)",
+          backdropFilter: "blur(7px)",
+          WebkitBackdropFilter: "blur(7px)",
+          border: "1px solid #2a2a2a",
+          padding: "10px 14px",
+        }}>
           {verse && allVerses.length > 0 ? (
             <>
               <button
