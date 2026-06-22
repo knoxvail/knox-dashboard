@@ -124,10 +124,22 @@ export async function POST(request: NextRequest) {
   const ep = endpoints[action];
   if (!ep) return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 
-  await fetch(`https://api.spotify.com/v1${ep.path}`, {
-    method: ep.method,
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  try {
+    const res = await fetch(`https://api.spotify.com/v1${ep.path}`, {
+      method: ep.method,
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-  return NextResponse.json({ success: true });
+    // Spotify returns 204 on success; only report success if it really worked
+    if (!res.ok && res.status !== 204) {
+      const err = await res.json().catch(() => ({}));
+      console.error(`Spotify ${action} failed:`, res.status, err);
+      return NextResponse.json({ error: `${action} failed` }, { status: res.status });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error(`POST /api/spotify/now-playing (${action}) error:`, error);
+    return NextResponse.json({ error: "Failed" }, { status: 500 });
+  }
 }

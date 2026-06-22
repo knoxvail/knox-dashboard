@@ -130,9 +130,12 @@ export async function POST(request: NextRequest) {
   if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
 
   const { id } = await request.json();
+  if (!id || typeof id !== "string") {
+    return NextResponse.json({ error: "Missing message id" }, { status: 400 });
+  }
 
   try {
-    await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}/modify`, {
+    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}/modify`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -140,6 +143,14 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({ removeLabelIds: ["INBOX"] }),
     });
+
+    // Only report success if Gmail actually archived the message
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error("Gmail archive failed:", res.status, err);
+      return NextResponse.json({ error: "Archive failed" }, { status: res.status });
+    }
+
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json({ error: "Failed" }, { status: 500 });

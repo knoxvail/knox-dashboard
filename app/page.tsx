@@ -609,26 +609,52 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
 
+  // Each source fetches independently so one slow endpoint (e.g. the external
+  // headlines feed) never blocks the others — no single-dependency bottleneck.
+  const fetchTasks = useCallback(async () => {
+    try {
+      const res = await fetch("/api/notion");
+      const data = await res.json();
+      setShortTerm(data.shortTerm || []);
+      setLongTerm(data.longTerm || []);
+    } catch {}
+  }, []);
+
+  const fetchHeadlines = useCallback(async () => {
+    try {
+      const res = await fetch("/api/wsj");
+      const data = await res.json();
+      setHeadlines(data.headlines || []);
+    } catch {}
+  }, []);
+
+  const fetchVerse = useCallback(async () => {
+    try {
+      const res = await fetch("/api/verse");
+      const data = await res.json();
+      setVerse(data.verse || data); // handle both old and new format
+      setAllVerses(data.allVerses || []);
+      setVerseIndex(data.dayOfYear || 0);
+    } catch {}
+  }, []);
+
+  const fetchAphorismo = useCallback(async () => {
+    try {
+      const res = await fetch("/api/aphorismo");
+      const data = await res.json();
+      setAphorismo(data.aphorismo || null);
+    } catch {}
+  }, []);
+
   const fetchStatic = useCallback(async () => {
     setLoading(true);
-    try {
-      const [hRes, tRes, vRes, aRes] = await Promise.all([
-        fetch("/api/wsj"),
-        fetch("/api/notion"),
-        fetch("/api/verse"),
-        fetch("/api/aphorismo"),
-      ]);
-      const [hData, tData, vData, aData] = await Promise.all([hRes.json(), tRes.json(), vRes.json(), aRes.json()]);
-      setHeadlines(hData.headlines || []);
-      setShortTerm(tData.shortTerm || []);
-      setLongTerm(tData.longTerm || []);
-      setVerse(vData.verse || vData); // handle both old and new format
-      setAllVerses(vData.allVerses || []);
-      setVerseIndex(vData.dayOfYear || 0);
-      setAphorismo(aData.aphorismo || null);
-    } catch {}
+    await fetchTasks();   // primary content — drop the skeleton as soon as it lands
     setLoading(false);
-  }, []);
+    // these update their own slots as they arrive; not gated on each other
+    fetchHeadlines();
+    fetchVerse();
+    fetchAphorismo();
+  }, [fetchTasks, fetchHeadlines, fetchVerse, fetchAphorismo]);
 
   const fetchSpotify = useCallback(async () => {
     try {
@@ -692,14 +718,19 @@ export default function Dashboard() {
   }, [fetchSpotify]);
 
   const completeTask = async (id: string) => {
+    // optimistic: drop it from the UI immediately
     setShortTerm(prev => prev.filter(t => t.id !== id));
     setLongTerm(prev => prev.filter(t => t.id !== id));
-    await fetch("/api/notion", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, action: "complete" }),
-    });
-    await fetchStatic();
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action: "complete" }),
+      });
+      if (!res.ok) await fetchTasks(); // revert just the tasks on failure
+    } catch {
+      await fetchTasks();
+    }
   };
 
   const editTask = async (id: string, newTitle: string) => {
@@ -723,12 +754,25 @@ export default function Dashboard() {
   };
 
   const addTask = async (title: string, status: "Short Term" | "Long Term") => {
-    await fetch("/api/notion", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, status }),
-    });
-    await fetchStatic();
+    // optimistic: show the task right away with a temporary id
+    const tempId = `temp-${Date.now()}`;
+    const setList = status === "Short Term" ? setShortTerm : setLongTerm;
+    setList(prev => [...prev, { id: tempId, title }]);
+    try {
+      const res = await fetch("/api/notion", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, status }),
+      });
+      if (!res.ok) {
+        setList(prev => prev.filter(t => t.id !== tempId)); // roll back on failure
+        return;
+      }
+    } catch {
+      setList(prev => prev.filter(t => t.id !== tempId));
+      return;
+    }
+    fetchTasks(); // reconcile the temp row with the real Notion id
   };
 
   const archiveEmail = async (id: string) => {
@@ -742,6 +786,10 @@ export default function Dashboard() {
   };
 
   const spotifyAction = async (action: string) => {
+    // optimistic: flip play/pause in the UI immediately
+    if (action === "play" || action === "pause") {
+      setNowPlaying(p => ({ ...p, playing: action === "play" }));
+    }
     await fetch("/api/spotify/now-playing", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
