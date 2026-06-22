@@ -1057,6 +1057,8 @@ function Lock({ onUnlock }: { onUnlock: () => void }) {
 
   const submit = () => {
     if (value.trim() === ACCESS_CODE) {
+      // localStorage is per-browser and persists across tab closes, so this
+      // device stays unlocked while a different browser/device must enter the code
       try { localStorage.setItem("knox_unlocked", "1"); } catch {}
       onUnlock();
     } else {
