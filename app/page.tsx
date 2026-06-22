@@ -434,7 +434,7 @@ function AddTaskInput({ onAdd }: { onAdd: (title: string) => Promise<void> }) {
   );
 }
 
-export default function Dashboard() {
+function Dashboard() {
   const clock = useClock();
   const [headlines, setHeadlines] = useState<Headline[]>([]);
   const [shortTerm, setShortTerm] = useState<Task[]>([]);
@@ -1042,4 +1042,99 @@ export default function Dashboard() {
       ` }} />
     </div>
   );
+}
+
+const ACCESS_CODE = "2904";
+
+// Simple client-side access gate. Note: this only keeps casual visitors out —
+// the code ships in the page bundle, so it isn't real security.
+function Lock({ onUnlock }: { onUnlock: () => void }) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const submit = () => {
+    if (value.trim() === ACCESS_CODE) {
+      try { localStorage.setItem("knox_unlocked", "1"); } catch {}
+      onUnlock();
+    } else {
+      setError(true);
+      setValue("");
+    }
+  };
+
+  return (
+    <div style={{
+      background: "#0a0a0a",
+      minHeight: "100vh",
+      width: "100vw",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 22,
+      fontFamily: "'DM Sans', sans-serif",
+      backgroundImage: "linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px)",
+      backgroundSize: "48px 48px",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#999", boxShadow: "0 0 8px #999" }} />
+        <span style={{
+          fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+          letterSpacing: "0.18em", color: "#e8e8e8", textTransform: "uppercase",
+        }}>KNOX // COMMAND CENTER</span>
+      </div>
+
+      <span style={{
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+        letterSpacing: "0.2em", textTransform: "uppercase",
+        color: error ? "#c06464" : "#666",
+        transition: "color 0.2s",
+      }}>{error ? "ACCESS DENIED" : "ENTER ACCESS CODE"}</span>
+
+      <input
+        ref={inputRef}
+        type="password"
+        inputMode="numeric"
+        value={value}
+        onChange={e => { setValue(e.target.value); if (error) setError(false); }}
+        onKeyDown={e => { if (e.key === "Enter") submit(); }}
+        style={{
+          background: "rgba(20,20,20,0.6)",
+          border: `1px solid ${error ? "#7a3a3a" : "#2a2a2a"}`,
+          color: "#ddd", fontSize: 22, letterSpacing: "0.5em",
+          textAlign: "center", padding: "12px 16px", width: 200,
+          fontFamily: "'JetBrains Mono', monospace", outline: "none",
+          borderRadius: 2, transition: "border-color 0.2s",
+        }}
+      />
+
+      <button onClick={submit} style={{
+        background: "#1e1e1e", border: "1px solid #444", color: "#aaa",
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.2em",
+        padding: "8px 22px", cursor: "pointer", textTransform: "uppercase", borderRadius: 2,
+        transition: "border-color 0.2s, color 0.2s",
+      }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = "#888"; e.currentTarget.style.color = "#fff"; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = "#444"; e.currentTarget.style.color = "#aaa"; }}
+      >UNLOCK</button>
+    </div>
+  );
+}
+
+export default function Page() {
+  const [unlocked, setUnlocked] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  // read the saved unlock state once, client-side, before deciding what to show
+  useEffect(() => {
+    try { setUnlocked(localStorage.getItem("knox_unlocked") === "1"); } catch {}
+    setReady(true);
+  }, []);
+
+  if (!ready) return null;                       // avoid a flash of the lock on reload
+  if (!unlocked) return <Lock onUnlock={() => setUnlocked(true)} />;
+  return <Dashboard />;
 }
