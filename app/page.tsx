@@ -14,22 +14,39 @@ type NowPlaying = {
 };
 type Playlist = { id: string; name: string; uri: string; image?: string };
 
+// Black-and-white reticle cursor (Destiny-style): a dot that tracks the pointer
+// exactly, plus a ring that eases in close behind it. Hides when the pointer
+// leaves the window.
 function CustomCursor() {
-  const ref = useRef<HTMLDivElement>(null);
+  const dotRef = useRef<HTMLDivElement>(null);
+  const ringRef = useRef<HTMLDivElement>(null);
   const [hovering, setHovering] = useState(false);
-  const [clicking, setClicking] = useState(false);
 
   useEffect(() => {
-    const el = ref.current;
-    if (el) el.style.transform = "translate3d(-100px,-100px,0) translate(-50%,-50%)";
-    // Move the dot by writing transform straight to the DOM — no React render
-    // per mousemove, so it tracks the cursor with zero perceptible lag.
-    const move = (e: MouseEvent) => {
-      const n = ref.current;
-      if (n) n.style.transform = `translate3d(${e.clientX}px,${e.clientY}px,0) translate(-50%,-50%)`;
+    let mx = -100, my = -100;   // live cursor target
+    let rx = -100, ry = -100;   // ring's eased position
+    let shown = false;
+    let raf = 0;
+
+    const setShown = (v: boolean) => {
+      if (shown === v) return;
+      shown = v;
+      const o = v ? "1" : "0";
+      if (dotRef.current) dotRef.current.style.opacity = o;
+      if (ringRef.current) ringRef.current.style.opacity = o;
     };
-    const down = () => setClicking(true);
-    const up = () => setClicking(false);
+
+    const move = (e: MouseEvent) => {
+      mx = e.clientX; my = e.clientY;
+      setShown(true);
+      // the dot tracks the cursor exactly — written straight to the DOM
+      const d = dotRef.current;
+      if (d) d.style.transform = `translate3d(${mx}px,${my}px,0) translate(-50%,-50%)`;
+    };
+    // hide whenever the pointer leaves the page or the window loses focus
+    const out = (e: MouseEvent) => { if (!e.relatedTarget) setShown(false); };
+    const leaveDoc = () => setShown(false);
+    const blur = () => setShown(false);
     const over = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
       setHovering(t.tagName === "BUTTON" || t.tagName === "A" || !!t.closest("button") || !!t.closest("a"));
@@ -37,227 +54,55 @@ function CustomCursor() {
 
     window.addEventListener("mousemove", move, { passive: true });
     window.addEventListener("mouseover", over, { passive: true });
-    window.addEventListener("mousedown", down);
-    window.addEventListener("mouseup", up);
-    return () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseover", over);
-      window.removeEventListener("mousedown", down);
-      window.removeEventListener("mouseup", up);
+    window.addEventListener("mouseout", out, { passive: true });
+    document.addEventListener("mouseleave", leaveDoc);
+    window.addEventListener("blur", blur);
+
+    // the ring eases toward the cursor each frame — close follow, gentle lag
+    const loop = () => {
+      rx += (mx - rx) * 0.35;
+      ry += (my - ry) * 0.35;
+      const r = ringRef.current;
+      if (r) r.style.transform = `translate3d(${rx}px,${ry}px,0) translate(-50%,-50%)`;
+      raf = requestAnimationFrame(loop);
     };
-  }, []);
-
-  const dotSize = clicking ? 9 : hovering ? 7 : 5;
-
-  // transform is written imperatively above, so it's intentionally absent here
-  // (React re-renders for size/colour must not clobber the live position)
-  return (
-    <div ref={ref} style={{
-      position: "fixed",
-      top: 0,
-      left: 0,
-      width: dotSize,
-      height: dotSize,
-      borderRadius: "50%",
-      background: hovering ? "#d6fbff" : "#bff0f5",
-      boxShadow: hovering
-        ? "0 0 14px 4px rgba(120,230,255,0.55)"
-        : "0 0 10px 2px rgba(90,200,225,0.4)",
-      pointerEvents: "none",
-      zIndex: 99999,
-      willChange: "transform",
-      transition: "width 0.12s, height 0.12s, background 0.15s, box-shadow 0.15s",
-    }} />
-  );
-}
-
-// "Black lake" — a faint grid of dots over dark water that brighten where the
-// cursor (the "stick") disturbs it, leaving a luminescent wake that trails
-// behind and slowly fades, like bioluminescence in dark water.
-function DotLake() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const mouse = useRef({ x: -9999, y: -9999, lx: -9999, ly: -9999, active: false });
-  const trail = useRef<{ x: number; y: number; t: number }[]>([]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    let w = 0, h = 0, cols = 0, rows = 0, raf = 0;
-    let buf = new Float32Array(0);   // per-cell extra glow from the wake
-    const GAP = 16;          // grid spacing between dots (smaller = many more)
-    const TIP_R = 80;        // glow radius right at the cursor tip
-    const TRAIL_R = 58;      // glow radius along the wake
-    const TRAIL_LIFE = 1400; // ms a wake point keeps glowing
-    const TRAIL_MAX = 110;   // max wake points retained
-    const AMBIENT = 0.10;    // faint brightness every dot always has
-    const FIELD_R = 135;     // radius of the cursor's distortion field
-    const PUSH_MAX = 18;     // max px a dot is pushed away from the cursor
-
-    // precomputed style/size for the (constant) faint ambient dot
-    const aR = Math.round(30 + AMBIENT * 150);
-    const aG = Math.round(120 + AMBIENT * 130);
-    const aB = Math.round(150 + AMBIENT * 100);
-    const AMBIENT_STYLE = `rgba(${aR},${aG},${aB},${(0.10 + AMBIENT * 0.65).toFixed(3)})`;
-    const AMB_S = 0.8 + AMBIENT * 1.0;   // small dot side length
-    const AMB_HALF = AMB_S / 2;
-
-    const resize = () => {
-      const de = document.documentElement;
-      w = de.clientWidth || window.innerWidth;
-      h = de.clientHeight || window.innerHeight;
-      if (w < 2) w = 1280; // guard against bad viewport-width reads
-      canvas.width = w * dpr; canvas.height = h * dpr;
-      canvas.style.width = w + "px"; canvas.style.height = h + "px";
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      cols = Math.ceil(w / GAP) + 1;
-      rows = Math.ceil(h / GAP) + 1;
-      buf = new Float32Array(cols * rows);
-    };
-    resize();
-    window.addEventListener("resize", resize);
-
-    let lastMove = -1e9; // when the cursor last moved (ms)
-    let field = 0;       // distortion strength, eased 0..1 as the cursor moves
-    const onMove = (e: MouseEvent) => {
-      mouse.current.x = e.clientX;
-      mouse.current.y = e.clientY;
-      mouse.current.active = true;
-      lastMove = performance.now();
-      const dx = e.clientX - mouse.current.lx;
-      const dy = e.clientY - mouse.current.ly;
-      // drop a wake point every ~9px of travel
-      if (dx * dx + dy * dy > 80) {
-        trail.current.push({ x: e.clientX, y: e.clientY, t: performance.now() });
-        if (trail.current.length > TRAIL_MAX) trail.current.shift();
-        mouse.current.lx = e.clientX;
-        mouse.current.ly = e.clientY;
-      }
-    };
-    const onLeave = () => { mouse.current.active = false; };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseout", onLeave);
-
-    // scatter a soft radial glow into the buffer (only touches nearby cells)
-    const splat = (px: number, py: number, radius: number, intensity: number) => {
-      const a = Math.max(0, Math.floor((px - radius) / GAP));
-      const b = Math.min(cols - 1, Math.ceil((px + radius) / GAP));
-      const u = Math.max(0, Math.floor((py - radius) / GAP));
-      const v = Math.min(rows - 1, Math.ceil((py + radius) / GAP));
-      const r2 = radius * radius;
-      for (let cx = a; cx <= b; cx++) {
-        for (let cy = u; cy <= v; cy++) {
-          const ddx = cx * GAP - px, ddy = cy * GAP - py;
-          const d2 = ddx * ddx + ddy * ddy;
-          if (d2 > r2) continue;
-          const f = 1 - Math.sqrt(d2) / radius;
-          buf[cy * cols + cx] += f * f * intensity;
-        }
-      }
-    };
-
-    // draw the dot grid: every dot has a faint AMBIENT glow plus wake glow, and
-    // dots near the cursor are pushed aside so the grid flows as you move.
-    // Uses fillRect (cheaper than arc) since there are a lot of dots now.
-    const render = () => {
-      ctx.clearRect(0, 0, w, h);
-      const mx = mouse.current.x, my = mouse.current.y;
-      const pushing = field > 0.01;
-      const push = PUSH_MAX * field;
-      ctx.fillStyle = AMBIENT_STYLE; // most dots are plain ambient — set once
-      for (let cy = 0; cy < rows; cy++) {
-        for (let cx = 0; cx < cols; cx++) {
-          const glow = buf[cy * cols + cx];
-
-          let gx = cx * GAP, gy = cy * GAP;
-          // distortion: shove the dot away from the cursor, strongest up close
-          if (pushing) {
-            const dx = gx - mx, dy = gy - my;
-            const d = Math.sqrt(dx * dx + dy * dy);
-            if (d < FIELD_R && d > 0.01) {
-              const t = 1 - d / FIELD_R;
-              const off = t * t * push;
-              gx += (dx / d) * off;
-              gy += (dy / d) * off;
-            }
-          }
-
-          if (glow <= 0.002) {
-            // plain faint dot — fillStyle is already AMBIENT_STYLE
-            ctx.fillRect(gx - AMB_HALF, gy - AMB_HALF, AMB_S, AMB_S);
-          } else {
-            let bb = AMBIENT + glow;
-            if (bb > 1) bb = 1;
-            const rC = Math.round(30 + bb * 150);
-            const gC = Math.round(120 + bb * 130);
-            const bC = Math.round(150 + bb * 100);
-            ctx.fillStyle = `rgba(${rC},${gC},${bC},${0.1 + bb * 0.75})`;
-            const s = 0.8 + bb * 1.7;
-            ctx.fillRect(gx - s / 2, gy - s / 2, s, s);
-            ctx.fillStyle = AMBIENT_STYLE; // reset for the next ambient dots
-          }
-        }
-      }
-    };
-
-    let idleDrawn = false;
-    const draw = (now: number) => {
-      const tr = trail.current;
-      let hasLive = false;
-      for (let i = 0; i < tr.length; i++) {
-        if (now - tr[i].t < TRAIL_LIFE) { hasLive = true; break; }
-      }
-      // ease the distortion strength toward 1 while moving, back to 0 when
-      // still, so the dots flow out and then relax back into the grid
-      const target = now - lastMove < 120 ? 1 : 0;
-      field += (target - field) * 0.14;
-      if (field < 0.005) field = 0;
-
-      // "active" = cursor moved recently, a wake is glowing, or dots are still
-      // relaxing back from a distortion
-      const active = now - lastMove < 250 || hasLive || field > 0.01;
-
-      if (active) {
-        buf.fill(0);
-        for (let i = 0; i < tr.length; i++) {
-          const p = tr[i];
-          const age = now - p.t;
-          if (age > TRAIL_LIFE) continue;
-          const fade = 1 - age / TRAIL_LIFE;
-          splat(p.x, p.y, TRAIL_R * (0.55 + 0.45 * fade), 0.55 * fade);
-        }
-        if (mouse.current.active && now - lastMove < 250) {
-          splat(mouse.current.x, mouse.current.y, TIP_R, 0.95);
-        }
-        render();
-        idleDrawn = false;
-      } else if (!idleDrawn) {
-        // settle to the faint static dot grid, then stop repainting so the
-        // backdrop-blur behind the panels isn't recomputed every frame
-        buf.fill(0);
-        render();
-        idleDrawn = true;
-      }
-      raf = requestAnimationFrame(draw);
-    };
-    raf = requestAnimationFrame(draw);
+    raf = requestAnimationFrame(loop);
 
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseout", onLeave);
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseover", over);
+      window.removeEventListener("mouseout", out);
+      document.removeEventListener("mouseleave", leaveDoc);
+      window.removeEventListener("blur", blur);
     };
   }, []);
 
+  const ringSize = hovering ? 38 : 26;
+
+  // transforms are written imperatively above, so they're intentionally absent
+  // from these style objects (re-renders must not clobber the live positions)
   return (
-    <canvas
-      ref={canvasRef}
-      style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }}
-    />
+    <>
+      <div ref={ringRef} style={{
+        position: "fixed", top: 0, left: 0,
+        width: ringSize, height: ringSize, borderRadius: "50%",
+        border: "1.5px solid rgba(255,255,255,0.85)",
+        boxShadow: "0 0 3px rgba(0,0,0,0.55)",
+        pointerEvents: "none", zIndex: 99999, opacity: 0,
+        willChange: "transform",
+        transition: "opacity 0.2s, width 0.18s ease, height 0.18s ease",
+      }} />
+      <div ref={dotRef} style={{
+        position: "fixed", top: 0, left: 0,
+        width: 5, height: 5, borderRadius: "50%",
+        background: "#fff",
+        boxShadow: "0 0 3px rgba(0,0,0,0.7)",
+        pointerEvents: "none", zIndex: 99999, opacity: 0,
+        willChange: "transform",
+        transition: "opacity 0.2s",
+      }} />
+    </>
   );
 }
 
@@ -832,7 +677,6 @@ export default function Dashboard() {
       fontFamily: "'DM Sans', sans-serif",
       cursor: "none",
     }}>
-      <DotLake />
       <CustomCursor />
       <div style={{
         position: "fixed", top: 0, left: 0, right: 0, height: 1,
