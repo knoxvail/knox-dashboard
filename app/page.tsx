@@ -36,7 +36,7 @@ function CustomCursor() {
       if (ringRef.current) ringRef.current.style.opacity = o;
     };
 
-    const move = (e: MouseEvent) => {
+    const move = (e: MouseEvent | DragEvent) => {
       mx = e.clientX; my = e.clientY;
       setShown(true);
       // the dot tracks the cursor exactly — written straight to the DOM
@@ -53,6 +53,7 @@ function CustomCursor() {
     };
 
     window.addEventListener("mousemove", move, { passive: true });
+    window.addEventListener("dragover", move, { passive: true }); // keep the dot tracking while dragging
     window.addEventListener("mouseover", over, { passive: true });
     window.addEventListener("mouseout", out, { passive: true });
     document.addEventListener("mouseleave", leaveDoc);
@@ -71,6 +72,7 @@ function CustomCursor() {
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("mousemove", move);
+      window.removeEventListener("dragover", move);
       window.removeEventListener("mouseover", over);
       window.removeEventListener("mouseout", out);
       document.removeEventListener("mouseleave", leaveDoc);
@@ -261,6 +263,11 @@ function TaskItem({
 
   return (
     <div
+      draggable={!isEditing}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", task.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
       style={{
         borderLeft: "1px solid #2a2a2a",
         paddingLeft: 10,
@@ -270,6 +277,7 @@ function TaskItem({
         justifyContent: "space-between",
         gap: 8,
         marginBottom: 10,
+        cursor: isEditing ? "auto" : "grab",
       }}
       onMouseEnter={e => {
         if (!isEditing) {
@@ -452,6 +460,7 @@ function Dashboard() {
   const [showPlaylists, setShowPlaylists] = useState(false);
   const [volume, setVolume] = useState(50);
   const [loading, setLoading] = useState(true);
+  const [dragOver, setDragOver] = useState<"Short Term" | "Long Term" | null>(null);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Each source fetches independently so one slow endpoint (e.g. the external
@@ -618,6 +627,36 @@ function Dashboard() {
       return;
     }
     fetchTasks(); // reconcile the temp row with the real Notion id
+  };
+
+  // Move a task between Short Term and Long Term by dragging it to the other list
+  const moveTask = async (id: string, target: "Short Term" | "Long Term") => {
+    const inShort = shortTerm.find(t => t.id === id);
+    const inLong = longTerm.find(t => t.id === id);
+    const task = inShort || inLong;
+    if (!task) return;
+    // already in the target list -> nothing to do
+    if ((inShort && target === "Short Term") || (inLong && target === "Long Term")) return;
+
+    // optimistic move between the two lists
+    if (target === "Short Term") {
+      setLongTerm(prev => prev.filter(t => t.id !== id));
+      setShortTerm(prev => [...prev, task]);
+    } else {
+      setShortTerm(prev => prev.filter(t => t.id !== id));
+      setLongTerm(prev => [...prev, task]);
+    }
+
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status: target, action: "move" }),
+      });
+      if (!res.ok) await fetchTasks(); // revert on failure
+    } catch {
+      await fetchTasks();
+    }
   };
 
   const archiveEmail = async (id: string) => {
@@ -791,7 +830,17 @@ function Dashboard() {
                 {shortTerm.length}
               </span>
             } />
-            <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
+            <div
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOver !== "Short Term") setDragOver("Short Term"); }}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
+              onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setDragOver(null); if (id) moveTask(id, "Short Term"); }}
+              style={{
+                flex: 1, overflowY: "auto", scrollbarWidth: "none", borderRadius: 2, outlineOffset: -2,
+                outline: dragOver === "Short Term" ? "1px dashed #6a6a6a" : "1px dashed transparent",
+                background: dragOver === "Short Term" ? "rgba(255,255,255,0.025)" : "transparent",
+                transition: "background 0.15s, outline-color 0.15s",
+              }}
+            >
               {loading ? (
                 Array.from({ length: 4 }).map((_, i) => (
                   <div key={i} style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>
@@ -809,7 +858,17 @@ function Dashboard() {
                 {longTerm.length}
               </span>
             } />
-            <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
+            <div
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOver !== "Long Term") setDragOver("Long Term"); }}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
+              onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setDragOver(null); if (id) moveTask(id, "Long Term"); }}
+              style={{
+                flex: 1, overflowY: "auto", scrollbarWidth: "none", borderRadius: 2, outlineOffset: -2,
+                outline: dragOver === "Long Term" ? "1px dashed #6a6a6a" : "1px dashed transparent",
+                background: dragOver === "Long Term" ? "rgba(255,255,255,0.025)" : "transparent",
+                transition: "background 0.15s, outline-color 0.15s",
+              }}
+            >
               {loading ? (
                 Array.from({ length: 4 }).map((_, i) => (
                   <div key={i} style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>

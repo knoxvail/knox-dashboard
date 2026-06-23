@@ -49,7 +49,34 @@ export async function POST(request: Request) {
   if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
 
   try {
-    const { id, title, action } = await request.json();
+    const { id, title, status, action } = await request.json();
+
+    // Handle moving a task between Short Term and Long Term (status change)
+    if (action === "move") {
+      if (!id) return NextResponse.json({ error: "Missing task id" }, { status: 400 });
+      if (status !== "Short Term" && status !== "Long Term") {
+        return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+      }
+
+      const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          properties: { Status: { status: { name: status } } },
+        }),
+      });
+
+      if (!notionRes.ok) {
+        const err = await notionRes.json();
+        return NextResponse.json({ error: err }, { status: notionRes.status });
+      }
+
+      return NextResponse.json({ success: true });
+    }
 
     // Handle task completion (archive)
     if (action === "complete") {
