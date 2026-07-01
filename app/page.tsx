@@ -108,6 +108,105 @@ function CustomCursor() {
   );
 }
 
+// Glowy waves background — mouse-reactive glowing lines on the dark canvas.
+// (Just the animation from the shadcn hero, stripped of all the hero content.)
+function GlowyWaves() {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mouse = useRef({ x: 0, y: 0 });
+  const target = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let w = 0, h = 0, time = 0, raf = 0;
+
+    // white / silver glowing waves (monochrome, to match the B&W cursor)
+    const waves = [
+      { offset: 0, amplitude: 70, frequency: 0.003, color: "rgba(232,240,252,1)", opacity: 0.30 },
+      { offset: Math.PI / 2, amplitude: 90, frequency: 0.0026, color: "rgba(185,203,228,1)", opacity: 0.22 },
+      { offset: Math.PI, amplitude: 60, frequency: 0.0034, color: "rgba(150,168,196,1)", opacity: 0.20 },
+      { offset: Math.PI * 1.5, amplitude: 80, frequency: 0.0022, color: "rgba(120,140,172,1)", opacity: 0.16 },
+      { offset: Math.PI * 2, amplitude: 55, frequency: 0.004, color: "rgba(205,214,232,1)", opacity: 0.14 },
+    ];
+
+    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const influenceRadius = prefersReduced ? 160 : 320;
+    const mouseInfluence = prefersReduced ? 10 : 70;
+    const smoothing = prefersReduced ? 0.04 : 0.1;
+
+    const resize = () => {
+      w = window.innerWidth; h = window.innerHeight;
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      canvas.style.width = w + "px"; canvas.style.height = h + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      mouse.current = { x: w / 2, y: h / 2 };
+      target.current = { x: w / 2, y: h / 2 };
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const onMove = (e: MouseEvent) => { target.current = { x: e.clientX, y: e.clientY }; };
+    const onLeave = () => { target.current = { x: w / 2, y: h / 2 }; };
+    window.addEventListener("mousemove", onMove, { passive: true });
+    window.addEventListener("mouseleave", onLeave);
+
+    const drawWave = (wave: typeof waves[number]) => {
+      ctx.save();
+      ctx.beginPath();
+      for (let x = 0; x <= w; x += 4) {
+        const dx = x - mouse.current.x;
+        const dy = h / 2 - mouse.current.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const influence = Math.max(0, 1 - dist / influenceRadius);
+        const mouseEffect = influence * mouseInfluence * Math.sin(time * 0.001 + x * 0.01 + wave.offset);
+        const y = h / 2
+          + Math.sin(x * wave.frequency + time * 0.002 + wave.offset) * wave.amplitude
+          + Math.sin(x * wave.frequency * 0.4 + time * 0.003) * (wave.amplitude * 0.45)
+          + mouseEffect;
+        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = wave.color;
+      ctx.globalAlpha = wave.opacity;
+      ctx.shadowBlur = 30;
+      ctx.shadowColor = wave.color;
+      ctx.stroke();
+      ctx.restore();
+    };
+
+    const animate = () => {
+      time += 1;
+      mouse.current.x += (target.current.x - mouse.current.x) * smoothing;
+      mouse.current.y += (target.current.y - mouse.current.y) * smoothing;
+      ctx.clearRect(0, 0, w, h);   // transparent — the dashboard's dark bg shows through
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+      waves.forEach(drawWave);
+      raf = requestAnimationFrame(animate);
+    };
+    raf = requestAnimationFrame(animate);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseleave", onLeave);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-hidden="true"
+      style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }}
+    />
+  );
+}
+
 function useClock() {
   const [time, setTime] = useState({ h: "", m: "", s: "", date: "", day: "" });
   useEffect(() => {
@@ -716,6 +815,7 @@ function Dashboard() {
       fontFamily: "'DM Sans', sans-serif",
       cursor: "none",
     }}>
+      <GlowyWaves />
       <CustomCursor />
       <div style={{
         position: "fixed", top: 0, left: 0, right: 0, height: 1,
