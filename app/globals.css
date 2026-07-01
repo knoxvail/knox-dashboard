@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,19 +12,35 @@
 
 html {
   scroll-behavior: smooth;
-  background: #0d0d0d;
+  background: #0a0b0f;
 }
 
 body {
-  background-color: #0d0d0d;
+  background-color: #0a0b0f;
   color: #f5f5f5;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Inter', sans-serif;
   line-height: 1.6;
   font-size: 16px;
+  font-weight: 400;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 700;
 }
 
 code, pre {
   font-family: 'IBM Plex Mono', monospace;
+}
+
+/* ELEVATION SYSTEM */
+:root {
+  --bg-page: #0a0b0f;
+  --bg-card: #16181d;
+  --border-card: rgba(255, 255, 255, 0.06);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.5);
 }
 
 /* Dark premium theme */
@@ -35,50 +53,66 @@ code, pre {
 }
 
 .border-subtle {
-  @apply border-gray-800;
+  border: 1px var(--border-card);
 }
 
 .bg-surface {
-  @apply bg-gray-950 border border-gray-800;
+  background-color: var(--bg-card);
+  border: 1px var(--border-card);
+  box-shadow: var(--shadow-sm);
 }
 
 .bg-elevated {
-  @apply bg-gray-900;
+  background-color: var(--bg-card);
+  border: 1px var(--border-card);
 }
 
-/* Premium badge styles */
+/* UNIFIED STATUS COLOR SYSTEM */
 .badge {
   @apply inline-block px-3 py-1 rounded-full text-xs font-semibold;
 }
 
-.badge-scouting {
+.badge-scouting, .status-scouting {
+  @apply bg-blue-600/20 text-blue-300;
+}
+
+.badge-active, .status-active {
   @apply bg-indigo-600/20 text-indigo-300;
 }
 
-.badge-active {
-  @apply bg-amber-600/20 text-amber-300;
-}
-
-.badge-passed {
+.badge-passed, .status-passed {
   @apply bg-red-600/20 text-red-300;
 }
 
-.badge-closed {
-  @apply bg-emerald-600/20 text-emerald-300;
+.badge-closed, .status-closed {
+  @apply bg-green-600/20 text-green-300;
+}
+
+.badge-underwriting, .status-underwriting {
+  @apply bg-amber-600/20 text-amber-300;
+}
+
+.badge-offer, .status-offer {
+  @apply bg-orange-600/20 text-orange-300;
 }
 
 /* Form inputs with bottom-border style */
 input, textarea, select {
-  @apply bg-gray-900/50 border-b-2 border-gray-700 text-gray-100 rounded-lg px-3 py-2.5 transition-all duration-200;
-  font-family: 'Geist Sans', sans-serif;
+  background-color: rgba(22, 24, 29, 0.7);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  @apply text-gray-100 rounded-lg px-3 py-2.5 transition-all duration-200;
+  font-family: 'Inter', sans-serif;
 }
 
 input:hover, textarea:hover, select:hover {
-  @apply bg-gray-900/70 border-gray-600;
+  background-color: rgba(22, 24, 29, 0.85);
+  border-bottom-color: rgba(255, 255, 255, 0.15);
 }
 
 input:focus, textarea:focus, select:focus {
-  @apply outline-none border-b-2 border-indigo-500 bg-gray-900/80;
+  @apply outline-none;
+  background-color: rgba(22, 24, 29, 0.95);
+  border-bottom-color: #6366f1;
   box-shadow: inset 0 0 8px rgba(99, 102, 241, 0.15);
 }
 
@@ -239,21 +273,40 @@ input, textarea, select, button {
   transform: translateX(2px);
 }
 
-/* Dark scrollbar */
+/* Dark scrollbar - thin, low-contrast, rounded */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0d0d0d;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #404040;
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #505050;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Bounce animation delays */
+.delay-100 {
+  animation-delay: 0.1s;
+}
+
+.delay-200 {
+  animation-delay: 0.2s;
+}
+
+/* Bounce animation */
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.animate-bounce {
+  animation: bounce 1s infinite;
 }

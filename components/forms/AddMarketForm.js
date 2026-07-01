@@ -25,7 +25,8 @@ export default function AddMarketForm({ market = null, assetName = '', prefilled
   useEffect(() => {
     const loadData = async () => {
       const marketsData = await loadMarkets();
-      setMarkets(marketsData);
+      const sorted = marketsData.sort((a, b) => a.name.localeCompare(b.name));
+      setMarkets(sorted);
     };
     loadData();
   }, []);

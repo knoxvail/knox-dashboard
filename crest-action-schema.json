@@ -1,0 +1,235 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "CREST Research Assistant",
+    "description": "Add markets, assets, and comps to your CREST portfolio database during research",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://knox-dashboard-pnsj-5b2jaf2rs-knoxs-projects1.vercel.app",
+      "description": "CREST instance"
+    }
+  ],
+  "paths": {
+    "/api/data/markets": {
+      "post": {
+        "summary": "Add a new market",
+        "description": "Create a new market in your CREST portfolio. Use this when you discover a promising market during research.",
+        "operationId": "addMarket",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Market name (e.g., 'Denver, CO', 'Austin, TX')"
+                  },
+                  "address": {
+                    "type": "string",
+                    "description": "Full address or location details"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["scouting", "active", "passed", "closed"],
+                    "description": "Market status",
+                    "default": "scouting"
+                  },
+                  "asset_class": {
+                    "type": "string",
+                    "description": "Primary asset class (e.g., 'multifamily', 'mixed-use')"
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "Market latitude for mapping"
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "description": "Market longitude for mapping"
+                  },
+                  "score": {
+                    "type": "number",
+                    "description": "Market score (1-10)"
+                  },
+                  "notes": {
+                    "type": "string",
+                    "description": "Research notes or observations"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Market created successfully"
+          },
+          "400": {
+            "description": "Missing required fields"
+          },
+          "401": {
+            "description": "Missing API key"
+          },
+          "403": {
+            "description": "Invalid API key"
+          }
+        }
+      }
+    },
+    "/api/data/assets": {
+      "post": {
+        "summary": "Add a new asset",
+        "description": "Create a new asset in a market. Requires a market_id (get this from the market you created).",
+        "operationId": "addAsset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "market_id"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Asset name (e.g., 'Downtown Multifamily Complex')"
+                  },
+                  "market_id": {
+                    "type": "string",
+                    "description": "Market ID (UUID from the market this asset belongs to)"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["scouting", "active", "passed", "closed"],
+                    "description": "Asset status",
+                    "default": "scouting"
+                  },
+                  "asset_class": {
+                    "type": "string",
+                    "description": "Asset class (e.g., 'multifamily', 'mixed-use')"
+                  },
+                  "units": {
+                    "type": "integer",
+                    "description": "Number of units"
+                  },
+                  "purchase_price": {
+                    "type": "number",
+                    "description": "Purchase price in dollars"
+                  },
+                  "cap_rate": {
+                    "type": "number",
+                    "description": "Capitalization rate as a percentage (e.g., 7.5)"
+                  },
+                  "noi": {
+                    "type": "number",
+                    "description": "Net Operating Income in dollars"
+                  },
+                  "latitude": {
+                    "type": "number",
+                    "description": "Asset latitude for mapping"
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "description": "Asset longitude for mapping"
+                  },
+                  "score": {
+                    "type": "number",
+                    "description": "Asset score (1-10)"
+                  },
+                  "notes": {
+                    "type": "string",
+                    "description": "Research notes"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Asset created successfully"
+          },
+          "400": {
+            "description": "Missing required fields"
+          },
+          "401": {
+            "description": "Missing API key"
+          },
+          "403": {
+            "description": "Invalid API key"
+          }
+        }
+      }
+    },
+    "/api/data/comps": {
+      "post": {
+        "summary": "Add a comparable sale",
+        "description": "Add a comp (comparable sale) to an asset. Requires an asset_id.",
+        "operationId": "addComp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["asset_id", "comp_name"],
+                "properties": {
+                  "asset_id": {
+                    "type": "string",
+                    "description": "Asset ID (UUID) this comp relates to"
+                  },
+                  "comp_name": {
+                    "type": "string",
+                    "description": "Comparable property name"
+                  },
+                  "price": {
+                    "type": "number",
+                    "description": "Sale price in dollars"
+                  },
+                  "price_per_unit": {
+                    "type": "number",
+                    "description": "Price per unit"
+                  },
+                  "cap_rate": {
+                    "type": "number",
+                    "description": "Cap rate as a percentage"
+                  },
+                  "market": {
+                    "type": "string",
+                    "description": "Market where comp sold"
+                  },
+                  "sale_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Sale date (YYYY-MM-DD)"
+                  },
+                  "notes": {
+                    "type": "string",
+                    "description": "Notes about the comp"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Comp created successfully"
+          },
+          "400": {
+            "description": "Missing required fields"
+          },
+          "401": {
+            "description": "Missing API key"
+          },
+          "403": {
+            "description": "Invalid API key"
+          }
+        }
+      }
+    }
+  }
+}

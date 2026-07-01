@@ -7,3 +7,19 @@ node_modules/
 dist/
 build/
 .vercel
+
+# Local secrets, notes, and exports — never publish
+.env
+CLAUDE.md
+CLAUDE_ACTION_SETUP.md
+CLAUDE_MARKET_RESEARCH.md
+setup-claude-action.js
+.claude/
+data/exports/
+
+# Internal working notes (one contained a pasted key) — keep local only
+VERCEL_DEPLOY_STEPS.md
+CONTEXT_FOR_NEXT_SESSION.md
+NO_RELOAD_DASHBOARD.md
+SIDEBAR_TABS_LAYOUT.md
+BUTTE_WRITE_IMPLEMENTATION.md
