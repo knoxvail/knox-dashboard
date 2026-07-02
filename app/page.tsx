@@ -614,8 +614,8 @@ function BucketCard({ project, onOpen, onHover, onLeave }: {
         background: "rgba(255,255,255,0.02)",
         border: "1px solid #2a2a2a",
         borderRadius: 4,
-        padding: "12px 12px 10px",
-        minHeight: 66,
+        padding: "14px 15px 12px",
+        minHeight: 88,
         cursor: "pointer",
         display: "flex",
         flexDirection: "column",
@@ -626,7 +626,7 @@ function BucketCard({ project, onOpen, onHover, onLeave }: {
     >
       <span style={{
         fontSize: 13, color: "#cfcfcf", fontFamily: "'DM Sans', sans-serif",
-        lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2,
+        lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 3,
         WebkitBoxOrient: "vertical", overflow: "hidden",
       }}>{project.title}</span>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -654,7 +654,7 @@ function ProjectGrid({ projects, onOpen, onHover, onLeave }: {
     </div>
   );
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(158px, 1fr))", gap: 10 }}>
       {projects.map((p) => (
         <BucketCard key={p.id} project={p} onOpen={onOpen} onHover={onHover} onLeave={onLeave} />
       ))}
@@ -1408,8 +1408,8 @@ function Dashboard() {
           </Panel>
         </div>
 
-        {/* Tasks */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, minHeight: 0 }}>
+        {/* Tasks — Short Term stays tall but skinny; the buckets get the width */}
+        <div style={{ display: "grid", gridTemplateColumns: "0.5fr 1fr", gap: 12, minHeight: 0 }}>
           <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <PanelHeader label="Short Term" right={
               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>
@@ -1458,9 +1458,9 @@ function Dashboard() {
                 }}
               >
                 {loading ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(158px, 1fr))", gap: 10 }}>
                     {Array.from({ length: 4 }).map((_, i) => (
-                      <div key={i} style={{ height: 66, background: "#141414", border: "1px solid #222", borderRadius: 4 }} />
+                      <div key={i} style={{ height: 88, background: "#141414", border: "1px solid #222", borderRadius: 4 }} />
                     ))}
                   </div>
                 ) : (
