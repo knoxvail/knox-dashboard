@@ -131,47 +131,13 @@ async function fetchEmails(token: string) {
   });
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   if (!configured()) {
     return NextResponse.json({ connected: false, configured: false, emails: [] });
   }
 
-  const debug = request.nextUrl.searchParams.get("debug") === "1";
   let token = await getAccessToken();
   if (!token) return NextResponse.json({ connected: false, configured: true, emails: [] });
-
-  if (debug) {
-    // probe each endpoint independently so we can see exactly which scopes the
-    // token actually has (accounts / folders / messages / write)
-    const probe: any = {};
-    let accountId = "";
-    try {
-      const r = await zohoFetch("/api/accounts", token);
-      probe.accounts = r.status;
-      const d = await r.json().catch(() => ({}));
-      accountId = String((d.data || [])[0]?.accountId || "");
-      probe.accountId = accountId;
-    } catch (e: any) { probe.accounts = "err:" + e?.message; }
-
-    if (accountId) {
-      try {
-        const r = await zohoFetch(`/api/accounts/${accountId}/folders`, token);
-        probe.folders = r.status;
-        if (r.ok) {
-          const d = await r.json().catch(() => ({}));
-          probe.folderList = (d.data || []).map((f: any) => ({ id: f.folderId, name: f.folderName, type: f.folderType, path: f.path }));
-        }
-      } catch (e: any) { probe.folders = "err:" + e?.message; }
-
-      try {
-        const r = await zohoFetch(`/api/accounts/${accountId}/messages/view?limit=2&start=1`, token);
-        probe.messages = r.status;
-        const d = await r.json().catch(() => ({}));
-        probe.sampleMessage = (d.data || [])[0] || null;
-      } catch (e: any) { probe.messages = "err:" + e?.message; }
-    }
-    return NextResponse.json(probe);
-  }
 
   try {
     const emails = await fetchEmails(token);
@@ -192,85 +158,6 @@ export async function GET(request: NextRequest) {
 // Archive a message (requires the ZohoMail.messages.ALL scope on the token).
 export async function POST(request: NextRequest) {
   const bodyJson = await request.json().catch(() => ({}));
-
-  // One-off diagnostic: test a candidate token WITHOUT touching Vercel. Uses
-  // the server's client id/secret (from env), tries it as a refresh token
-  // (non-consuming), and if valid, checks the scopes it actually grants.
-  if (bodyJson.probeToken) {
-    const cid = process.env.ZOHO_CLIENT_ID, cs = process.env.ZOHO_CLIENT_SECRET;
-    if (!cid || !cs) return NextResponse.json({ error: "client id/secret not in env" });
-    const r = await fetch(`${ACCOUNTS_BASE}/oauth/v2/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "refresh_token", refresh_token: bodyJson.probeToken,
-        client_id: cid, client_secret: cs,
-      }).toString(),
-      cache: "no-store",
-    });
-    const d = await r.json().catch(() => ({}));
-    const out: any = { refreshTokenTest: { status: r.status, ok: r.ok, error: r.ok ? undefined : d } };
-    if (r.ok && d.access_token) {
-      out.verdict = "VALID_REFRESH_TOKEN";
-      const at = d.access_token;
-      let accId = "";
-      try {
-        const a = await zohoFetch("/api/accounts", at);
-        out.accountsStatus = a.status;
-        if (a.ok) { const ad = await a.json(); accId = String((ad.data || [])[0]?.accountId || ""); }
-      } catch {}
-      if (accId) {
-        try { out.foldersStatus = (await zohoFetch(`/api/accounts/${accId}/folders`, at)).status; } catch {}
-        try {
-          // bogus message id -> no real change; distinguishes scope from format
-          const w = await zohoFetch(`/api/accounts/${accId}/updatemessage`, at, {
-            method: "PUT", body: JSON.stringify({ mode: "archiveMails", messageId: ["0"] }),
-          });
-          const wd = await w.json().catch(() => ({}));
-          out.writeScope = Array.isArray(wd) && wd[1]?.errorCode === "INVALID_OAUTHSCOPE" ? "MISSING" : "present";
-          out.writeProbe = { status: w.status, body: wd };
-        } catch {}
-      }
-    } else {
-      out.verdict = "NOT_A_REFRESH_TOKEN (likely a grant code — exchange it first — or expired)";
-    }
-    return NextResponse.json(out);
-  }
-
-  // One-off: exchange a Self Client grant code for a refresh token + verify its
-  // scopes. Client id/secret come from env (never leave the server).
-  if (bodyJson.exchangeCode) {
-    const cid = process.env.ZOHO_CLIENT_ID, cs = process.env.ZOHO_CLIENT_SECRET;
-    if (!cid || !cs) return NextResponse.json({ error: "client id/secret not in env" });
-    const r = await fetch(`${ACCOUNTS_BASE}/oauth/v2/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "authorization_code", code: bodyJson.exchangeCode,
-        client_id: cid, client_secret: cs,
-      }).toString(),
-      cache: "no-store",
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!d.refresh_token) {
-      return NextResponse.json({ ok: false, note: "No refresh token — code invalid/expired/used. Regenerate a fresh grant code (10 min).", zoho: d });
-    }
-    const out: any = { ok: true, refreshToken: d.refresh_token };
-    const at = d.access_token;
-    if (at) {
-      let accId = "";
-      try { const a = await zohoFetch("/api/accounts", at); out.accountsStatus = a.status; if (a.ok) { const ad = await a.json(); accId = String((ad.data || [])[0]?.accountId || ""); } } catch {}
-      if (accId) {
-        try { out.foldersStatus = (await zohoFetch(`/api/accounts/${accId}/folders`, at)).status; } catch {}
-        try {
-          const w = await zohoFetch(`/api/accounts/${accId}/updatemessage`, at, { method: "PUT", body: JSON.stringify({ mode: "archiveMails", messageId: ["0"] }) });
-          const wd = await w.json().catch(() => ({}));
-          out.writeScope = Array.isArray(wd) && wd[1]?.errorCode === "INVALID_OAUTHSCOPE" ? "MISSING" : "present";
-        } catch {}
-      }
-    }
-    return NextResponse.json(out);
-  }
 
   if (!configured()) return NextResponse.json({ error: "Not configured" }, { status: 500 });
 

@@ -908,9 +908,9 @@ function Dashboard() {
         zIndex: 1,
       }}>
 
-        {/* Left column: Soren Email + Clients + Up Next */}
+        {/* Left column: Soren Email (tall) + Clients */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
-          <Panel style={{ flex: 1.35, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+          <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
             <PanelHeader label="Soren Email" right={<Tag>ZOHO</Tag>} />
             {!sorenConnected ? (
               // Self Client flow: connection comes from server env vars, so
@@ -933,7 +933,7 @@ function Dashboard() {
             )}
           </Panel>
 
-          <Panel style={{ flex: 1.05, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+          <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
             <PanelHeader label="Clients" right={
               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>
                 {clients.length}
@@ -949,28 +949,6 @@ function Dashboard() {
               ) : <TaskList tasks={clients} onComplete={completeTask} onEdit={editTask} />}
             </div>
             <AddTaskInput onAdd={(title) => addTask(title, "Clients")} />
-          </Panel>
-
-          <Panel style={{ flex: 0.55, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-            <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
-            <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
-              {events.length === 0 ? (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", paddingTop: 20 }}>
-                  <p style={{ color: "#444", fontSize: 12 }}>Nothing scheduled</p>
-                </div>
-              ) : events.map((event) => (
-                <div key={event.id} style={{ borderBottom: "1px solid #1e1e1e", padding: "10px 0" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
-                    <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.4 }}>{event.title}</p>
-                    {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#555", flexShrink: 0, marginLeft: 6 }}>{event.type.toUpperCase()}</span>}
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#666" }}>{event.displayDate}</span>
-                    {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>{event.displayTime}</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
           </Panel>
         </div>
 
@@ -1004,33 +982,58 @@ function Dashboard() {
             <AddTaskInput onAdd={(title) => addTask(title, "Short Term")} />
           </Panel>
 
-          <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <PanelHeader label="Long Term" right={
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>
-                {longTerm.length}
-              </span>
-            } />
-            <div
-              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOver !== "Long Term") setDragOver("Long Term"); }}
-              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
-              onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setDragOver(null); if (id) moveTask(id, "Long Term"); }}
-              style={{
-                flex: 1, overflowY: "auto", scrollbarWidth: "none", borderRadius: 2, outlineOffset: -2,
-                outline: dragOver === "Long Term" ? "1px dashed #6a6a6a" : "1px dashed transparent",
-                background: dragOver === "Long Term" ? "rgba(255,255,255,0.025)" : "transparent",
-                transition: "background 0.15s, outline-color 0.15s",
-              }}
-            >
-              {loading ? (
-                Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>
-                    <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 8}%` }} />
+          {/* right side of the middle column: Long Term (top) with Up Next stacked under it */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+            <Panel style={{ flex: 1.1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+              <PanelHeader label="Long Term" right={
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>
+                  {longTerm.length}
+                </span>
+              } />
+              <div
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOver !== "Long Term") setDragOver("Long Term"); }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
+                onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setDragOver(null); if (id) moveTask(id, "Long Term"); }}
+                style={{
+                  flex: 1, overflowY: "auto", scrollbarWidth: "none", borderRadius: 2, outlineOffset: -2,
+                  outline: dragOver === "Long Term" ? "1px dashed #6a6a6a" : "1px dashed transparent",
+                  background: dragOver === "Long Term" ? "rgba(255,255,255,0.025)" : "transparent",
+                  transition: "background 0.15s, outline-color 0.15s",
+                }}
+              >
+                {loading ? (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>
+                      <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 8}%` }} />
+                    </div>
+                  ))
+                ) : <TaskList tasks={longTerm} onComplete={completeTask} onEdit={editTask} />}
+              </div>
+              <AddTaskInput onAdd={(title) => addTask(title, "Long Term")} />
+            </Panel>
+
+            <Panel style={{ flex: 0.9, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+              <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
+              <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
+                {events.length === 0 ? (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", paddingTop: 20 }}>
+                    <p style={{ color: "#444", fontSize: 12 }}>Nothing scheduled</p>
                   </div>
-                ))
-              ) : <TaskList tasks={longTerm} onComplete={completeTask} onEdit={editTask} />}
-            </div>
-            <AddTaskInput onAdd={(title) => addTask(title, "Long Term")} />
-          </Panel>
+                ) : events.map((event) => (
+                  <div key={event.id} style={{ borderBottom: "1px solid #1e1e1e", padding: "10px 0" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
+                      <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.4 }}>{event.title}</p>
+                      {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#555", flexShrink: 0, marginLeft: 6 }}>{event.type.toUpperCase()}</span>}
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#666" }}>{event.displayDate}</span>
+                      {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>{event.displayTime}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          </div>
         </div>
 
         {/* Right column - Gmail + Spotify */}
