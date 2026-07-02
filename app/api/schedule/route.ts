@@ -1,11 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export const revalidate = 0;
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const debug = request.nextUrl.searchParams.get("debug") === "1";
   const token = process.env.NOTION_TOKEN;
   const dbId = process.env.NOTION_SCHEDULE_DB_ID;
-  if (!token || !dbId) return NextResponse.json({ events: [] });
+  if (!token || !dbId) {
+    if (debug) return NextResponse.json({ hasToken: !!token, hasDbId: !!dbId });
+    return NextResponse.json({ events: [] });
+  }
 
   try {
     const now = new Date();
@@ -30,6 +34,23 @@ export async function GET() {
     });
 
     const data = await res.json();
+
+    if (debug) {
+      return NextResponse.json({
+        hasToken: true,
+        tokenPrefix: token.slice(0, 7),
+        dbIdTail: dbId.slice(-6),
+        serverToday: todayStr,
+        serverNow: now.toISOString(),
+        notionStatus: res.status,
+        notionOk: res.ok,
+        rawCount: (data.results || []).length,
+        notionError: res.ok ? null : data,
+        firstTitle: (data.results || [])[0]
+          ? Object.values((data.results as any[])[0].properties).find((p: any) => p.type === "title")?.title?.map((t: any) => t.plain_text).join("")
+          : null,
+      });
+    }
 
     const events = (data.results || [])
       .map((page: any) => {
