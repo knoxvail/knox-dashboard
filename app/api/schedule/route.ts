@@ -36,19 +36,28 @@ export async function GET(request: NextRequest) {
     const data = await res.json();
 
     if (debug) {
+      const first: any = (data.results || [])[0];
+      const rawStart = first?.properties?.Date?.date?.start || "";
+      let tzTest = "ok";
+      try {
+        new Date(rawStart || Date.now()).toLocaleTimeString("en-US", {
+          hour: "numeric", minute: "2-digit", hour12: true,
+          timeZone: process.env.TZ || "America/Los_Angeles",
+        });
+      } catch (e: any) {
+        tzTest = "THREW: " + String(e?.message || e);
+      }
       return NextResponse.json({
         hasToken: true,
-        tokenPrefix: token.slice(0, 7),
-        dbIdTail: dbId.slice(-6),
-        serverToday: todayStr,
         serverNow: now.toISOString(),
         notionStatus: res.status,
-        notionOk: res.ok,
         rawCount: (data.results || []).length,
-        notionError: res.ok ? null : data,
-        firstTitle: (data.results || [])[0]
-          ? (Object.values((data.results as any[])[0].properties).find((p: any) => p.type === "title") as any)?.title?.map((t: any) => t.plain_text).join("")
-          : null,
+        rawStart,
+        startMs: rawStart ? new Date(rawStart).getTime() : null,
+        nowMs: now.getTime(),
+        keptByFilter: rawStart ? new Date(rawStart).getTime() > now.getTime() : true,
+        TZ: process.env.TZ || null,
+        tzTest,
       });
     }
 
