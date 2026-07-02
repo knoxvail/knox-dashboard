@@ -35,10 +35,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL("/?gmail=error", SITE_URL));
     }
 
+    // The login route prefixes the state with the account ("soren." or
+    // "triad.") so we know which cookie pair this token belongs to.
+    const isSoren = (state || "").startsWith("soren.");
+    const accessName = isSoren ? "soren_gmail_access_token" : "gmail_access_token";
+    const refreshName = isSoren ? "soren_gmail_refresh_token" : "gmail_refresh_token";
+
     const response = NextResponse.redirect(new URL("/?gmail=connected", SITE_URL));
 
     response.cookies.set({
-      name: "gmail_access_token",
+      name: accessName,
       value: tokenData.access_token,
       httpOnly: true,
       secure: true,
@@ -50,7 +56,7 @@ export async function GET(request: NextRequest) {
 
     if (tokenData.refresh_token) {
       response.cookies.set({
-        name: "gmail_refresh_token",
+        name: refreshName,
         value: tokenData.refresh_token,
         httpOnly: true,
         secure: true,

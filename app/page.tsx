@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 
-type Headline = { title: string; link: string; date: string };
 type Task = { id: string; title: string };
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
@@ -210,6 +209,25 @@ function GlowyWaves() {
       aria-hidden="true"
       style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }}
     />
+  );
+}
+
+// One email line with an archive checkmark — shared by both inbox panels.
+function EmailRow({ email, onArchive }: { email: Email; onArchive: (id: string) => void }) {
+  return (
+    <div style={{ borderBottom: "1px solid #1e1e1e", padding: "9px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, transition: "border-color 0.2s" }}
+      onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#555")}
+      onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "#1e1e1e")}
+    >
+      <a href={email.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", minWidth: 0, flex: 1 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
+          <span style={{ fontSize: 12, color: "#d8d8d8", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%" }}>{email.from}</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444", flexShrink: 0 }}>{email.date}</span>
+        </div>
+        <p style={{ margin: 0, fontSize: 12, color: "#808080", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email.subject}</p>
+      </a>
+      <DoneButton onClick={() => onArchive(email.id)} />
+    </div>
   );
 }
 
@@ -549,9 +567,9 @@ function AddTaskInput({ onAdd }: { onAdd: (title: string) => Promise<void> }) {
 
 function Dashboard() {
   const clock = useClock();
-  const [headlines, setHeadlines] = useState<Headline[]>([]);
   const [shortTerm, setShortTerm] = useState<Task[]>([]);
   const [longTerm, setLongTerm] = useState<Task[]>([]);
+  const [clients, setClients] = useState<Task[]>([]);
   const [verse, setVerse] = useState<Verse | null>(null);
   const [allVerses, setAllVerses] = useState<Verse[]>([]);
   const [verseIndex, setVerseIndex] = useState(0);
@@ -559,6 +577,8 @@ function Dashboard() {
   const [aphorismoLoading, setAphorismoLoading] = useState(false);
   const [emails, setEmails] = useState<Email[]>([]);
   const [gmailConnected, setGmailConnected] = useState(false);
+  const [sorenEmails, setSorenEmails] = useState<Email[]>([]);
+  const [sorenConnected, setSorenConnected] = useState(false);
   const [events, setEvents] = useState<Event[]>([]);
   const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ connected: false });
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -568,22 +588,15 @@ function Dashboard() {
   const [dragOver, setDragOver] = useState<"Short Term" | "Long Term" | null>(null);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
 
-  // Each source fetches independently so one slow endpoint (e.g. the external
-  // headlines feed) never blocks the others — no single-dependency bottleneck.
+  // Each source fetches independently so one slow endpoint never blocks the
+  // others — no single-dependency bottleneck.
   const fetchTasks = useCallback(async () => {
     try {
       const res = await fetch("/api/notion");
       const data = await res.json();
       setShortTerm(data.shortTerm || []);
       setLongTerm(data.longTerm || []);
-    } catch {}
-  }, []);
-
-  const fetchHeadlines = useCallback(async () => {
-    try {
-      const res = await fetch("/api/wsj");
-      const data = await res.json();
-      setHeadlines(data.headlines || []);
+      setClients(data.clients || []);
     } catch {}
   }, []);
 
@@ -610,10 +623,9 @@ function Dashboard() {
     await fetchTasks();   // primary content — drop the skeleton as soon as it lands
     setLoading(false);
     // these update their own slots as they arrive; not gated on each other
-    fetchHeadlines();
     fetchVerse();
     fetchAphorismo();
-  }, [fetchTasks, fetchHeadlines, fetchVerse, fetchAphorismo]);
+  }, [fetchTasks, fetchVerse, fetchAphorismo]);
 
   const fetchSpotify = useCallback(async () => {
     try {
@@ -635,6 +647,15 @@ function Dashboard() {
       const data = await res.json();
       setGmailConnected(data.connected);
       setEmails(data.emails || []);
+    } catch {}
+  }, []);
+
+  const fetchSoren = useCallback(async () => {
+    try {
+      const res = await fetch("/api/gmail?acct=soren");
+      const data = await res.json();
+      setSorenConnected(data.connected);
+      setSorenEmails(data.emails || []);
     } catch {}
   }, []);
 
@@ -668,8 +689,9 @@ function Dashboard() {
     fetchStatic();
     fetchSpotify();
     fetchGmail();
+    fetchSoren();
     fetchSchedule();
-  }, [fetchStatic, fetchSpotify, fetchGmail, fetchSchedule]);
+  }, [fetchStatic, fetchSpotify, fetchGmail, fetchSoren, fetchSchedule]);
 
   useEffect(() => {
     spotifyInterval.current = setInterval(fetchSpotify, 10000);
@@ -680,6 +702,7 @@ function Dashboard() {
     // optimistic: drop it from the UI immediately
     setShortTerm(prev => prev.filter(t => t.id !== id));
     setLongTerm(prev => prev.filter(t => t.id !== id));
+    setClients(prev => prev.filter(t => t.id !== id));
     try {
       const res = await fetch("/api/notion", {
         method: "POST",
@@ -696,6 +719,7 @@ function Dashboard() {
     // Optimistic update
     setShortTerm(prev => prev.map(t => t.id === id ? { ...t, title: newTitle } : t));
     setLongTerm(prev => prev.map(t => t.id === id ? { ...t, title: newTitle } : t));
+    setClients(prev => prev.map(t => t.id === id ? { ...t, title: newTitle } : t));
 
     // API call
     try {
@@ -712,10 +736,10 @@ function Dashboard() {
     }
   };
 
-  const addTask = async (title: string, status: "Short Term" | "Long Term") => {
+  const addTask = async (title: string, status: "Short Term" | "Long Term" | "Clients") => {
     // optimistic: show the task right away with a temporary id
     const tempId = `temp-${Date.now()}`;
-    const setList = status === "Short Term" ? setShortTerm : setLongTerm;
+    const setList = status === "Short Term" ? setShortTerm : status === "Long Term" ? setLongTerm : setClients;
     setList(prev => [...prev, { id: tempId, title }]);
     try {
       const res = await fetch("/api/notion", {
@@ -772,6 +796,16 @@ function Dashboard() {
       body: JSON.stringify({ id }),
     });
     await fetchGmail();
+  };
+
+  const archiveSorenEmail = async (id: string) => {
+    setSorenEmails(prev => prev.filter(e => e.id !== id));
+    await fetch("/api/gmail?acct=soren", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    await fetchSoren();
   };
 
   const spotifyAction = async (action: string) => {
@@ -837,7 +871,7 @@ function Dashboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
           <Tag>{clock.day}</Tag>
           <Tag>{clock.date}</Tag>
-          <button onClick={() => { fetchStatic(); fetchGmail(); fetchSpotify(); fetchSchedule(); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+          <button onClick={() => { fetchStatic(); fetchGmail(); fetchSoren(); fetchSpotify(); fetchSchedule(); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
             <Tag>REFRESH</Tag>
           </button>
         </div>
@@ -874,38 +908,44 @@ function Dashboard() {
         zIndex: 1,
       }}>
 
-        {/* Left column: WSJ + Up Next */}
+        {/* Left column: Soren Email + Clients + Up Next */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
-          <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <PanelHeader label="Wall Street Journal" right={
-              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#999" }} />
-                <Tag>LIVE</Tag>
+          <Panel style={{ flex: 1.35, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+            <PanelHeader label="Soren Email" right={<Tag>GMAIL</Tag>} />
+            {!sorenConnected ? (
+              <ConnectButton href="/api/gmail/login?acct=soren" label="CONNECT SOREN" />
+            ) : sorenEmails.length === 0 ? (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <p style={{ color: "#444", fontSize: 12 }}>No emails</p>
               </div>
+            ) : (
+              <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
+                {sorenEmails.map((email) => (
+                  <EmailRow key={email.id} email={email} onArchive={archiveSorenEmail} />
+                ))}
+              </div>
+            )}
+          </Panel>
+
+          <Panel style={{ flex: 1.05, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+            <PanelHeader label="Clients" right={
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>
+                {clients.length}
+              </span>
             } />
             <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
               {loading ? (
-                Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} style={{ borderBottom: "1px solid #1e1e1e", padding: "10px 0" }}>
-                    <div style={{ height: 8, background: "#1e1e1e", borderRadius: 2, marginBottom: 5, width: `${88 - i * 7}%` }} />
+                Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>
+                    <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 10}%` }} />
                   </div>
                 ))
-              ) : headlines.map((h, i) => (
-                <a key={i} href={h.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", display: "block", borderBottom: "1px solid #1e1e1e", padding: "9px 0", transition: "border-color 0.2s" }}
-                  onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#555")}
-                  onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "#1e1e1e")}
-                >
-                  <p style={{ margin: 0, fontSize: 12, color: "#909090", lineHeight: 1.5, fontWeight: 400, transition: "color 0.2s" }}
-                    onMouseEnter={e => (e.currentTarget.style.color = "#ddd")}
-                    onMouseLeave={e => (e.currentTarget.style.color = "#909090")}
-                  >{h.title}</p>
-                  {h.date && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444", letterSpacing: "0.1em" }}>{h.date}</span>}
-                </a>
-              ))}
+              ) : <TaskList tasks={clients} onComplete={completeTask} onEdit={editTask} />}
             </div>
+            <AddTaskInput onAdd={(title) => addTask(title, "Clients")} />
           </Panel>
 
-          <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <Panel style={{ flex: 0.55, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
             <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
             <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
               {events.length === 0 ? (
@@ -990,7 +1030,7 @@ function Dashboard() {
         {/* Right column - Gmail + Spotify */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
           <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <PanelHeader label="Inbox" right={<Tag>GMAIL</Tag>} />
+            <PanelHeader label="Triad Email" right={<Tag>GMAIL</Tag>} />
             {!gmailConnected ? (
               <ConnectButton href="/api/gmail/login" label="CONNECT GMAIL" />
             ) : emails.length === 0 ? (
@@ -1000,19 +1040,7 @@ function Dashboard() {
             ) : (
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                 {emails.map((email) => (
-                  <div key={email.id} style={{ borderBottom: "1px solid #1e1e1e", padding: "9px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, transition: "border-color 0.2s" }}
-                    onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#555")}
-                    onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "#1e1e1e")}
-                  >
-                    <a href={email.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", minWidth: 0, flex: 1 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
-                        <span style={{ fontSize: 12, color: "#d8d8d8", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%" }}>{email.from}</span>
-                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444", flexShrink: 0 }}>{email.date}</span>
-                      </div>
-                      <p style={{ margin: 0, fontSize: 12, color: "#808080", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email.subject}</p>
-                    </a>
-                    <DoneButton onClick={() => archiveEmail(email.id)} />
-                  </div>
+                  <EmailRow key={email.id} email={email} onArchive={archiveEmail} />
                 ))}
               </div>
             )}

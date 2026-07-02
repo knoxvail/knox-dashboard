@@ -25,6 +25,7 @@ export async function GET() {
 
     const shortTerm: { id: string; title: string }[] = [];
     const longTerm: { id: string; title: string }[] = [];
+    const clients: { id: string; title: string }[] = [];
 
     (data.results || []).forEach((page: any) => {
       const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
@@ -36,11 +37,12 @@ export async function GET() {
 
       if (status === "Short Term") shortTerm.push({ id: page.id, title });
       else if (status === "Long Term") longTerm.push({ id: page.id, title });
+      else if (status === "Clients") clients.push({ id: page.id, title });
     });
 
-    return NextResponse.json({ shortTerm, longTerm });
+    return NextResponse.json({ shortTerm, longTerm, clients });
   } catch {
-    return NextResponse.json({ shortTerm: [], longTerm: [] });
+    return NextResponse.json({ shortTerm: [], longTerm: [], clients: [] });
   }
 }
 
@@ -157,7 +159,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Invalid title" }, { status: 400 });
     }
 
-    if (status !== "Short Term" && status !== "Long Term") {
+    if (status !== "Short Term" && status !== "Long Term" && status !== "Clients") {
       return NextResponse.json({ error: "Invalid status" }, { status: 400 });
     }
 

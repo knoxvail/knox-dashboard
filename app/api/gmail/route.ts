@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const revalidate = 0;
 
+// Two Gmail accounts are supported: "triad" (default — the original cookie
+// names, so existing logins keep working) and "soren". Each account stores its
+// own token pair under its own cookie names.
+function cookieNames(acct: string) {
+  return acct === "soren"
+    ? { access: "soren_gmail_access_token", refresh: "soren_gmail_refresh_token" }
+    : { access: "gmail_access_token", refresh: "gmail_refresh_token" };
+}
+
+function getAcct(request: NextRequest) {
+  return request.nextUrl.searchParams.get("acct") === "soren" ? "soren" : "triad";
+}
+
 async function gmailFetch(endpoint: string, token: string) {
   return fetch(`https://gmail.googleapis.com/gmail/v1${endpoint}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -30,7 +43,28 @@ async function refreshGmailToken(refreshToken: string) {
   }
 }
 
-async function fetchEmails(token: string) {
+// Where email links should open. Triad uses the configured account index;
+// Soren resolves its own address from the profile API — Gmail accepts an email
+// address in the /mail/u/ slot and routes to that signed-in session, so no
+// index configuration is needed for the second account.
+async function resolveLinkBase(acct: string, token: string) {
+  if (acct !== "soren") {
+    const userIndex = process.env.GMAIL_USER_INDEX || "0";
+    return `https://mail.google.com/mail/u/${userIndex}/`;
+  }
+  try {
+    const res = await gmailFetch("/users/me/profile", token);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.emailAddress) {
+        return `https://mail.google.com/mail/u/${encodeURIComponent(data.emailAddress)}/`;
+      }
+    }
+  } catch {}
+  return "https://mail.google.com/mail/u/0/";
+}
+
+async function fetchEmails(token: string, linkBase: string) {
   const listRes = await gmailFetch("/users/me/messages?maxResults=8&q=in:inbox", token);
   if (!listRes.ok) throw new Error("list_failed");
 
@@ -50,18 +84,16 @@ async function fetchEmails(token: string) {
       const from = get("From").replace(/<.*>/, "").trim() || get("From");
       const subject = get("Subject") || "(no subject)";
       const date = new Date(get("Date")).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      const userIndex = process.env.GMAIL_USER_INDEX || "0";
-      // Use #all so the link works regardless of which label the email is under
-      const link = `https://mail.google.com/mail/u/${userIndex}/#all/${msg.threadId}`;
+      const link = `${linkBase}#all/${msg.threadId}`;
 
       return { id: msg.id, from, subject, date, link };
     })
   );
 }
 
-function setAccessCookie(response: NextResponse, value: string) {
+function setAccessCookie(response: NextResponse, name: string, value: string) {
   response.cookies.set({
-    name: "gmail_access_token",
+    name,
     value,
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -73,7 +105,7 @@ function setAccessCookie(response: NextResponse, value: string) {
   });
 }
 
-async function refreshAndFetch(refreshToken: string) {
+async function refreshAndFetch(refreshToken: string, acct: string) {
   const newToken = await refreshGmailToken(refreshToken);
   if (!newToken) {
     return NextResponse.json({ connected: false, expired: true, emails: [] });
@@ -81,20 +113,22 @@ async function refreshAndFetch(refreshToken: string) {
 
   let emails: any[] = [];
   try {
-    emails = await fetchEmails(newToken);
+    emails = await fetchEmails(newToken, await resolveLinkBase(acct, newToken));
   } catch (error) {
     console.error("Error fetching emails after token refresh:", error);
     // Continue anyway - the important thing is that the refreshed token persists.
   }
 
   const response = NextResponse.json({ connected: true, emails });
-  setAccessCookie(response, newToken);
+  setAccessCookie(response, cookieNames(acct).access, newToken);
   return response;
 }
 
 export async function GET(request: NextRequest) {
-  const token = request.cookies.get("gmail_access_token")?.value;
-  const refreshToken = request.cookies.get("gmail_refresh_token")?.value;
+  const acct = getAcct(request);
+  const names = cookieNames(acct);
+  const token = request.cookies.get(names.access)?.value;
+  const refreshToken = request.cookies.get(names.refresh)?.value;
 
   // No credentials at all -> genuinely disconnected.
   if (!token && !refreshToken) {
@@ -104,7 +138,7 @@ export async function GET(request: NextRequest) {
   // The access token cookie expired/was deleted, but we still have a refresh
   // token. Refresh proactively instead of reporting "not connected".
   if (!token && refreshToken) {
-    return refreshAndFetch(refreshToken);
+    return refreshAndFetch(refreshToken, acct);
   }
 
   try {
@@ -112,21 +146,22 @@ export async function GET(request: NextRequest) {
 
     if (listRes.status === 401) {
       if (!refreshToken) return NextResponse.json({ connected: false, expired: true, emails: [] });
-      return refreshAndFetch(refreshToken);
+      return refreshAndFetch(refreshToken, acct);
     }
 
-    const emails = await fetchEmails(token!);
+    const emails = await fetchEmails(token!, await resolveLinkBase(acct, token!));
     return NextResponse.json({ connected: true, emails });
   } catch {
     // Network/parse error with a token that looked valid. Try a refresh as a
     // last resort before giving up.
-    if (refreshToken) return refreshAndFetch(refreshToken);
+    if (refreshToken) return refreshAndFetch(refreshToken, acct);
     return NextResponse.json({ connected: false, emails: [] });
   }
 }
 
 export async function POST(request: NextRequest) {
-  const token = request.cookies.get("gmail_access_token")?.value;
+  const acct = getAcct(request);
+  const token = request.cookies.get(cookieNames(acct).access)?.value;
   if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
 
   const { id } = await request.json();

@@ -4,7 +4,11 @@ import crypto from "crypto";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://knox-dashboard-pnsj.vercel.app";
 
 export async function GET(request: NextRequest) {
-  const state = crypto.randomBytes(16).toString("hex");
+  // Which account this login is for ("triad" default, or "soren"). Carried
+  // through the OAuth round-trip inside the state param so the callback knows
+  // which cookie pair to set.
+  const acct = request.nextUrl.searchParams.get("acct") === "soren" ? "soren" : "triad";
+  const state = `${acct}.${crypto.randomBytes(16).toString("hex")}`;
 
   const response = new NextResponse(null, { status: 302 });
   response.cookies.set({
