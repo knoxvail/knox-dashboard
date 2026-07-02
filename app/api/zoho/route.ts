@@ -45,7 +45,6 @@ async function getAccessToken(force = false): Promise<string | null> {
       console.error("Zoho token refresh failed:", data);
       return null;
     }
-    // refresh 5 minutes before Zoho's stated expiry (default 3600s)
     const ttl = (Number(data.expires_in) || 3600) - 300;
     cachedToken = { value: data.access_token, expiresAt: Date.now() + ttl * 1000 };
     return data.access_token;
@@ -55,8 +54,7 @@ async function getAccessToken(force = false): Promise<string | null> {
   }
 }
 
-// NOTE: Zoho requires the "Zoho-oauthtoken" prefix, not "Bearer",
-// even though the token_type in the token response says Bearer.
+// NOTE: Zoho requires the "Zoho-oauthtoken" prefix, not "Bearer".
 async function zohoFetch(endpoint: string, token: string, init?: RequestInit) {
   return fetch(`${MAIL_BASE}${endpoint}`, {
     ...init,
@@ -69,7 +67,6 @@ async function zohoFetch(endpoint: string, token: string, init?: RequestInit) {
   });
 }
 
-// Message endpoints need the accountId; it never changes, so cache it too.
 let cachedAccountId: string | null = null;
 
 async function getAccountId(token: string): Promise<string> {
@@ -83,10 +80,31 @@ async function getAccountId(token: string): Promise<string> {
   return cachedAccountId;
 }
 
+// The message list must be scoped to the Inbox folder, otherwise archived mail
+// (moved out of Inbox) keeps showing up.
+async function getFolders(token: string, accountId: string) {
+  const res = await zohoFetch(`/api/accounts/${accountId}/folders`, token);
+  if (!res.ok) throw new Error(`folders_${res.status}`);
+  const data = await res.json();
+  return (data.data || []) as any[];
+}
+
+function findFolder(folders: any[], types: string[], names: string[]) {
+  return folders.find((f) => {
+    const t = String(f.folderType || "").toLowerCase();
+    const n = String(f.folderName || f.path || "").replace(/^\//, "").toLowerCase();
+    return types.includes(t) || names.includes(n);
+  });
+}
+
 async function fetchEmails(token: string) {
   const accountId = await getAccountId(token);
+  const folders = await getFolders(token, accountId);
+  const inbox = findFolder(folders, ["inbox"], ["inbox"]);
+  const folderParam = inbox?.folderId ? `folderId=${inbox.folderId}&` : "";
+
   const res = await zohoFetch(
-    `/api/accounts/${accountId}/messages/view?limit=8&start=1`,
+    `/api/accounts/${accountId}/messages/view?${folderParam}limit=8&start=1`,
     token
   );
   if (!res.ok) throw new Error(`messages_${res.status}`);
@@ -99,25 +117,46 @@ async function fetchEmails(token: string) {
     const date = Number.isFinite(ms) && ms > 0
       ? new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" })
       : "";
-    // Zoho web deep link; falls back to the inbox if the message view moves
     const link = `https://mail.zoho.com/zm/#mail/folder/inbox/p/${m.messageId}`;
     return { id: String(m.messageId), from, subject, date, link };
   });
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   if (!configured()) {
     return NextResponse.json({ connected: false, configured: false, emails: [] });
   }
 
+  const debug = request.nextUrl.searchParams.get("debug") === "1";
   let token = await getAccessToken();
   if (!token) return NextResponse.json({ connected: false, configured: true, emails: [] });
+
+  if (debug) {
+    try {
+      const accountId = await getAccountId(token);
+      const folders = await getFolders(token, accountId);
+      const inbox = findFolder(folders, ["inbox"], ["inbox"]);
+      const listRes = await zohoFetch(
+        `/api/accounts/${accountId}/messages/view?${inbox?.folderId ? `folderId=${inbox.folderId}&` : ""}limit=2&start=1`,
+        token
+      );
+      const listBody = await listRes.json().catch(() => ({}));
+      return NextResponse.json({
+        accountId,
+        folders: folders.map((f) => ({ folderId: f.folderId, folderName: f.folderName, folderType: f.folderType, path: f.path })),
+        detectedInboxId: inbox?.folderId ?? null,
+        messagesStatus: listRes.status,
+        sampleMessages: (listBody.data || []).slice(0, 2),
+      });
+    } catch (e: any) {
+      return NextResponse.json({ debugError: String(e?.message || e) });
+    }
+  }
 
   try {
     const emails = await fetchEmails(token);
     return NextResponse.json({ connected: true, emails });
   } catch {
-    // token may have been revoked/expired early — mint a fresh one and retry once
     token = await getAccessToken(true);
     if (!token) return NextResponse.json({ connected: false, configured: true, emails: [] });
     try {
@@ -130,7 +169,7 @@ export async function GET() {
   }
 }
 
-// Archive a message (requires the ZohoMail.messages.ALL scope on the token)
+// Archive a message (requires the ZohoMail.messages.ALL scope on the token).
 export async function POST(request: NextRequest) {
   if (!configured()) return NextResponse.json({ error: "Not configured" }, { status: 500 });
 
@@ -148,15 +187,16 @@ export async function POST(request: NextRequest) {
       method: "PUT",
       body: JSON.stringify({ mode: "archiveMails", messageId: [id] }),
     });
+    const body = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      console.error("Zoho archive failed:", res.status, err);
-      return NextResponse.json({ error: "Archive failed" }, { status: res.status });
+      console.error("Zoho archive failed:", res.status, body);
+      // surface the raw Zoho response so the exact failure is visible
+      return NextResponse.json({ error: "Archive failed", zohoStatus: res.status, zoho: body }, { status: 200 });
     }
 
-    return NextResponse.json({ success: true });
-  } catch {
-    return NextResponse.json({ error: "Failed" }, { status: 500 });
+    return NextResponse.json({ success: true, zoho: body });
+  } catch (e: any) {
+    return NextResponse.json({ error: "Failed", detail: String(e?.message || e) }, { status: 200 });
   }
 }
