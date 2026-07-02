@@ -237,6 +237,41 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(out);
   }
 
+  // One-off: exchange a Self Client grant code for a refresh token + verify its
+  // scopes. Client id/secret come from env (never leave the server).
+  if (bodyJson.exchangeCode) {
+    const cid = process.env.ZOHO_CLIENT_ID, cs = process.env.ZOHO_CLIENT_SECRET;
+    if (!cid || !cs) return NextResponse.json({ error: "client id/secret not in env" });
+    const r = await fetch(`${ACCOUNTS_BASE}/oauth/v2/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code", code: bodyJson.exchangeCode,
+        client_id: cid, client_secret: cs,
+      }).toString(),
+      cache: "no-store",
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!d.refresh_token) {
+      return NextResponse.json({ ok: false, note: "No refresh token — code invalid/expired/used. Regenerate a fresh grant code (10 min).", zoho: d });
+    }
+    const out: any = { ok: true, refreshToken: d.refresh_token };
+    const at = d.access_token;
+    if (at) {
+      let accId = "";
+      try { const a = await zohoFetch("/api/accounts", at); out.accountsStatus = a.status; if (a.ok) { const ad = await a.json(); accId = String((ad.data || [])[0]?.accountId || ""); } } catch {}
+      if (accId) {
+        try { out.foldersStatus = (await zohoFetch(`/api/accounts/${accId}/folders`, at)).status; } catch {}
+        try {
+          const w = await zohoFetch(`/api/accounts/${accId}/updatemessage`, at, { method: "PUT", body: JSON.stringify({ mode: "archiveMails", messageId: ["0"] }) });
+          const wd = await w.json().catch(() => ({}));
+          out.writeScope = Array.isArray(wd) && wd[1]?.errorCode === "INVALID_OAUTHSCOPE" ? "MISSING" : "present";
+        } catch {}
+      }
+    }
+    return NextResponse.json(out);
+  }
+
   if (!configured()) return NextResponse.json({ error: "Not configured" }, { status: 500 });
 
   const { id } = bodyJson;
