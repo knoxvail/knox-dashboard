@@ -191,9 +191,55 @@ export async function GET(request: NextRequest) {
 
 // Archive a message (requires the ZohoMail.messages.ALL scope on the token).
 export async function POST(request: NextRequest) {
+  const bodyJson = await request.json().catch(() => ({}));
+
+  // One-off diagnostic: test a candidate token WITHOUT touching Vercel. Uses
+  // the server's client id/secret (from env), tries it as a refresh token
+  // (non-consuming), and if valid, checks the scopes it actually grants.
+  if (bodyJson.probeToken) {
+    const cid = process.env.ZOHO_CLIENT_ID, cs = process.env.ZOHO_CLIENT_SECRET;
+    if (!cid || !cs) return NextResponse.json({ error: "client id/secret not in env" });
+    const r = await fetch(`${ACCOUNTS_BASE}/oauth/v2/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token", refresh_token: bodyJson.probeToken,
+        client_id: cid, client_secret: cs,
+      }).toString(),
+      cache: "no-store",
+    });
+    const d = await r.json().catch(() => ({}));
+    const out: any = { refreshTokenTest: { status: r.status, ok: r.ok, error: r.ok ? undefined : d } };
+    if (r.ok && d.access_token) {
+      out.verdict = "VALID_REFRESH_TOKEN";
+      const at = d.access_token;
+      let accId = "";
+      try {
+        const a = await zohoFetch("/api/accounts", at);
+        out.accountsStatus = a.status;
+        if (a.ok) { const ad = await a.json(); accId = String((ad.data || [])[0]?.accountId || ""); }
+      } catch {}
+      if (accId) {
+        try { out.foldersStatus = (await zohoFetch(`/api/accounts/${accId}/folders`, at)).status; } catch {}
+        try {
+          // bogus message id -> no real change; distinguishes scope from format
+          const w = await zohoFetch(`/api/accounts/${accId}/updatemessage`, at, {
+            method: "PUT", body: JSON.stringify({ mode: "archiveMails", messageId: ["0"] }),
+          });
+          const wd = await w.json().catch(() => ({}));
+          out.writeScope = Array.isArray(wd) && wd[1]?.errorCode === "INVALID_OAUTHSCOPE" ? "MISSING" : "present";
+          out.writeProbe = { status: w.status, body: wd };
+        } catch {}
+      }
+    } else {
+      out.verdict = "NOT_A_REFRESH_TOKEN (likely a grant code — exchange it first — or expired)";
+    }
+    return NextResponse.json(out);
+  }
+
   if (!configured()) return NextResponse.json({ error: "Not configured" }, { status: 500 });
 
-  const { id } = await request.json();
+  const { id } = bodyJson;
   if (!id || typeof id !== "string") {
     return NextResponse.json({ error: "Missing message id" }, { status: 400 });
   }
