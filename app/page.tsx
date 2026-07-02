@@ -652,7 +652,7 @@ function Dashboard() {
 
   const fetchSoren = useCallback(async () => {
     try {
-      const res = await fetch("/api/gmail?acct=soren");
+      const res = await fetch("/api/zoho");
       const data = await res.json();
       setSorenConnected(data.connected);
       setSorenEmails(data.emails || []);
@@ -800,7 +800,7 @@ function Dashboard() {
 
   const archiveSorenEmail = async (id: string) => {
     setSorenEmails(prev => prev.filter(e => e.id !== id));
-    await fetch("/api/gmail?acct=soren", {
+    await fetch("/api/zoho", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
@@ -911,9 +911,9 @@ function Dashboard() {
         {/* Left column: Soren Email + Clients + Up Next */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
           <Panel style={{ flex: 1.35, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-            <PanelHeader label="Soren Email" right={<Tag>GMAIL</Tag>} />
+            <PanelHeader label="Soren Email" right={<Tag>ZOHO</Tag>} />
             {!sorenConnected ? (
-              <ConnectButton href="/api/gmail/login?acct=soren" label="CONNECT SOREN" />
+              <ConnectButton href="/api/zoho/login" label="CONNECT SOREN" />
             ) : sorenEmails.length === 0 ? (
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <p style={{ color: "#444", fontSize: 12 }}>No emails</p>

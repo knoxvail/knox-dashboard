@@ -32,12 +32,19 @@ export async function GET() {
       const title = titleProp?.title?.map((t: any) => t.plain_text).join("") || "";
       if (!title) return;
 
+      // Clients are tagged with the Type select (status options can't be
+      // created via the API, but select options can)
+      const typeProp = (page.properties as any)["Type"];
+      if (typeProp?.select?.name === "Client") {
+        clients.push({ id: page.id, title });
+        return;
+      }
+
       const statusProp = Object.values(page.properties).find((p: any) => p.type === "status") as any;
       const status = statusProp?.status?.name || "";
 
       if (status === "Short Term") shortTerm.push({ id: page.id, title });
       else if (status === "Long Term") longTerm.push({ id: page.id, title });
-      else if (status === "Clients") clients.push({ id: page.id, title });
     });
 
     return NextResponse.json({ shortTerm, longTerm, clients });
@@ -163,6 +170,17 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Invalid status" }, { status: 400 });
     }
 
+    // Clients are tagged with the Type select property instead of Status
+    // (the API can't create status options, but select options it can)
+    const properties: Record<string, unknown> = {
+      Name: { title: [{ text: { content: title.trim() } }] },
+    };
+    if (status === "Clients") {
+      properties.Type = { select: { name: "Client" } };
+    } else {
+      properties.Status = { status: { name: status } };
+    }
+
     const notionRes = await fetch("https://api.notion.com/v1/pages", {
       method: "POST",
       headers: {
@@ -172,14 +190,7 @@ export async function PUT(request: Request) {
       },
       body: JSON.stringify({
         parent: { database_id: dbId },
-        properties: {
-          Name: {
-            title: [{ text: { content: title.trim() } }],
-          },
-          Status: {
-            status: { name: status },
-          },
-        },
+        properties,
       }),
     });
 
