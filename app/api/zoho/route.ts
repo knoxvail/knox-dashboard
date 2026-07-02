@@ -99,9 +99,18 @@ function findFolder(folders: any[], types: string[], names: string[]) {
 
 async function fetchEmails(token: string) {
   const accountId = await getAccountId(token);
-  const folders = await getFolders(token, accountId);
-  const inbox = findFolder(folders, ["inbox"], ["inbox"]);
-  const folderParam = inbox?.folderId ? `folderId=${inbox.folderId}&` : "";
+
+  // Prefer filtering to the Inbox folder so archived mail drops off. If the
+  // token lacks folder scope (/folders 401s), fall back to the default view so
+  // email still shows.
+  let folderParam = "";
+  try {
+    const folders = await getFolders(token, accountId);
+    const inbox = findFolder(folders, ["inbox"], ["inbox"]);
+    if (inbox?.folderId) folderParam = `folderId=${inbox.folderId}&`;
+  } catch {
+    /* no folder scope — use the default message view */
+  }
 
   const res = await zohoFetch(
     `/api/accounts/${accountId}/messages/view?${folderParam}limit=8&start=1`,
@@ -132,25 +141,36 @@ export async function GET(request: NextRequest) {
   if (!token) return NextResponse.json({ connected: false, configured: true, emails: [] });
 
   if (debug) {
+    // probe each endpoint independently so we can see exactly which scopes the
+    // token actually has (accounts / folders / messages / write)
+    const probe: any = {};
+    let accountId = "";
     try {
-      const accountId = await getAccountId(token);
-      const folders = await getFolders(token, accountId);
-      const inbox = findFolder(folders, ["inbox"], ["inbox"]);
-      const listRes = await zohoFetch(
-        `/api/accounts/${accountId}/messages/view?${inbox?.folderId ? `folderId=${inbox.folderId}&` : ""}limit=2&start=1`,
-        token
-      );
-      const listBody = await listRes.json().catch(() => ({}));
-      return NextResponse.json({
-        accountId,
-        folders: folders.map((f) => ({ folderId: f.folderId, folderName: f.folderName, folderType: f.folderType, path: f.path })),
-        detectedInboxId: inbox?.folderId ?? null,
-        messagesStatus: listRes.status,
-        sampleMessages: (listBody.data || []).slice(0, 2),
-      });
-    } catch (e: any) {
-      return NextResponse.json({ debugError: String(e?.message || e) });
+      const r = await zohoFetch("/api/accounts", token);
+      probe.accounts = r.status;
+      const d = await r.json().catch(() => ({}));
+      accountId = String((d.data || [])[0]?.accountId || "");
+      probe.accountId = accountId;
+    } catch (e: any) { probe.accounts = "err:" + e?.message; }
+
+    if (accountId) {
+      try {
+        const r = await zohoFetch(`/api/accounts/${accountId}/folders`, token);
+        probe.folders = r.status;
+        if (r.ok) {
+          const d = await r.json().catch(() => ({}));
+          probe.folderList = (d.data || []).map((f: any) => ({ id: f.folderId, name: f.folderName, type: f.folderType, path: f.path }));
+        }
+      } catch (e: any) { probe.folders = "err:" + e?.message; }
+
+      try {
+        const r = await zohoFetch(`/api/accounts/${accountId}/messages/view?limit=2&start=1`, token);
+        probe.messages = r.status;
+        const d = await r.json().catch(() => ({}));
+        probe.sampleMessage = (d.data || [])[0] || null;
+      } catch (e: any) { probe.messages = "err:" + e?.message; }
     }
+    return NextResponse.json(probe);
   }
 
   try {
