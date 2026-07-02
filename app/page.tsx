@@ -108,9 +108,8 @@ function CustomCursor() {
   );
 }
 
-// Glowy waves centered on the clock. The canvas sits ABOVE the content with a
-// "difference" blend, so where the bright waves cross the clock digits they
-// invert — both the waves and the clock stay visible.
+// Glowy waves background — thin, subtle mouse-reactive lines kept up in the
+// clock/time band so they don't read as being over the panel text.
 function GlowyWaves() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mouse = useRef({ x: 0, y: 0 });
@@ -125,51 +124,36 @@ function GlowyWaves() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     let w = 0, h = 0, time = 0, raf = 0, baseY = 0;
 
-    // bright monochrome waves — with the difference blend these read as light
-    // over the dark bg and invert to dark over the clock digits
+    // thin, very subtle waves kept up in the clock/time band (small amplitudes
+    // so they never reach down over the panel text below)
     const waves = [
-      { offset: 0, amplitude: 100, frequency: 0.003, color: "rgb(240,246,255)", opacity: 0.5 },
-      { offset: Math.PI / 2, amplitude: 128, frequency: 0.0026, color: "rgb(200,214,236)", opacity: 0.42 },
-      { offset: Math.PI, amplitude: 84, frequency: 0.0034, color: "rgb(170,186,212)", opacity: 0.36 },
-      { offset: Math.PI * 1.5, amplitude: 112, frequency: 0.0022, color: "rgb(150,170,200)", opacity: 0.3 },
-      { offset: Math.PI * 2, amplitude: 76, frequency: 0.004, color: "rgb(215,224,242)", opacity: 0.26 },
+      { offset: 0, amplitude: 46, frequency: 0.003, color: "rgb(220,230,246)", opacity: 0.085 },
+      { offset: Math.PI / 2, amplitude: 60, frequency: 0.0026, color: "rgb(186,202,228)", opacity: 0.07 },
+      { offset: Math.PI, amplitude: 38, frequency: 0.0034, color: "rgb(160,178,206)", opacity: 0.06 },
+      { offset: Math.PI * 1.5, amplitude: 52, frequency: 0.0022, color: "rgb(140,160,192)", opacity: 0.05 },
+      { offset: Math.PI * 2, amplitude: 34, frequency: 0.004, color: "rgb(200,212,234)", opacity: 0.045 },
     ];
 
     const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const influenceRadius = prefersReduced ? 160 : 340;
-    const mouseInfluence = prefersReduced ? 10 : 80;
+    const influenceRadius = prefersReduced ? 180 : 300;
+    const mouseInfluence = prefersReduced ? 8 : 34;
     const smoothing = prefersReduced ? 0.04 : 0.1;
 
-    // vertical center of the wave band = the clock's center (falls back near the top)
-    const measureBaseY = () => {
-      const el = document.querySelector("[data-clock]");
-      if (el) {
-        const r = el.getBoundingClientRect();
-        return r.top + r.height / 2;
-      }
-      return h * 0.15;
-    };
-
     const resize = () => {
-      w = window.innerWidth; h = window.innerHeight;
+      const de = document.documentElement;
+      w = de.clientWidth || window.innerWidth;
+      h = de.clientHeight || window.innerHeight;
+      if (w < 2) w = 1280; // guard against bad viewport-width reads
+      if (h < 2) h = 800;
       canvas.width = w * dpr; canvas.height = h * dpr;
       canvas.style.width = w + "px"; canvas.style.height = h + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      baseY = measureBaseY();
+      baseY = Math.min(h * 0.15, 150); // up near the time, clear of the panels
       mouse.current = { x: w / 2, y: baseY };
       target.current = { x: w / 2, y: baseY };
     };
     resize();
     window.addEventListener("resize", resize);
-
-    // re-measure the clock's position when fonts finish loading (its size can
-    // shift once Barlow Condensed swaps in) — cheap, not every frame
-    const remeasure = () => { baseY = measureBaseY(); };
-    document.fonts?.ready?.then(remeasure).catch(() => {});
-    const remeasureTimers = [
-      window.setTimeout(remeasure, 300),
-      window.setTimeout(remeasure, 1200),
-    ];
 
     const onMove = (e: MouseEvent) => { target.current = { x: e.clientX, y: e.clientY }; };
     const onLeave = () => { target.current = { x: w / 2, y: baseY }; };
@@ -191,10 +175,10 @@ function GlowyWaves() {
           + mouseEffect;
         if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 1.2;
       ctx.strokeStyle = wave.color;
       ctx.globalAlpha = wave.opacity;
-      ctx.shadowBlur = 24;
+      ctx.shadowBlur = 12;
       ctx.shadowColor = wave.color;
       ctx.stroke();
       ctx.restore();
@@ -214,7 +198,6 @@ function GlowyWaves() {
 
     return () => {
       cancelAnimationFrame(raf);
-      remeasureTimers.forEach(clearTimeout);
       window.removeEventListener("resize", resize);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseleave", onLeave);
@@ -225,7 +208,7 @@ function GlowyWaves() {
     <canvas
       ref={canvasRef}
       aria-hidden="true"
-      style={{ position: "fixed", inset: 0, zIndex: 40, pointerEvents: "none", mixBlendMode: "difference" }}
+      style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }}
     />
   );
 }
@@ -861,7 +844,7 @@ function Dashboard() {
       </header>
 
       <div style={{ textAlign: "center", padding: "4px 0 16px" }}>
-        <div data-clock style={{
+        <div style={{
           fontFamily: "'Barlow Condensed', sans-serif",
           fontSize: "clamp(64px, 9vw, 108px)",
           fontWeight: 300,
