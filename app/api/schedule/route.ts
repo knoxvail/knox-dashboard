@@ -1,15 +1,32 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 export const revalidate = 0;
 
-export async function GET(request: NextRequest) {
-  const debug = request.nextUrl.searchParams.get("debug") === "1";
+// Display timezone for event times. NOTE: do NOT use process.env.TZ here —
+// Vercel sets it to ":UTC", which is a valid POSIX value for the Node process
+// but an INVALID IANA name for Intl/toLocaleTimeString (it throws
+// "Invalid time zone specified: :UTC"). Use a real IANA name instead.
+const DISPLAY_TZ = process.env.SCHEDULE_TZ || "America/Los_Angeles";
+
+function formatTime(d: Date): string {
+  try {
+    return d.toLocaleTimeString("en-US", {
+      hour: "numeric", minute: "2-digit", hour12: true, timeZone: DISPLAY_TZ,
+    });
+  } catch {
+    // never let a bad timezone take down the whole schedule
+    try {
+      return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    } catch {
+      return "";
+    }
+  }
+}
+
+export async function GET() {
   const token = process.env.NOTION_TOKEN;
   const dbId = process.env.NOTION_SCHEDULE_DB_ID;
-  if (!token || !dbId) {
-    if (debug) return NextResponse.json({ hasToken: !!token, hasDbId: !!dbId });
-    return NextResponse.json({ events: [] });
-  }
+  if (!token || !dbId) return NextResponse.json({ events: [] });
 
   try {
     const now = new Date();
@@ -35,32 +52,6 @@ export async function GET(request: NextRequest) {
 
     const data = await res.json();
 
-    if (debug) {
-      const first: any = (data.results || [])[0];
-      const rawStart = first?.properties?.Date?.date?.start || "";
-      let tzTest = "ok";
-      try {
-        new Date(rawStart || Date.now()).toLocaleTimeString("en-US", {
-          hour: "numeric", minute: "2-digit", hour12: true,
-          timeZone: process.env.TZ || "America/Los_Angeles",
-        });
-      } catch (e: any) {
-        tzTest = "THREW: " + String(e?.message || e);
-      }
-      return NextResponse.json({
-        hasToken: true,
-        serverNow: now.toISOString(),
-        notionStatus: res.status,
-        rawCount: (data.results || []).length,
-        rawStart,
-        startMs: rawStart ? new Date(rawStart).getTime() : null,
-        nowMs: now.getTime(),
-        keptByFilter: rawStart ? new Date(rawStart).getTime() > now.getTime() : true,
-        TZ: process.env.TZ || null,
-        tzTest,
-      });
-    }
-
     const events = (data.results || [])
       .map((page: any) => {
         const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
@@ -85,13 +76,7 @@ export async function GET(request: NextRequest) {
 
           displayDate = isToday ? "Today" : isTomorrow ? "Tomorrow" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-          if (isDatetime) {
-            const tz = process.env.TZ || "America/Los_Angeles";
-            displayTime = d.toLocaleTimeString("en-US", {
-              hour: "numeric", minute: "2-digit", hour12: true,
-              timeZone: tz
-            });
-          }
+          if (isDatetime) displayTime = formatTime(d);
         }
 
         const type = (page.properties as any)["Type"]?.select?.name || "";
