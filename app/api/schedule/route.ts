@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
         rawCount: (data.results || []).length,
         notionError: res.ok ? null : data,
         firstTitle: (data.results || [])[0]
-          ? Object.values((data.results as any[])[0].properties).find((p: any) => p.type === "title")?.title?.map((t: any) => t.plain_text).join("")
+          ? (Object.values((data.results as any[])[0].properties).find((p: any) => p.type === "title") as any)?.title?.map((t: any) => t.plain_text).join("")
           : null,
       });
     }
