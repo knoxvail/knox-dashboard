@@ -913,7 +913,13 @@ function Dashboard() {
           <Panel style={{ flex: 1.35, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
             <PanelHeader label="Soren Email" right={<Tag>ZOHO</Tag>} />
             {!sorenConnected ? (
-              <ConnectButton href="/api/zoho/login" label="CONNECT SOREN" />
+              // Self Client flow: connection comes from server env vars, so
+              // there's nothing to click — just say what's missing.
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 12px" }}>
+                <p style={{ color: "#444", fontSize: 11, textAlign: "center", lineHeight: 1.6, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.05em" }}>
+                  ZOHO NOT CONNECTED — SET ZOHO_CLIENT_ID / ZOHO_CLIENT_SECRET / ZOHO_REFRESH_TOKEN IN VERCEL
+                </p>
+              </div>
             ) : sorenEmails.length === 0 ? (
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <p style={{ color: "#444", fontSize: 12 }}>No emails</p>
