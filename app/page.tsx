@@ -124,14 +124,14 @@ function GlowyWaves() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     let w = 0, h = 0, time = 0, raf = 0, baseY = 0;
 
-    // thin, very subtle waves kept up in the clock/time band (small amplitudes
-    // so they never reach down over the panel text below)
+    // thin waves kept up in the clock/time band (small amplitudes so they never
+    // reach down over the panel text below)
     const waves = [
-      { offset: 0, amplitude: 46, frequency: 0.003, color: "rgb(220,230,246)", opacity: 0.085 },
-      { offset: Math.PI / 2, amplitude: 60, frequency: 0.0026, color: "rgb(186,202,228)", opacity: 0.07 },
-      { offset: Math.PI, amplitude: 38, frequency: 0.0034, color: "rgb(160,178,206)", opacity: 0.06 },
-      { offset: Math.PI * 1.5, amplitude: 52, frequency: 0.0022, color: "rgb(140,160,192)", opacity: 0.05 },
-      { offset: Math.PI * 2, amplitude: 34, frequency: 0.004, color: "rgb(200,212,234)", opacity: 0.045 },
+      { offset: 0, amplitude: 46, frequency: 0.003, color: "rgb(222,232,248)", opacity: 0.17 },
+      { offset: Math.PI / 2, amplitude: 60, frequency: 0.0026, color: "rgb(190,206,230)", opacity: 0.14 },
+      { offset: Math.PI, amplitude: 38, frequency: 0.0034, color: "rgb(164,182,210)", opacity: 0.12 },
+      { offset: Math.PI * 1.5, amplitude: 52, frequency: 0.0022, color: "rgb(146,166,198)", opacity: 0.10 },
+      { offset: Math.PI * 2, amplitude: 34, frequency: 0.004, color: "rgb(204,216,238)", opacity: 0.085 },
     ];
 
     const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -175,10 +175,10 @@ function GlowyWaves() {
           + mouseEffect;
         if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
-      ctx.lineWidth = 1.2;
+      ctx.lineWidth = 1.5;
       ctx.strokeStyle = wave.color;
       ctx.globalAlpha = wave.opacity;
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = 16;
       ctx.shadowColor = wave.color;
       ctx.stroke();
       ctx.restore();
