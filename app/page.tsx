@@ -1483,15 +1483,12 @@ function Dashboard() {
                     <p style={{ color: "#444", fontSize: 12 }}>Nothing scheduled</p>
                   </div>
                 ) : events.map((event) => (
-                  <div key={event.id} style={{ borderBottom: "1px solid #1e1e1e", padding: "8px 0" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
-                      <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.4 }}>{event.title}</p>
-                      {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#555", flexShrink: 0, marginLeft: 6 }}>{event.type.toUpperCase()}</span>}
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#666" }}>{event.displayDate}</span>
-                      {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>{event.displayTime}</span>}
-                    </div>
+                  // stacked top-to-bottom: title, then date / time / type each below it
+                  <div key={event.id} style={{ borderBottom: "1px solid #1e1e1e", padding: "9px 0", display: "flex", flexDirection: "column", gap: 4 }}>
+                    <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.4 }}>{event.title}</p>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#666", letterSpacing: "0.05em" }}>{event.displayDate}</span>
+                    {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555", letterSpacing: "0.05em" }}>{event.displayTime}</span>}
+                    {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#555", letterSpacing: "0.12em" }}>{event.type.toUpperCase()}</span>}
                   </div>
                 ))}
               </div>
@@ -1604,14 +1601,9 @@ function Dashboard() {
         position: "relative",
         zIndex: 1,
       }}>
-        {/* Left side - Aphorismo */}
+        {/* Left side - Aphorismo (no box — floats on the footer) */}
         <div style={{
           flex: 1, display: "flex", alignItems: "center", gap: 12, minWidth: 0,
-          background: "rgba(12,14,18,0.5)",
-          backdropFilter: "blur(7px)",
-          WebkitBackdropFilter: "blur(7px)",
-          border: "1px solid #2a2a2a",
-          padding: "10px 14px",
         }}>
           {aphorismo ? (
             <>
@@ -1639,14 +1631,9 @@ function Dashboard() {
           )}
         </div>
 
-        {/* Right side - Daily Word */}
+        {/* Right side - Daily Word (no box — floats on the footer) */}
         <div style={{
           flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12, minWidth: 0,
-          background: "rgba(12,14,18,0.5)",
-          backdropFilter: "blur(7px)",
-          WebkitBackdropFilter: "blur(7px)",
-          border: "1px solid #2a2a2a",
-          padding: "10px 14px",
         }}>
           {verse && allVerses.length > 0 ? (
             <>
