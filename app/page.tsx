@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 
 type Task = { id: string; title: string };
+type ChecklistItem = { id: string; text: string; checked: boolean }; // id = Notion BLOCK id
+type Project = { id: string; title: string; items: ChecklistItem[] }; // id = Notion PAGE id
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
 type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string };
@@ -215,7 +218,7 @@ function GlowyWaves() {
 // One email line with an archive checkmark — shared by both inbox panels.
 function EmailRow({ email, onArchive }: { email: Email; onArchive: (id: string) => void }) {
   return (
-    <div style={{ borderBottom: "1px solid #1e1e1e", padding: "9px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, transition: "border-color 0.2s" }}
+    <div className="reveal-row" style={{ borderBottom: "1px solid #1e1e1e", padding: "9px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, transition: "border-color 0.2s" }}
       onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#555")}
       onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "#1e1e1e")}
     >
@@ -313,6 +316,8 @@ function ConnectButton({ href, label }: { href: string; label: string }) {
 function DoneButton({ onClick }: { onClick: () => void }) {
   return (
     <button
+      className="row-action"
+      aria-label="Done"
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -327,7 +332,7 @@ function DoneButton({ onClick }: { onClick: () => void }) {
         padding: "3px 8px",
         flexShrink: 0,
         borderRadius: 3,
-        transition: "color 0.2s, border-color 0.2s, background 0.2s",
+        transition: "color 0.2s, border-color 0.2s, background 0.2s, opacity 0.15s",
         lineHeight: 1,
         pointerEvents: "auto",
       }}
@@ -386,6 +391,7 @@ function TaskItem({
 
   return (
     <div
+      className="reveal-row"
       draggable={!isEditing}
       onDragStart={(e) => {
         e.dataTransfer.setData("text/plain", task.id);
@@ -501,7 +507,7 @@ function TaskList({ tasks, onComplete, onEdit }: { tasks: Task[]; onComplete: (i
   );
 }
 
-function AddTaskInput({ onAdd }: { onAdd: (title: string) => Promise<void> }) {
+function AddTaskInput({ onAdd, placeholder = "New task..." }: { onAdd: (title: string) => Promise<void>; placeholder?: string }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [loading, setLoading] = useState(false);
@@ -541,7 +547,7 @@ function AddTaskInput({ onAdd }: { onAdd: (title: string) => Promise<void> }) {
         value={value}
         onChange={e => setValue(e.target.value)}
         onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") { setOpen(false); setValue(""); } }}
-        placeholder="New task..."
+        placeholder={placeholder}
         style={{
           flex: 1, background: "#1a1a1a", border: "1px solid #333",
           color: "#ccc", fontSize: 12, padding: "5px 8px",
@@ -565,10 +571,328 @@ function AddTaskInput({ onAdd }: { onAdd: (title: string) => Promise<void> }) {
   );
 }
 
+// A Long Term "project" bucket: a draggable box that opens a modal on click and
+// previews its checklist on hover. Drag (move to Short Term) and click (open) are
+// disambiguated by a per-card drag flag.
+function BucketCard({ project, onOpen, onHover, onLeave }: {
+  project: Project;
+  onOpen: (id: string) => void;
+  onHover: (id: string, rect: DOMRect) => void;
+  onLeave: () => void;
+}) {
+  const dragging = useRef(false);
+  const count = project.items.length;
+  const done = project.items.filter((i) => i.checked).length;
+  const label = count === 0 ? "EMPTY" : done > 0 ? `${done}/${count} DONE` : `${count} ITEM${count > 1 ? "S" : ""}`;
+
+  return (
+    <div
+      draggable
+      tabIndex={0}
+      onDragStart={(e) => {
+        dragging.current = true;
+        e.dataTransfer.setData("text/plain", project.id);
+        e.dataTransfer.effectAllowed = "move";
+        onLeave();
+      }}
+      onDragEnd={() => { setTimeout(() => { dragging.current = false; }, 0); }}
+      onClick={() => { if (dragging.current) return; onOpen(project.id); }}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(project.id); } }}
+      onMouseEnter={(e) => {
+        onHover(project.id, e.currentTarget.getBoundingClientRect());
+        e.currentTarget.style.borderColor = "#777";
+        e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+        e.currentTarget.style.transform = "translateY(-1px)";
+      }}
+      onMouseLeave={(e) => {
+        onLeave();
+        e.currentTarget.style.borderColor = "#2a2a2a";
+        e.currentTarget.style.background = "rgba(255,255,255,0.02)";
+        e.currentTarget.style.transform = "translateY(0)";
+      }}
+      style={{
+        background: "rgba(255,255,255,0.02)",
+        border: "1px solid #2a2a2a",
+        borderRadius: 4,
+        padding: "12px 12px 10px",
+        minHeight: 66,
+        cursor: "pointer",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        gap: 6,
+        transition: "border-color 0.2s, background 0.2s, transform 0.2s",
+      }}
+    >
+      <span style={{
+        fontSize: 13, color: "#cfcfcf", fontFamily: "'DM Sans', sans-serif",
+        lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2,
+        WebkitBoxOrient: "vertical", overflow: "hidden",
+      }}>{project.title}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }} aria-hidden>
+          {[0, 1, 2].map((i) => <div key={i} style={{ width: 9, height: 1, background: "#444" }} />)}
+        </div>
+        <span style={{
+          fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
+          letterSpacing: "0.12em", color: "#555",
+        }}>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function ProjectGrid({ projects, onOpen, onHover, onLeave }: {
+  projects: Project[];
+  onOpen: (id: string) => void;
+  onHover: (id: string, rect: DOMRect) => void;
+  onLeave: () => void;
+}) {
+  if (projects.length === 0) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 60 }}>
+      <p style={{ color: "#444", fontSize: 12, textAlign: "center" }}>None</p>
+    </div>
+  );
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
+      {projects.map((p) => (
+        <BucketCard key={p.id} project={p} onOpen={onOpen} onHover={onHover} onLeave={onLeave} />
+      ))}
+    </div>
+  );
+}
+
+// Fixed-position preview anchored to a hovered card. Rendered at the Dashboard
+// root (not inside the panel) so the panel's overflow:hidden can't clip it, and
+// pointerEvents:none so it never blocks the click/drag underneath.
+function HoverPopover({ project, rect }: { project: Project; rect: DOMRect }) {
+  const W = 200;
+  const items = project.items;
+  const vw = typeof window !== "undefined" ? window.innerWidth : 1280;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+  const estH = Math.min(40 + Math.min(items.length, 6) * 20 + (items.length > 6 ? 16 : 0), 220);
+  const left = Math.min(Math.max(rect.left, 8), vw - W - 8);
+  const openAbove = rect.bottom + 8 + estH > vh;
+  // when flipping above, anchor to the card's top edge and cap the height so the
+  // popover can never overlap the card it previews
+  const pos: React.CSSProperties = openAbove
+    ? { bottom: Math.max(vh - rect.top + 8, 8), maxHeight: Math.max(rect.top - 16, 60) }
+    : { top: rect.bottom + 8, maxHeight: Math.max(vh - rect.bottom - 16, 60) };
+
+  return (
+    <div style={{
+      position: "fixed", left, width: W, ...pos, overflow: "hidden",
+      background: "rgba(14,16,20,0.96)",
+      backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+      border: "1px solid #3a3a3a", borderRadius: 4,
+      boxShadow: "0 8px 28px rgba(0,0,0,0.6)",
+      padding: "10px 12px", zIndex: 9500, pointerEvents: "none",
+    }}>
+      <div style={{
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em",
+        color: "#666", textTransform: "uppercase", marginBottom: items.length ? 8 : 0,
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+      }}>{project.title}</div>
+      {items.length === 0 ? (
+        <div style={{ fontSize: 12, color: "#555" }}>Empty</div>
+      ) : (
+        <>
+          {items.slice(0, 6).map((it) => (
+            <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
+              <span style={{ fontSize: 10, color: it.checked ? "#cfcfcf" : "#555", flexShrink: 0 }}>{it.checked ? "▪" : "▫"}</span>
+              <span style={{
+                fontSize: 12, color: it.checked ? "#555" : "#9a9a9a",
+                textDecoration: it.checked ? "line-through" : "none",
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              }}>{it.text || "Untitled"}</span>
+            </div>
+          ))}
+          {items.length > 6 && (
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#555", marginTop: 2 }}>+{items.length - 6} MORE</div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// Click-to-open editor for a project's checklist. Portalled to document.body so
+// the panel's overflow/backdrop-filter stacking context can't clip it.
+function ProjectModal({ project, onClose, onAddItem, onToggleItem, onDeleteItem, onEditTitle, onArchive }: {
+  project: Project;
+  onClose: () => void;
+  onAddItem: (projectId: string, text: string) => void;
+  onToggleItem: (projectId: string, itemId: string, checked: boolean) => void;
+  onDeleteItem: (projectId: string, itemId: string) => void;
+  onEditTitle: (id: string, title: string) => Promise<void>;
+  onArchive: (id: string) => void;
+}) {
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleValue, setTitleValue] = useState(project.title);
+  const [newItem, setNewItem] = useState("");
+  const addRef = useRef<HTMLInputElement>(null);
+  const isTemp = project.id.startsWith("temp-");
+
+  useEffect(() => { setTitleValue(project.title); }, [project.title]);
+  useEffect(() => {
+    // Escape closes the modal, but not while renaming (that Escape cancels the edit)
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !editingTitle) onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, editingTitle]);
+  useEffect(() => { if (!isTemp) setTimeout(() => addRef.current?.focus(), 60); }, [isTemp]);
+
+  const submitTitle = async () => {
+    const t = titleValue.trim();
+    if (t && t !== project.title) await onEditTitle(project.id, t);
+    setEditingTitle(false);
+  };
+  const submitItem = () => {
+    const t = newItem.trim();
+    if (!t || isTemp) return;
+    onAddItem(project.id, t);
+    setNewItem("");
+    setTimeout(() => addRef.current?.focus(), 0);
+  };
+
+  return createPortal(
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+        backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+        zIndex: 9000, display: "grid", placeItems: "center",
+        fontFamily: "'DM Sans', sans-serif",
+      }}
+    >
+      <div style={{
+        width: "min(440px, 92vw)", maxHeight: "78vh",
+        background: "rgba(12,14,18,0.92)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+        border: "1px solid #3a3a3a", borderRadius: 6, padding: "20px 22px",
+        display: "flex", flexDirection: "column",
+        boxShadow: "0 20px 60px rgba(0,0,0,0.7)", position: "relative",
+      }}>
+        <div style={{ position: "absolute", top: -1, left: 16, width: 32, height: 1, background: "#999" }} />
+        <div style={{ position: "absolute", top: -1, left: -1, width: 10, height: 10, borderTop: "1px solid #999", borderLeft: "1px solid #999" }} />
+
+        {/* header: editable title + close */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+          {editingTitle ? (
+            <input
+              autoFocus
+              value={titleValue}
+              onChange={(e) => setTitleValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") submitTitle(); if (e.key === "Escape") { e.stopPropagation(); setTitleValue(project.title); setEditingTitle(false); } }}
+              onBlur={submitTitle}
+              style={{
+                flex: 1, background: "#1a1a1a", border: "1px solid #333", color: "#e8e8e8",
+                fontSize: 18, padding: "4px 8px", fontFamily: "'DM Sans', sans-serif",
+                outline: "none", borderRadius: 3, minWidth: 0,
+              }}
+            />
+          ) : (
+            <h2
+              onClick={() => !isTemp && setEditingTitle(true)}
+              style={{ margin: 0, fontSize: 18, fontWeight: 500, color: "#e8e8e8", lineHeight: 1.3, cursor: isTemp ? "default" : "pointer", flex: 1, minWidth: 0, wordBreak: "break-word" }}
+            >{project.title}</h2>
+          )}
+          <button onClick={onClose} style={{
+            background: "none", border: "none", cursor: "pointer", color: "#666",
+            fontSize: 18, lineHeight: 1, padding: 0, flexShrink: 0, transition: "color 0.15s",
+          }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#ccc")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "#666")}
+          >✕</button>
+        </div>
+
+        {/* checklist items */}
+        <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 40 }}>
+          {project.items.length === 0 ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 0" }}>
+              <p style={{ color: "#444", fontSize: 12 }}>No items yet</p>
+            </div>
+          ) : project.items.map((it) => {
+            const temp = it.id.startsWith("temp-");
+            return (
+              <div key={it.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", borderBottom: "1px solid #1e1e1e" }}
+                onMouseEnter={(e) => { const x = e.currentTarget.querySelector("[data-del]") as HTMLElement | null; if (x) x.style.opacity = "1"; }}
+                onMouseLeave={(e) => { const x = e.currentTarget.querySelector("[data-del]") as HTMLElement | null; if (x) x.style.opacity = "0"; }}
+              >
+                <button
+                  disabled={temp}
+                  onClick={() => onToggleItem(project.id, it.id, !it.checked)}
+                  style={{
+                    width: 18, height: 18, flexShrink: 0, marginTop: 1,
+                    background: it.checked ? "#2a2a2a" : "#1e1e1e",
+                    border: "1px solid #505050", borderRadius: 3,
+                    color: "#fff", fontSize: 11, lineHeight: 1, cursor: temp ? "default" : "pointer",
+                    opacity: temp ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >{it.checked ? "✓" : ""}</button>
+                <span style={{
+                  flex: 1, fontSize: 13, color: it.checked ? "#555" : "#b0b0b0",
+                  textDecoration: it.checked ? "line-through" : "none", lineHeight: 1.4, minWidth: 0, wordBreak: "break-word",
+                }}>{it.text || "Untitled"}</span>
+                <button
+                  data-del
+                  disabled={temp}
+                  onClick={() => onDeleteItem(project.id, it.id)}
+                  style={{
+                    background: "none", border: "none", cursor: temp ? "default" : "pointer",
+                    color: "#555", fontSize: 13, lineHeight: 1, padding: "0 2px", flexShrink: 0,
+                    opacity: 0, transition: "opacity 0.15s, color 0.15s",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = "#999")}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = "#555")}
+                >✕</button>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* add item */}
+        <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
+          <input
+            ref={addRef}
+            value={newItem}
+            onChange={(e) => setNewItem(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") submitItem(); }}
+            placeholder={isTemp ? "Saving project…" : "Add item..."}
+            disabled={isTemp}
+            style={{
+              flex: 1, background: "#1a1a1a", border: "1px solid #333", color: "#ccc",
+              fontSize: 12, padding: "6px 8px", fontFamily: "'DM Sans', sans-serif",
+              outline: "none", borderRadius: 2, opacity: isTemp ? 0.5 : 1,
+            }}
+          />
+          <button onClick={submitItem} disabled={isTemp} style={{
+            background: "#1e1e1e", border: "1px solid #505050", color: "#aaa",
+            fontSize: 11, padding: "4px 12px", cursor: isTemp ? "default" : "pointer", borderRadius: 2,
+            flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.1em", opacity: isTemp ? 0.5 : 1,
+          }}>ADD</button>
+        </div>
+
+        {/* archive whole project */}
+        <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
+          <button onClick={() => onArchive(project.id)} style={{
+            background: "none", border: "none", cursor: "pointer",
+            fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.15em",
+            color: "#444", textTransform: "uppercase", padding: 0, transition: "color 0.15s",
+          }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#c06464")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "#444")}
+          >Archive Project</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function Dashboard() {
   const clock = useClock();
   const [shortTerm, setShortTerm] = useState<Task[]>([]);
-  const [longTerm, setLongTerm] = useState<Task[]>([]);
+  const [longTerm, setLongTerm] = useState<Project[]>([]);
   const [clients, setClients] = useState<Task[]>([]);
   const [verse, setVerse] = useState<Verse | null>(null);
   const [allVerses, setAllVerses] = useState<Verse[]>([]);
@@ -586,6 +910,8 @@ function Dashboard() {
   const [volume, setVolume] = useState(50);
   const [loading, setLoading] = useState(true);
   const [dragOver, setDragOver] = useState<"Short Term" | "Long Term" | null>(null);
+  const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  const [hover, setHover] = useState<{ id: string; rect: DOMRect } | null>(null);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Each source fetches independently so one slow endpoint never blocks the
@@ -698,6 +1024,19 @@ function Dashboard() {
     return () => { if (spotifyInterval.current) clearInterval(spotifyInterval.current); };
   }, [fetchSpotify]);
 
+  // the hover popover is pinned to a captured rect, so it detaches on scroll —
+  // just dismiss it (capture:true also catches the inner panel's scroll)
+  useEffect(() => {
+    if (!hover) return;
+    const clear = () => setHover(null);
+    window.addEventListener("scroll", clear, true);
+    window.addEventListener("resize", clear);
+    return () => {
+      window.removeEventListener("scroll", clear, true);
+      window.removeEventListener("resize", clear);
+    };
+  }, [hover]);
+
   const completeTask = async (id: string) => {
     // optimistic: drop it from the UI immediately
     setShortTerm(prev => prev.filter(t => t.id !== id));
@@ -729,17 +1068,17 @@ function Dashboard() {
         body: JSON.stringify({ id, title: newTitle, action: "update" }),
       });
       if (!res.ok) {
-        await fetchStatic(); // Revert on error
+        await fetchTasks(); // revert just the task lists (no full-dashboard reload)
       }
     } catch {
       await fetchStatic(); // Revert on error
     }
   };
 
-  const addTask = async (title: string, status: "Short Term" | "Long Term" | "Clients") => {
+  const addTask = async (title: string, status: "Short Term" | "Clients") => {
     // optimistic: show the task right away with a temporary id
     const tempId = `temp-${Date.now()}`;
-    const setList = status === "Short Term" ? setShortTerm : status === "Long Term" ? setLongTerm : setClients;
+    const setList = status === "Short Term" ? setShortTerm : setClients;
     setList(prev => [...prev, { id: tempId, title }]);
     try {
       const res = await fetch("/api/notion", {
@@ -747,33 +1086,146 @@ function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, status }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setList(prev => prev.filter(t => t.id !== tempId)); // roll back on failure
         return;
       }
+      // swap the temp id for the real page id in place — avoids a full reconcile
+      // GET that could clobber another list's in-flight optimistic edits
+      if (data.id) setList(prev => prev.map(t => t.id === tempId ? { ...t, id: data.id } : t));
+      else fetchTasks();
     } catch {
       setList(prev => prev.filter(t => t.id !== tempId));
-      return;
     }
-    fetchTasks(); // reconcile the temp row with the real Notion id
+  };
+
+  // A Long Term "project" is a Notion page (Status=Long Term) that starts empty.
+  const addProject = async (title: string) => {
+    const tempId = `temp-${Date.now()}`;
+    setLongTerm(prev => [...prev, { id: tempId, title, items: [] }]);
+    try {
+      const res = await fetch("/api/notion", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, status: "Long Term" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLongTerm(prev => prev.filter(p => p.id !== tempId));
+        return;
+      }
+      if (data.id) {
+        // swap temp -> real page id in place (new project has no items yet), and
+        // carry an already-open modal across the swap so it doesn't vanish
+        setLongTerm(prev => prev.map(p => p.id === tempId ? { ...p, id: data.id } : p));
+        setOpenProjectId(cur => (cur === tempId ? data.id : cur));
+      } else {
+        fetchTasks();
+      }
+    } catch {
+      setLongTerm(prev => prev.filter(p => p.id !== tempId));
+    }
+  };
+
+  // ----- Checklist items within a Long Term project (optimistic) -----
+  const addChecklistItem = async (projectId: string, text: string) => {
+    if (projectId.startsWith("temp-")) return; // project page doesn't exist yet
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const tempId = `temp-${Date.now()}`;
+    setLongTerm(prev => prev.map(p => p.id === projectId
+      ? { ...p, items: [...p.items, { id: tempId, text: trimmed, checked: false }] }
+      : p));
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "addChecklistItem", projectId, text: trimmed }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.item?.id) {
+        setLongTerm(prev => prev.map(p => p.id === projectId
+          ? { ...p, items: p.items.filter(it => it.id !== tempId) } : p));
+        return;
+      }
+      // swap the temp id for the real Notion block id
+      setLongTerm(prev => prev.map(p => p.id === projectId
+        ? { ...p, items: p.items.map(it => it.id === tempId ? { ...it, id: data.item.id } : it) } : p));
+    } catch {
+      setLongTerm(prev => prev.map(p => p.id === projectId
+        ? { ...p, items: p.items.filter(it => it.id !== tempId) } : p));
+    }
+  };
+
+  const toggleChecklistItem = async (projectId: string, itemId: string, checked: boolean) => {
+    if (itemId.startsWith("temp-")) return; // block doesn't exist yet
+    setLongTerm(prev => prev.map(p => p.id === projectId
+      ? { ...p, items: p.items.map(it => it.id === itemId ? { ...it, checked } : it) } : p));
+    const revert = () => setLongTerm(prev => prev.map(p => p.id === projectId
+      ? { ...p, items: p.items.map(it => it.id === itemId ? { ...it, checked: !checked } : it) } : p));
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggleChecklistItem", itemId, checked }),
+      });
+      if (!res.ok) revert();
+    } catch {
+      revert();
+    }
+  };
+
+  const deleteChecklistItem = async (projectId: string, itemId: string) => {
+    if (itemId.startsWith("temp-")) return;
+    const proj = longTerm.find(p => p.id === projectId);
+    const idx = proj ? proj.items.findIndex(it => it.id === itemId) : -1;
+    const removed = idx >= 0 ? proj!.items[idx] : null;
+    setLongTerm(prev => prev.map(p => p.id === projectId
+      ? { ...p, items: p.items.filter(it => it.id !== itemId) } : p));
+    // on failure re-insert only the removed item at its old spot, keeping any
+    // concurrent toggles/adds to sibling items intact
+    const restore = () => {
+      if (!removed) return;
+      setLongTerm(prev => prev.map(p => {
+        if (p.id !== projectId) return p;
+        if (p.items.some(it => it.id === removed.id)) return p;
+        const items = [...p.items];
+        items.splice(Math.min(idx, items.length), 0, removed);
+        return { ...p, items };
+      }));
+    };
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "deleteChecklistItem", itemId }),
+      });
+      if (!res.ok) restore();
+    } catch {
+      restore();
+    }
   };
 
   // Move a task between Short Term and Long Term by dragging it to the other list
   const moveTask = async (id: string, target: "Short Term" | "Long Term") => {
+    if (id.startsWith("temp-")) return; // not yet reconciled to a real page id
     const inShort = shortTerm.find(t => t.id === id);
-    const inLong = longTerm.find(t => t.id === id);
-    const task = inShort || inLong;
-    if (!task) return;
+    const inLong = longTerm.find(p => p.id === id);
+    const src = inShort || inLong;
+    if (!src) return;
     // already in the target list -> nothing to do
     if ((inShort && target === "Short Term") || (inLong && target === "Long Term")) return;
 
-    // optimistic move between the two lists
+    // optimistic move between the two lists — shapes differ (Task vs Project),
+    // so build the right element for the destination (items reappear on reconcile
+    // since a status move never deletes a page's child blocks).
     if (target === "Short Term") {
-      setLongTerm(prev => prev.filter(t => t.id !== id));
-      setShortTerm(prev => [...prev, task]);
+      setLongTerm(prev => prev.filter(p => p.id !== id));
+      setShortTerm(prev => [...prev, { id: src.id, title: src.title }]);
     } else {
       setShortTerm(prev => prev.filter(t => t.id !== id));
-      setLongTerm(prev => [...prev, task]);
+      setLongTerm(prev => [...prev, { id: src.id, title: src.title, items: [] }]);
     }
 
     try {
@@ -841,6 +1293,10 @@ function Dashboard() {
   };
 
   const progressPct = nowPlaying.duration ? (nowPlaying.progress || 0) / nowPlaying.duration * 100 : 0;
+
+  // modal + hover read live project state so optimistic item edits reflect instantly
+  const openProject = openProjectId ? longTerm.find(p => p.id === openProjectId) || null : null;
+  const hoverProject = hover && !openProjectId ? longTerm.find(p => p.id === hover.id) || null : null;
 
   return (
     <div style={{
@@ -984,7 +1440,7 @@ function Dashboard() {
 
           {/* right side of the middle column: Long Term (top) with Up Next stacked under it */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
-            <Panel style={{ flex: 1.1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+            <Panel style={{ flex: 1.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
               <PanelHeader label="Long Term" right={
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>
                   {longTerm.length}
@@ -1002,17 +1458,24 @@ function Dashboard() {
                 }}
               >
                 {loading ? (
-                  Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>
-                      <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 8}%` }} />
-                    </div>
-                  ))
-                ) : <TaskList tasks={longTerm} onComplete={completeTask} onEdit={editTask} />}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8 }}>
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} style={{ height: 66, background: "#141414", border: "1px solid #222", borderRadius: 4 }} />
+                    ))}
+                  </div>
+                ) : (
+                  <ProjectGrid
+                    projects={longTerm}
+                    onOpen={setOpenProjectId}
+                    onHover={(id, rect) => setHover({ id, rect })}
+                    onLeave={() => setHover(null)}
+                  />
+                )}
               </div>
-              <AddTaskInput onAdd={(title) => addTask(title, "Long Term")} />
+              <AddTaskInput onAdd={addProject} placeholder="New project..." />
             </Panel>
 
-            <Panel style={{ flex: 0.9, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+            <Panel style={{ flex: 0.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
               <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                 {events.length === 0 ? (
@@ -1020,7 +1483,7 @@ function Dashboard() {
                     <p style={{ color: "#444", fontSize: 12 }}>Nothing scheduled</p>
                   </div>
                 ) : events.map((event) => (
-                  <div key={event.id} style={{ borderBottom: "1px solid #1e1e1e", padding: "10px 0" }}>
+                  <div key={event.id} style={{ borderBottom: "1px solid #1e1e1e", padding: "8px 0" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
                       <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.4 }}>{event.title}</p>
                       {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#555", flexShrink: 0, marginLeft: 6 }}>{event.type.toUpperCase()}</span>}
@@ -1231,6 +1694,20 @@ function Dashboard() {
         </div>
       </footer>
 
+      {hoverProject && <HoverPopover project={hoverProject} rect={hover!.rect} />}
+
+      {openProject && (
+        <ProjectModal
+          project={openProject}
+          onClose={() => setOpenProjectId(null)}
+          onAddItem={addChecklistItem}
+          onToggleItem={toggleChecklistItem}
+          onDeleteItem={deleteChecklistItem}
+          onEditTitle={editTask}
+          onArchive={(id) => { completeTask(id); setOpenProjectId(null); }}
+        />
+      )}
+
       <style dangerouslySetInnerHTML={{ __html: `
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400&family=DM+Sans:wght@300;400;500&display=swap');
         @keyframes scan {
@@ -1241,6 +1718,10 @@ function Dashboard() {
         body { margin: 0; overflow: hidden; }
         ::-webkit-scrollbar { width: 2px; }
         ::-webkit-scrollbar-thumb { background: #2a2a2a; }
+        /* row action checkmarks reveal only on row hover / keyboard focus */
+        .reveal-row .row-action { opacity: 0; }
+        .reveal-row:hover .row-action,
+        .reveal-row:focus-within .row-action { opacity: 1; }
       ` }} />
     </div>
   );

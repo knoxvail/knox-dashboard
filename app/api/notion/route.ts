@@ -2,10 +2,56 @@ import { NextResponse } from "next/server";
 
 export const revalidate = 0;
 
+// A project's checklist items are stored as to_do blocks inside its Notion page.
+// Notion pages don't expose a child count, so we fetch each project's children to
+// show item counts and the hover preview. Errors are swallowed to [] so one bad
+// project never fails the whole tasks GET.
+async function fetchChecklist(token: string, pageId: string): Promise<{ id: string; text: string; checked: boolean }[]> {
+  const headers = { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28" };
+  const items: { id: string; text: string; checked: boolean }[] = [];
+  try {
+    let cursor: string | undefined;
+    // page through ALL children (a page may hold >100 blocks) accumulating to_dos
+    do {
+      const url = new URL(`https://api.notion.com/v1/blocks/${pageId}/children`);
+      url.searchParams.set("page_size", "100");
+      if (cursor) url.searchParams.set("start_cursor", cursor);
+
+      let r = await fetch(url, { headers, cache: "no-store" });
+      // one polite retry if rate-limited, so a burst doesn't blank a checklist
+      if (r.status === 429) {
+        const wait = (Number(r.headers.get("retry-after")) || 1) * 1000;
+        await new Promise((res) => setTimeout(res, Math.min(wait, 3000)));
+        r = await fetch(url, { headers, cache: "no-store" });
+      }
+      if (!r.ok) {
+        // log the failure instead of masking a permission/rate error as "empty"
+        console.error(`fetchChecklist ${pageId} -> ${r.status}`);
+        return items;
+      }
+      const d = await r.json();
+      for (const b of (d.results || [])) {
+        if (b.type === "to_do") {
+          items.push({
+            id: b.id,
+            text: (b.to_do?.rich_text || []).map((t: any) => t.plain_text).join(""),
+            checked: !!b.to_do?.checked,
+          });
+        }
+      }
+      cursor = d.has_more ? d.next_cursor : undefined;
+    } while (cursor);
+    return items;
+  } catch (e) {
+    console.error(`fetchChecklist ${pageId} error`, e);
+    return items;
+  }
+}
+
 export async function GET() {
   const token = process.env.NOTION_TOKEN;
   const dbId = process.env.NOTION_DB_ID;
-  if (!token || !dbId) return NextResponse.json({ shortTerm: [], longTerm: [] });
+  if (!token || !dbId) return NextResponse.json({ shortTerm: [], longTerm: [], clients: [] });
 
   try {
     const res = await fetch(`https://api.notion.com/v1/databases/${dbId}/query`, {
@@ -47,7 +93,13 @@ export async function GET() {
       else if (status === "Long Term") longTerm.push({ id: page.id, title });
     });
 
-    return NextResponse.json({ shortTerm, longTerm, clients });
+    // enrich each Long Term project with its checklist (child to_do blocks).
+    // Promise.all keeps wall-time to ~one round trip for a handful of projects.
+    const longTermFull = await Promise.all(
+      longTerm.map(async (p) => ({ ...p, items: await fetchChecklist(token, p.id) }))
+    );
+
+    return NextResponse.json({ shortTerm, longTerm: longTermFull, clients });
   } catch {
     return NextResponse.json({ shortTerm: [], longTerm: [], clients: [] });
   }
@@ -58,7 +110,8 @@ export async function POST(request: Request) {
   if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
 
   try {
-    const { id, title, status, action } = await request.json();
+    const body = await request.json();
+    const { id, title, status, action } = body;
 
     // Handle moving a task between Short Term and Long Term (status change)
     if (action === "move") {
@@ -143,6 +196,88 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
 
+    // ----- Checklist items (to_do blocks inside a project's page) -----
+
+    // Add a checklist item to a project (projectId = Notion PAGE id)
+    if (action === "addChecklistItem") {
+      const { projectId, text } = body;
+      if (!projectId) return NextResponse.json({ error: "Missing projectId" }, { status: 400 });
+      if (typeof text !== "string" || text.trim().length === 0) {
+        return NextResponse.json({ error: "Invalid text" }, { status: 400 });
+      }
+
+      const notionRes = await fetch(`https://api.notion.com/v1/blocks/${projectId}/children`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          children: [
+            { type: "to_do", to_do: { rich_text: [{ type: "text", text: { content: text.trim() } }], checked: false } },
+          ],
+        }),
+      });
+
+      if (!notionRes.ok) {
+        const err = await notionRes.json();
+        return NextResponse.json({ error: err }, { status: notionRes.status });
+      }
+
+      // return the real block id so the client can swap out its temp id
+      const j = await notionRes.json();
+      const blockId = j.results?.[0]?.id;
+      return NextResponse.json({ success: true, item: { id: blockId, text: text.trim(), checked: false } });
+    }
+
+    // Toggle a checklist item's checkbox (itemId = Notion BLOCK id)
+    if (action === "toggleChecklistItem") {
+      const { itemId, checked } = body;
+      if (!itemId) return NextResponse.json({ error: "Missing itemId" }, { status: 400 });
+      if (typeof checked !== "boolean") {
+        return NextResponse.json({ error: "Invalid checked" }, { status: 400 });
+      }
+
+      const notionRes = await fetch(`https://api.notion.com/v1/blocks/${itemId}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ to_do: { checked } }),
+      });
+
+      if (!notionRes.ok) {
+        const err = await notionRes.json();
+        return NextResponse.json({ error: err }, { status: notionRes.status });
+      }
+
+      return NextResponse.json({ success: true, item: { id: itemId, checked } });
+    }
+
+    // Delete (archive) a checklist item (itemId = Notion BLOCK id)
+    if (action === "deleteChecklistItem") {
+      const { itemId } = body;
+      if (!itemId) return NextResponse.json({ error: "Missing itemId" }, { status: 400 });
+
+      const notionRes = await fetch(`https://api.notion.com/v1/blocks/${itemId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Notion-Version": "2022-06-28",
+        },
+      });
+
+      if (!notionRes.ok) {
+        const err = await notionRes.json();
+        return NextResponse.json({ error: err }, { status: notionRes.status });
+      }
+
+      return NextResponse.json({ success: true, id: itemId });
+    }
+
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (error) {
     console.error("POST /api/notion error:", error);
@@ -199,7 +334,9 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: err }, { status: notionRes.status });
     }
 
-    return NextResponse.json({ success: true });
+    // return the new page id so the client can swap its temp id in place
+    const created = await notionRes.json();
+    return NextResponse.json({ success: true, id: created.id });
   } catch (error) {
     console.error("PUT /api/notion error:", error);
     return NextResponse.json({ error: "Failed to create task" }, { status: 500 });
