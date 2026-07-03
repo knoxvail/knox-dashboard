@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
 
 // useLayoutEffect on the client, useEffect on the server (avoids the SSR warning
@@ -852,6 +852,17 @@ function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge, onAddNew }: 
   const [wrapH, setWrapH] = useState(0);
   const [ready, setReady] = useState(false); // gate transitions so cards don't slide in on first paint
 
+  // pack order = color temperature: warmest bubbles first (fill the top slots),
+  // coolest last. Warmth = cos(hue) on the same count→hue scale the tints use, so
+  // red/orange (busiest) lead and green (empty) trails; ties keep their order.
+  const ordered = useMemo(() => {
+    const warmth = (p: Project) => Math.cos((taskHue(p.items.length) * Math.PI) / 180);
+    return projects
+      .map((p, i) => ({ p, i }))
+      .sort((a, b) => warmth(b.p) - warmth(a.p) || a.i - b.i)
+      .map(({ p }) => p);
+  }, [projects]);
+
   // track the container's width in state; a real resize updates it (idempotent on
   // equal values, so the height changes we cause ourselves don't loop)
   const [width, setWidth] = useState(0);
@@ -878,7 +889,7 @@ function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge, onAddNew }: 
     // actual wrapped height regardless of which column it currently sits in
     cardRefs.current.forEach((node) => { node.style.width = `${colW}px`; });
     const heights = new Array(n).fill(TOP_PAD);
-    const next = projects.map((p) => {
+    const next = ordered.map((p) => {
       // shortest column wins (ties go left → fills top-left first)
       let t = 0;
       for (let c = 1; c < n; c++) if (heights[c] < heights[t] - 0.5) t = c;
@@ -890,7 +901,7 @@ function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge, onAddNew }: 
     });
     setPos(next);
     setWrapH(Math.max(TOP_PAD, ...heights) - GAP);
-  }, [projects, width]);
+  }, [ordered, width]);
 
   // enable the reflow animation only after the first (already-correct) paint
   useEffect(() => { const id = requestAnimationFrame(() => setReady(true)); return () => cancelAnimationFrame(id); }, []);
@@ -913,7 +924,7 @@ function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge, onAddNew }: 
       onClick={(e) => { if (e.target === e.currentTarget) onAddNew?.(); }}
       style={{ position: "relative", height: wrapH || undefined, minHeight: "100%", cursor: "pointer" }}
     >
-      {projects.map((p, i) => (
+      {ordered.map((p, i) => (
         <div
           key={p.id}
           ref={(node) => { if (node) cardRefs.current.set(p.id, node); else cardRefs.current.delete(p.id); }}
