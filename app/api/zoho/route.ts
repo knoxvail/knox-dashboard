@@ -131,13 +131,37 @@ async function fetchEmails(token: string) {
   });
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   if (!configured()) {
     return NextResponse.json({ connected: false, configured: false, emails: [] });
   }
 
   let token = await getAccessToken();
   if (!token) return NextResponse.json({ connected: false, configured: true, emails: [] });
+
+  // read a single message's body for the in-dashboard reader
+  const contentId = request.nextUrl.searchParams.get("content");
+  if (contentId) {
+    try {
+      const accountId = await getAccountId(token);
+      let folderId = "";
+      try {
+        const folders = await getFolders(token, accountId);
+        const inbox = findFolder(folders, ["inbox"], ["inbox"]);
+        if (inbox?.folderId) folderId = String(inbox.folderId);
+      } catch {}
+      const path = folderId
+        ? `/api/accounts/${accountId}/folders/${folderId}/messages/${contentId}/content`
+        : `/api/accounts/${accountId}/messages/${contentId}/content`;
+      const res = await zohoFetch(path, token);
+      if (!res.ok) return NextResponse.json({ error: "fetch_failed" }, { status: res.status });
+      const d = await res.json();
+      const html = typeof d?.data === "string" ? d.data : (d?.data?.content || "");
+      return NextResponse.json({ html, text: "", link: `https://mail.zoho.com/zm/#mail/folder/inbox/p/${contentId}` });
+    } catch {
+      return NextResponse.json({ error: "failed" }, { status: 500 });
+    }
+  }
 
   try {
     const emails = await fetchEmails(token);

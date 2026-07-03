@@ -124,11 +124,44 @@ async function refreshAndFetch(refreshToken: string, acct: string) {
   return response;
 }
 
+// Fetch one message's full body (html + text) for the in-dashboard reader.
+async function gmailContent(id: string, token: string | undefined, refreshToken: string | undefined, acct: string) {
+  let t: string | undefined = token;
+  if (!t && refreshToken) t = (await refreshGmailToken(refreshToken)) || undefined;
+  if (!t) return NextResponse.json({ error: "not_connected" }, { status: 401 });
+  let res = await gmailFetch(`/users/me/messages/${id}?format=full`, t);
+  if (res.status === 401 && refreshToken) {
+    const nt = await refreshGmailToken(refreshToken);
+    if (nt) { t = nt; res = await gmailFetch(`/users/me/messages/${id}?format=full`, nt); }
+  }
+  if (!res.ok) return NextResponse.json({ error: "fetch_failed" }, { status: res.status });
+  const data = await res.json();
+  const payload = data.payload || {};
+  const find = (part: any, mime: string): string | null => {
+    if (!part) return null;
+    if (part.mimeType === mime && part.body?.data) return part.body.data as string;
+    if (Array.isArray(part.parts)) { for (const p of part.parts) { const r = find(p, mime); if (r) return r; } }
+    return null;
+  };
+  const dec = (d: string | null) => { try { return d ? Buffer.from(d, "base64url").toString("utf-8") : ""; } catch { return ""; } };
+  const headers = payload.headers || [];
+  const get = (n: string) => headers.find((h: any) => h.name === n)?.value || "";
+  return NextResponse.json({
+    from: get("From"), subject: get("Subject"), date: get("Date"),
+    html: dec(find(payload, "text/html")), text: dec(find(payload, "text/plain")),
+    link: `${await resolveLinkBase(acct, t as string)}#all/${data.threadId}`,
+  });
+}
+
 export async function GET(request: NextRequest) {
   const acct = getAcct(request);
   const names = cookieNames(acct);
   const token = request.cookies.get(names.access)?.value;
   const refreshToken = request.cookies.get(names.refresh)?.value;
+
+  // read a single message's body for the in-dashboard reader
+  const contentId = request.nextUrl.searchParams.get("content");
+  if (contentId) return gmailContent(contentId, token, refreshToken, acct);
 
   // No credentials at all -> genuinely disconnected.
   if (!token && !refreshToken) {

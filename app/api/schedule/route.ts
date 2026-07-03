@@ -94,3 +94,29 @@ export async function GET() {
     return NextResponse.json({ events: [] });
   }
 }
+
+// Delete (archive) a scheduled event page
+export async function POST(request: Request) {
+  const token = process.env.NOTION_TOKEN;
+  if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
+  try {
+    const { id } = await request.json();
+    if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    const res = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ archived: true }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      return NextResponse.json({ error: err }, { status: res.status });
+    }
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json({ error: "Failed" }, { status: 500 });
+  }
+}

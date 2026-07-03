@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
 
 type Task = { id: string; title: string };
@@ -16,96 +16,51 @@ type NowPlaying = {
 };
 type Playlist = { id: string; name: string; uri: string; image?: string };
 
-// Black-and-white reticle cursor (Destiny-style): a dot that tracks the pointer
-// exactly, plus a ring that eases in close behind it. Hides when the pointer
-// leaves the window.
+// Small white circle cursor. The transform is written straight to the DOM on
+// every mousemove — no rAF, no easing, no React re-render — so it tracks the
+// pointer with the minimum possible latency. Hides when the pointer leaves.
 function CustomCursor() {
   const dotRef = useRef<HTMLDivElement>(null);
-  const ringRef = useRef<HTMLDivElement>(null);
-  const [hovering, setHovering] = useState(false);
 
   useEffect(() => {
-    let mx = -100, my = -100;   // live cursor target
-    let rx = -100, ry = -100;   // ring's eased position
     let shown = false;
-    let raf = 0;
-
     const setShown = (v: boolean) => {
       if (shown === v) return;
       shown = v;
-      const o = v ? "1" : "0";
-      if (dotRef.current) dotRef.current.style.opacity = o;
-      if (ringRef.current) ringRef.current.style.opacity = o;
+      if (dotRef.current) dotRef.current.style.opacity = v ? "1" : "0";
     };
-
     const move = (e: MouseEvent | DragEvent) => {
-      mx = e.clientX; my = e.clientY;
-      setShown(true);
-      // the dot tracks the cursor exactly — written straight to the DOM
       const d = dotRef.current;
-      if (d) d.style.transform = `translate3d(${mx}px,${my}px,0) translate(-50%,-50%)`;
+      if (d) d.style.transform = `translate3d(${e.clientX}px,${e.clientY}px,0) translate(-50%,-50%)`;
+      if (!shown) setShown(true);
     };
-    // hide whenever the pointer leaves the page or the window loses focus
     const out = (e: MouseEvent) => { if (!e.relatedTarget) setShown(false); };
     const leaveDoc = () => setShown(false);
     const blur = () => setShown(false);
-    const over = (e: MouseEvent) => {
-      const t = e.target as HTMLElement;
-      // grow the reticle over anything interactive, not just links/buttons
-      setHovering(!!t.closest?.('button, a, input, textarea, select, [role="button"], [tabindex]'));
-    };
 
     window.addEventListener("mousemove", move, { passive: true });
-    window.addEventListener("dragover", move, { passive: true }); // keep the dot tracking while dragging
-    window.addEventListener("mouseover", over, { passive: true });
+    window.addEventListener("dragover", move, { passive: true }); // keep tracking while dragging
     window.addEventListener("mouseout", out, { passive: true });
     document.addEventListener("mouseleave", leaveDoc);
     window.addEventListener("blur", blur);
-
-    // the ring eases toward the cursor each frame — close follow, gentle lag
-    const loop = () => {
-      rx += (mx - rx) * 0.45;
-      ry += (my - ry) * 0.45;
-      const r = ringRef.current;
-      if (r) r.style.transform = `translate3d(${rx}px,${ry}px,0) translate(-50%,-50%)`;
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-
     return () => {
-      cancelAnimationFrame(raf);
       window.removeEventListener("mousemove", move);
       window.removeEventListener("dragover", move);
-      window.removeEventListener("mouseover", over);
       window.removeEventListener("mouseout", out);
       document.removeEventListener("mouseleave", leaveDoc);
       window.removeEventListener("blur", blur);
     };
   }, []);
 
-  const ringSize = hovering ? 38 : 26;
-
-  // transforms are written imperatively above, so they're intentionally absent
-  // from these style objects (re-renders must not clobber the live positions)
   return (
     <>
-      <div ref={ringRef} style={{
+      <div ref={dotRef} aria-hidden style={{
         position: "fixed", top: 0, left: 0,
-        width: ringSize, height: ringSize, borderRadius: "50%",
-        border: "1.5px solid rgba(255,255,255,0.85)",
-        boxShadow: "0 0 3px rgba(0,0,0,0.55)",
-        pointerEvents: "none", zIndex: 99999, opacity: 0,
-        willChange: "transform",
-        transition: "opacity 0.2s, width 0.18s ease, height 0.18s ease",
-      }} />
-      <div ref={dotRef} style={{
-        position: "fixed", top: 0, left: 0,
-        width: 5, height: 5, borderRadius: "50%",
+        width: 9, height: 9, borderRadius: "50%",
         background: "#fff",
         boxShadow: "0 0 3px rgba(0,0,0,0.7)",
         pointerEvents: "none", zIndex: 99999, opacity: 0,
         willChange: "transform",
-        transition: "opacity 0.2s",
       }} />
     </>
   );
@@ -216,22 +171,86 @@ function GlowyWaves() {
   );
 }
 
-// One email line with an archive checkmark — shared by both inbox panels.
-function EmailRow({ email, onArchive }: { email: Email; onArchive: (id: string) => void }) {
+// One email line — click to read it in the dashboard; archive with the ✓.
+function EmailRow({ email, onArchive, onOpen }: { email: Email; onArchive: (id: string) => void; onOpen: (email: Email) => void }) {
   return (
     <div className="reveal-row" style={{ borderBottom: "1px solid #1e1e1e", padding: "9px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, transition: "border-color 0.2s" }}
       onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#555")}
       onMouseLeave={e => (e.currentTarget.style.borderBottomColor = "#1e1e1e")}
     >
-      <a href={email.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", minWidth: 0, flex: 1 }}>
+      <div role="button" tabIndex={0}
+        onClick={() => onOpen(email)}
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(email); } }}
+        style={{ minWidth: 0, flex: 1, cursor: "pointer" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
           <span style={{ fontSize: 12, color: "#d8d8d8", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%" }}>{email.from}</span>
           <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#808080", flexShrink: 0 }}>{email.date}</span>
         </div>
         <p style={{ margin: 0, fontSize: 12, color: "#808080", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email.subject}</p>
-      </a>
+      </div>
       <DoneButton onClick={() => onArchive(email.id)} />
     </div>
+  );
+}
+
+// Reads a single email inside the dashboard (sandboxed iframe for HTML, no
+// scripts) with a link out to the original message.
+function EmailReader({ source, email, onClose }: { source: "gmail" | "zoho"; email: Email; onClose: () => void }) {
+  const [state, setState] = useState<{ loading: boolean; err: boolean; html?: string; text?: string; link?: string }>({ loading: true, err: false });
+
+  useEffect(() => {
+    let cancel = false;
+    setState({ loading: true, err: false });
+    fetch(`/api/${source}?content=${encodeURIComponent(email.id)}`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => { if (!cancel) setState({ loading: false, err: false, html: d.html, text: d.text, link: d.link }); })
+      .catch(() => { if (!cancel) setState({ loading: false, err: true }); });
+    return () => { cancel = true; };
+  }, [source, email.id]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const link = state.link || email.link;
+  const hasHtml = !!state.html && state.html.trim().length > 0;
+  const hasText = !!state.text && state.text.trim().length > 0;
+
+  return createPortal(
+    <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", zIndex: 9000, display: "grid", placeItems: "center", fontFamily: "'DM Sans', sans-serif", animation: "fadeIn 0.18s ease-out" }}>
+      <div role="dialog" aria-modal="true" aria-label={email.subject}
+        style={{ width: "min(680px, 94vw)", height: "min(80vh, 820px)", background: "rgba(12,14,18,0.96)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", border: "1px solid #3a3a3a", borderRadius: 6, display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.7)", overflow: "hidden", animation: "modalIn 0.2s ease-out" }}>
+        <div style={{ padding: "16px 18px 12px", borderBottom: "1px solid #242424", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: 15, color: "#e8e8e8", fontWeight: 500, lineHeight: 1.35, wordBreak: "break-word" }}>{email.subject}</p>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: "#9a9a9a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email.from}{email.date ? ` · ${email.date}` : ""}</p>
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "#808080", fontSize: 18, lineHeight: 1, padding: 0, flexShrink: 0 }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#ccc")} onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}>✕</button>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          {state.loading ? (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#808080", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: "0.12em" }}>LOADING…</div>
+          ) : hasHtml ? (
+            <iframe title="Email content" sandbox="" srcDoc={state.html} style={{ flex: 1, width: "100%", border: "none", background: "#fff" }} />
+          ) : hasText ? (
+            <pre style={{ flex: 1, margin: 0, padding: "16px 18px", overflow: "auto", color: "#cfcfcf", fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "'DM Sans', sans-serif" }}>{state.text}</pre>
+          ) : (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+              <p style={{ color: "#808080", fontSize: 13, textAlign: "center" }}>{state.err ? "Couldn’t load this message. " : "No preview available. "}Open the original below.</p>
+            </div>
+          )}
+        </div>
+        <div style={{ padding: "10px 18px", borderTop: "1px solid #242424", display: "flex", justifyContent: "flex-end" }}>
+          <a href={link} target="_blank" rel="noopener noreferrer" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: "#9a9a9a", textTransform: "uppercase", textDecoration: "none" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#e8e8e8")} onMouseLeave={(e) => (e.currentTarget.style.color = "#9a9a9a")}>Open original ↗</a>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -520,11 +539,16 @@ function TaskList({ tasks, onComplete, onEdit, onOpen }: { tasks: Task[]; onComp
   );
 }
 
-function AddTaskInput({ onAdd, placeholder = "New task..." }: { onAdd: (title: string) => Promise<void>; placeholder?: string }) {
+type AddHandle = { open: () => void };
+const AddTaskInput = forwardRef<AddHandle, { onAdd: (title: string) => Promise<void>; placeholder?: string }>(
+  function AddTaskInput({ onAdd, placeholder = "New task..." }, ref) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // let the surrounding panel open the input by clicking empty space
+  useImperativeHandle(ref, () => ({ open: () => setOpen(true) }), []);
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50);
@@ -541,15 +565,16 @@ function AddTaskInput({ onAdd, placeholder = "New task..." }: { onAdd: (title: s
   };
 
   if (!open) return (
-    <button onClick={() => setOpen(true)} aria-label="Add new" style={{
-      background: "none", border: "none", cursor: "pointer",
-      padding: 0, marginTop: 10, display: "flex", alignItems: "center", gap: 6,
+    <button onClick={() => setOpen(true)} aria-label="Add new" title="Add new" style={{
+      background: "none", border: "1px solid #2a2a2a", cursor: "pointer",
+      marginTop: 10, width: 26, height: 26, borderRadius: 4, flexShrink: 0,
+      display: "flex", alignItems: "center", justifyContent: "center", color: "#808080",
+      transition: "color 0.2s, border-color 0.2s, background 0.2s",
     }}
-      onMouseEnter={e => (e.currentTarget.querySelector("span")!.style.color = "#888")}
-      onMouseLeave={e => (e.currentTarget.querySelector("span")!.style.color = "#808080")}
+      onMouseEnter={e => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+      onMouseLeave={e => { e.currentTarget.style.color = "#808080"; e.currentTarget.style.borderColor = "#2a2a2a"; e.currentTarget.style.background = "none"; }}
     >
-      <span style={{ color: "#808080", fontSize: 16, lineHeight: 1, transition: "color 0.2s" }}>+</span>
-      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.15em", color: "#808080", textTransform: "uppercase" as const, transition: "color 0.2s" }}>ADD NEW</span>
+      <span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>+</span>
     </button>
   );
 
@@ -582,7 +607,7 @@ function AddTaskInput({ onAdd, placeholder = "New task..." }: { onAdd: (title: s
       }}>✕</button>
     </div>
   );
-}
+});
 
 // A Long Term "project" bucket: a draggable box that opens a modal on click and
 // previews its checklist on hover. Drag (move to Short Term) and click (open) are
@@ -971,12 +996,18 @@ function Dashboard() {
   const [dragOver, setDragOver] = useState<"Short Term" | "Long Term" | null>(null);
   const [priorityDrag, setPriorityDrag] = useState<"high" | "normal" | null>(null);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  const [openEmail, setOpenEmail] = useState<{ source: "gmail" | "zoho"; email: Email } | null>(null);
   const [hover, setHover] = useState<{ id: string; rect: DOMRect } | null>(null);
   // the custom reticle only replaces the native cursor on a fine pointer with
   // motion allowed; otherwise the OS cursor stays (accessibility)
   const [reticle, setReticle] = useState(false);
   const [toasts, setToasts] = useState<{ id: number; msg: string; undo?: () => void }[]>([]);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
+  // let each list open its add-input when its empty space is clicked
+  const shortAddRef = useRef<AddHandle>(null);
+  const longAddRef = useRef<AddHandle>(null);
+  const clientsAddRef = useRef<AddHandle>(null);
+  const highAddRef = useRef<AddHandle>(null);
 
   const toast = useCallback((msg: string, undo?: () => void) => {
     const id = (typeof performance !== "undefined" ? performance.now() : 0) + Math.random();
@@ -1157,9 +1188,9 @@ function Dashboard() {
 
   // Short Term tasks and Clients differ in shape (Short Term carries a checklist,
   // Clients don't), so add to the right list with the right shape.
-  const addTask = async (title: string, status: "Short Term" | "Clients") => {
+  const addTask = async (title: string, status: "Short Term" | "Clients", priority = false) => {
     const tempId = `temp-${Date.now()}`;
-    if (status === "Short Term") setShortTerm(prev => [...prev, { id: tempId, title, items: [] }]);
+    if (status === "Short Term") setShortTerm(prev => [...prev, { id: tempId, title, items: [], priority }]);
     else setClients(prev => [...prev, { id: tempId, title }]);
     const rollback = () => status === "Short Term"
       ? setShortTerm(prev => prev.filter(t => t.id !== tempId))
@@ -1176,8 +1207,13 @@ function Dashboard() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { rollback(); toast("Couldn’t add — try again"); return; }
       // swap the temp id for the real page id in place (no reconcile GET)
-      if (data.id) swap(data.id);
-      else fetchTasks();
+      if (data.id) {
+        swap(data.id);
+        // persist priority for a task added straight into the High Priority box
+        if (priority && status === "Short Term") {
+          fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setPriority", id: data.id, priority: true }) }).catch(() => {});
+        }
+      } else fetchTasks();
     } catch {
       rollback(); toast("Couldn’t add — try again");
     }
@@ -1414,6 +1450,18 @@ function Dashboard() {
     await fetchSoren();
   };
 
+  const deleteEvent = async (id: string) => {
+    setEvents(prev => prev.filter(e => e.id !== id));
+    try {
+      const res = await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) { await fetchSchedule(); toast("Couldn’t delete — reverted"); }
+    } catch { await fetchSchedule(); toast("Couldn’t delete — reverted"); }
+  };
+
   const spotifyAction = async (action: string) => {
     // optimistic: flip play/pause in the UI immediately
     if (action === "play" || action === "pause") {
@@ -1540,7 +1588,7 @@ function Dashboard() {
             ) : (
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                 {sorenEmails.map((email) => (
-                  <EmailRow key={email.id} email={email} onArchive={archiveSorenEmail} />
+                  <EmailRow key={email.id} email={email} onArchive={archiveSorenEmail} onOpen={(e) => setOpenEmail({ source: "zoho", email: e })} />
                 ))}
               </div>
             )}
@@ -1552,7 +1600,10 @@ function Dashboard() {
                 {clients.length}
               </span>
             } />
-            <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
+            <div
+              onClick={(e) => { if (e.target === e.currentTarget) clientsAddRef.current?.open(); }}
+              style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}
+            >
               {loading ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <div key={i} className="skeleton" style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>
@@ -1561,51 +1612,60 @@ function Dashboard() {
                 ))
               ) : <TaskList tasks={clients} onComplete={completeTask} onEdit={editTask} />}
             </div>
-            <AddTaskInput onAdd={(title) => addTask(title, "Clients")} />
+            <AddTaskInput ref={clientsAddRef} onAdd={(title) => addTask(title, "Clients")} />
           </Panel>
         </div>
 
         {/* Tasks — Short Term stays tall but skinny; the buckets get the width */}
         <div style={{ display: "grid", gridTemplateColumns: "0.5fr 1fr", gap: 12, minHeight: 0 }}>
-          <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <PanelHeader label="Short Term" right={
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
-                {shortTerm.length}
-              </span>
-            } />
-            <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", display: "flex", flexDirection: "column", minHeight: 0 }}>
-              {/* HIGH PRIORITY — drop a task here to flag it (always shown as a target) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+            {/* HIGH PRIORITY — its own bold-outlined box; the page's focal point */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (priorityDrag !== "high") setPriorityDrag("high"); }}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setPriorityDrag(null); }}
+              onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setPriorityDrag(null); if (id) dropToPriority(id, true); }}
+              style={{
+                flexShrink: 0, maxHeight: "42%", display: "flex", flexDirection: "column", overflow: "hidden",
+                background: "rgba(18,20,26,0.6)", backdropFilter: "blur(7px)", WebkitBackdropFilter: "blur(7px)",
+                border: priorityDrag === "high" ? "1.5px solid #e8e8e8" : "1.5px solid #9a9a9a",
+                borderRadius: 7, padding: "13px 15px 11px",
+                boxShadow: "0 0 0 1px rgba(255,255,255,0.03), 0 8px 26px rgba(0,0,0,0.4)",
+                transition: "border-color 0.2s, background 0.2s",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <h2 style={{ margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 400, letterSpacing: "0.16em", textTransform: "uppercase" as const, color: "#f0f0f0", display: "flex", alignItems: "center", gap: 7 }}>
+                  <span aria-hidden style={{ fontSize: 9 }}>▲</span> High Priority
+                </h2>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>{shortHigh.length}</span>
+              </div>
               <div
-                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (priorityDrag !== "high") setPriorityDrag("high"); }}
-                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setPriorityDrag(null); }}
-                onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setPriorityDrag(null); if (id) dropToPriority(id, true); }}
-                style={{
-                  paddingBottom: 10, borderBottom: "1px solid #1e1e1e", borderRadius: 2, outlineOffset: -2,
-                  outline: priorityDrag === "high" ? "1px dashed #8a8a8a" : "1px dashed transparent",
-                  background: priorityDrag === "high" ? "rgba(255,255,255,0.03)" : "transparent",
-                  transition: "background 0.15s, outline-color 0.15s",
-                }}
+                onClick={(e) => { if (e.target === e.currentTarget) highAddRef.current?.open(); }}
+                style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0 }}
               >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.18em", color: "#8a8a8a", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
-                    <span aria-hidden style={{ color: "#9a9a9a", fontSize: 8 }}>▲</span> High Priority
-                  </span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>{shortHigh.length}</span>
-                </div>
                 {loading ? null : shortHigh.length === 0 ? (
-                  <div style={{ borderLeft: "1px dashed #333", padding: "2px 0 2px 10px" }}>
-                    <p style={{ margin: 0, color: "#808080", fontSize: 11, fontStyle: "italic" }}>Drag tasks here to prioritize</p>
+                  <div style={{ borderLeft: "1px dashed #4a4a4a", padding: "2px 0 2px 10px" }}>
+                    <p style={{ margin: 0, color: "#808080", fontSize: 11, fontStyle: "italic" }}>Drag tasks here, or use + to add</p>
                   </div>
                 ) : <TaskList tasks={shortHigh} onComplete={completeTask} onEdit={editTask} onOpen={setOpenProjectId} />}
               </div>
+              <AddTaskInput ref={highAddRef} onAdd={(title) => addTask(title, "Short Term", true)} placeholder="New priority task..." />
+            </div>
 
-              {/* everything else */}
+            {/* SHORT TERM — everything not prioritized */}
+            <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+              <PanelHeader label="Short Term" right={
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
+                  {shortNormal.length}
+                </span>
+              } />
               <div
                 onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (priorityDrag !== "normal") setPriorityDrag("normal"); }}
                 onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setPriorityDrag(null); }}
                 onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setPriorityDrag(null); if (id) dropToPriority(id, false); }}
+                onClick={(e) => { if (e.target === e.currentTarget) shortAddRef.current?.open(); }}
                 style={{
-                  flex: 1, minHeight: 40, paddingTop: 10, borderRadius: 2, outlineOffset: -2,
+                  flex: 1, overflowY: "auto", scrollbarWidth: "none", borderRadius: 2, outlineOffset: -2,
                   outline: priorityDrag === "normal" ? "1px dashed #8a8a8a" : "1px dashed transparent",
                   background: priorityDrag === "normal" ? "rgba(255,255,255,0.025)" : "transparent",
                   transition: "background 0.15s, outline-color 0.15s",
@@ -1619,9 +1679,9 @@ function Dashboard() {
                   ))
                 ) : <TaskList tasks={shortNormal} onComplete={completeTask} onEdit={editTask} onOpen={setOpenProjectId} />}
               </div>
-            </div>
-            <AddTaskInput onAdd={(title) => addTask(title, "Short Term")} />
-          </Panel>
+              <AddTaskInput ref={shortAddRef} onAdd={(title) => addTask(title, "Short Term")} />
+            </Panel>
+          </div>
 
           {/* right side of the middle column: Long Term (top) with Up Next stacked under it */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
@@ -1635,6 +1695,7 @@ function Dashboard() {
                 onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOver !== "Long Term") setDragOver("Long Term"); }}
                 onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
                 onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setDragOver(null); if (id) moveTask(id, "Long Term"); }}
+                onClick={(e) => { if (e.target === e.currentTarget) longAddRef.current?.open(); }}
                 style={{
                   flex: 1, overflowY: "auto", scrollbarWidth: "none", borderRadius: 2, outlineOffset: -2,
                   outline: dragOver === "Long Term" ? "1px dashed #8a8a8a" : "1px dashed transparent",
@@ -1658,7 +1719,7 @@ function Dashboard() {
                   />
                 )}
               </div>
-              <AddTaskInput onAdd={addProject} placeholder="New project..." />
+              <AddTaskInput ref={longAddRef} onAdd={addProject} placeholder="New project..." />
             </Panel>
 
             <Panel style={{ flex: 0.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
@@ -1673,11 +1734,20 @@ function Dashboard() {
                   // event still reads top-to-bottom (title, date, time, type)
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: "14px 18px", paddingBottom: 2 }}>
                     {events.map((event) => (
-                      <div key={event.id} style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-                        <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{event.title}</p>
-                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", letterSpacing: "0.05em" }}>{event.displayDate}</span>
-                        {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", letterSpacing: "0.05em" }}>{event.displayTime}</span>}
-                        {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#808080", letterSpacing: "0.12em" }}>{event.type.toUpperCase()}</span>}
+                      <div key={event.id} className="reveal-row" style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6, minWidth: 0 }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+                          <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{event.title}</p>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", letterSpacing: "0.05em" }}>{event.displayDate}</span>
+                          {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", letterSpacing: "0.05em" }}>{event.displayTime}</span>}
+                          {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#808080", letterSpacing: "0.12em" }}>{event.type.toUpperCase()}</span>}
+                        </div>
+                        <button className="row-action" aria-label="Delete appointment" onClick={() => deleteEvent(event.id)} style={{
+                          background: "none", border: "none", cursor: "pointer", color: "#808080",
+                          fontSize: 12, lineHeight: 1, padding: "0 2px", flexShrink: 0, transition: "color 0.15s, opacity 0.15s",
+                        }}
+                          onMouseEnter={e => (e.currentTarget.style.color = "#c06464")}
+                          onMouseLeave={e => (e.currentTarget.style.color = "#808080")}
+                        >✕</button>
                       </div>
                     ))}
                   </div>
@@ -1700,7 +1770,7 @@ function Dashboard() {
             ) : (
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                 {emails.map((email) => (
-                  <EmailRow key={email.id} email={email} onArchive={archiveEmail} />
+                  <EmailRow key={email.id} email={email} onArchive={archiveEmail} onOpen={(e) => setOpenEmail({ source: "gmail", email: e })} />
                 ))}
               </div>
             )}
@@ -1892,6 +1962,10 @@ function Dashboard() {
         />
       )}
 
+      {openEmail && (
+        <EmailReader source={openEmail.source} email={openEmail.email} onClose={() => setOpenEmail(null)} />
+      )}
+
       {/* transient status toasts — sync failures and merge undo */}
       {toasts.length > 0 && (
         <div aria-live="polite" style={{ position: "fixed", left: "50%", bottom: 20, transform: "translateX(-50%)", zIndex: 9800, display: "flex", flexDirection: "column", gap: 8, alignItems: "center", pointerEvents: "none" }}>
@@ -1935,8 +2009,8 @@ function Dashboard() {
         .reticle-on * { cursor: none !important; }
         .reticle-on input, .reticle-on textarea { cursor: text !important; }
         .reticle-on input[type="range"] { cursor: pointer !important; }
-        /* row action buttons: dimmed at rest, full on hover / keyboard focus / touch */
-        .reveal-row .row-action { opacity: 0.4; transition: opacity 0.15s; }
+        /* row action buttons: hidden until the row is hovered / keyboard-focused */
+        .reveal-row .row-action { opacity: 0; transition: opacity 0.15s; }
         .reveal-row:hover .row-action,
         .reveal-row:focus-within .row-action { opacity: 1; }
         @media (hover: none) { .reveal-row .row-action { opacity: 1; } }
