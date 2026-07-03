@@ -640,21 +640,21 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
       style={{
         background: dropTarget ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.02)",
         border: dropTarget ? "1px solid #9a9a9a" : "1px solid #2a2a2a",
-        borderRadius: 4,
-        padding: "14px 15px 12px",
-        minHeight: 88,
+        borderRadius: 5,
+        padding: "12px 13px 10px",
+        marginBottom: 10,
         cursor: "pointer",
         display: "flex",
         flexDirection: "column",
-        justifyContent: "space-between",
-        gap: 6,
+        gap: 8,
+        breakInside: "avoid",
         transition: "border-color 0.2s, background 0.2s, transform 0.2s",
       }}
     >
+      {/* full title — no clamp, wrap long words so nothing is cut off */}
       <span style={{
         fontSize: 13, color: "#cfcfcf", fontFamily: "'DM Sans', sans-serif",
-        lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 3,
-        WebkitBoxOrient: "vertical", overflow: "hidden",
+        lineHeight: 1.4, overflowWrap: "anywhere",
       }}>{project.title}</span>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }} aria-hidden>
@@ -681,9 +681,10 @@ function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge }: {
       <p style={{ color: "#808080", fontSize: 12, textAlign: "center" }}>No projects yet — add one below</p>
     </div>
   );
-  // paddingTop gives the top row's hover-lift room so its top edge isn't clipped
+  // masonry via CSS columns: bubbles size to their content and pack together
+  // (varied heights). paddingTop gives the hover-lift room so it isn't clipped.
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(158px, 1fr))", gap: 10, paddingTop: 3 }}>
+    <div style={{ columnWidth: 150, columnGap: 10, paddingTop: 3 }}>
       {projects.map((p) => (
         <BucketCard key={p.id} project={p} onOpen={onOpen} onHover={onHover} onLeave={onLeave} onMerge={onMerge} />
       ))}
