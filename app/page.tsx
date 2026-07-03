@@ -709,6 +709,11 @@ const AddEventInput = forwardRef<AddHandle, { onAdd: (title: string, date: strin
   );
 });
 
+// Faint pastel that warms one tier per checklist item — green (nothing to do)
+// through warm tones to purple (lots to do). Everything else stays monochrome.
+const TASK_HUES = [140, 118, 96, 74, 54, 38, 22, 8, 352, 336, 320, 302, 285];
+const taskHue = (count: number) => TASK_HUES[Math.min(Math.max(count, 0), TASK_HUES.length - 1)];
+
 // A Long Term "project" bucket: a draggable box that opens a modal on click and
 // previews its checklist on hover. Drag (move to Short Term) and click (open) are
 // disambiguated by a per-card drag flag.
@@ -724,6 +729,11 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
   const count = project.items.length;
   const done = project.items.filter((i) => i.checked).length;
   const label = count === 0 ? "EMPTY" : done > 0 ? `${done}/${count} DONE` : `${count} ITEM${count > 1 ? "S" : ""}`;
+  // faint pastel keyed to the workload (green -> purple, one tier per item)
+  const hue = taskHue(count);
+  const baseBg = `hsla(${hue}, 55%, 55%, 0.08)`;
+  const hoverBg = `hsla(${hue}, 55%, 55%, 0.15)`;
+  const badgeColor = `hsl(${hue}, 45%, 72%)`;
 
   return (
     <div
@@ -753,17 +763,17 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
       onMouseEnter={(e) => {
         onHover(project.id, e.currentTarget.getBoundingClientRect());
         e.currentTarget.style.borderColor = "#777";
-        e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+        e.currentTarget.style.background = hoverBg;
         e.currentTarget.style.transform = "translateY(-1px)";
       }}
       onMouseLeave={(e) => {
         onLeave();
         e.currentTarget.style.borderColor = dropTarget ? "#9a9a9a" : "#2a2a2a";
-        e.currentTarget.style.background = dropTarget ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.02)";
+        e.currentTarget.style.background = dropTarget ? "rgba(255,255,255,0.08)" : baseBg;
         e.currentTarget.style.transform = "translateY(0)";
       }}
       style={{
-        background: dropTarget ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.02)",
+        background: dropTarget ? "rgba(255,255,255,0.08)" : baseBg,
         border: dropTarget ? "1px solid #9a9a9a" : "1px solid #2a2a2a",
         borderRadius: 5,
         padding: "12px 13px 10px",
@@ -783,11 +793,11 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
       }}>{project.title}</span>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }} aria-hidden>
-          {[0, 1, 2].map((i) => <div key={i} style={{ width: 9, height: 1, background: "#444" }} />)}
+          {[0, 1, 2].map((i) => <div key={i} style={{ width: 9, height: 1, background: dropTarget ? "#444" : `hsla(${hue}, 40%, 55%, 0.7)` }} />)}
         </div>
         <span style={{
           fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
-          letterSpacing: "0.12em", color: dropTarget ? "#cfcfcf" : "#808080",
+          letterSpacing: "0.12em", color: dropTarget ? "#cfcfcf" : badgeColor,
         }}>{dropTarget ? "MERGE INTO ▾" : label}</span>
       </div>
     </div>
@@ -1926,7 +1936,7 @@ function Dashboard() {
               <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                 <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                   {nowPlaying.albumArt && (
-                    <img src={nowPlaying.albumArt} alt={nowPlaying.track ? `Album art — ${nowPlaying.track}` : ""} style={{ width: 44, height: 44, objectFit: "cover", border: "1px solid #2a2a2a", flexShrink: 0, filter: "grayscale(100%)" }} />
+                    <img src={nowPlaying.albumArt} alt={nowPlaying.track ? `Album art — ${nowPlaying.track}` : ""} style={{ width: 44, height: 44, objectFit: "cover", border: "1px solid #2a2a2a", flexShrink: 0 }} />
                   )}
                   <div style={{ minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: 13, color: "#e0e0e0", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
