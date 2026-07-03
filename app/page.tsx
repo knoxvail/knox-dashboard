@@ -727,8 +727,6 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
   const dragging = useRef(false);
   const [dropTarget, setDropTarget] = useState(false); // another item is hovering over this box
   const count = project.items.length;
-  const done = project.items.filter((i) => i.checked).length;
-  const label = count === 0 ? "EMPTY" : done > 0 ? `${done}/${count} DONE` : `${count} ITEM${count > 1 ? "S" : ""}`;
   // faint pastel keyed to the workload (green -> purple, one tier per item)
   const hue = taskHue(count);
   const baseBg = `hsla(${hue}, 55%, 55%, 0.08)`;
@@ -740,7 +738,7 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
       draggable
       tabIndex={0}
       role="button"
-      aria-label={`${project.title} — ${label}. Open project`}
+      aria-label={`${project.title}, ${count} task${count === 1 ? "" : "s"}. Open project`}
       onDragStart={(e) => {
         dragging.current = true;
         e.dataTransfer.setData("text/plain", project.id);
@@ -761,7 +759,6 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
       onClick={() => { if (dragging.current) return; onOpen(project.id); }}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(project.id); } }}
       onMouseEnter={(e) => {
-        onHover(project.id, e.currentTarget.getBoundingClientRect());
         e.currentTarget.style.borderColor = "#777";
         e.currentTarget.style.background = hoverBg;
         e.currentTarget.style.transform = "translateY(-1px)";
@@ -786,20 +783,30 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
         transition: "border-color 0.2s, background 0.2s, transform 0.2s",
       }}
     >
-      {/* full title — no clamp, wrap long words so nothing is cut off */}
-      <span style={{
-        fontSize: 13, color: "#cfcfcf", fontFamily: "'DM Sans', sans-serif",
-        lineHeight: 1.4, overflowWrap: "anywhere",
-      }}>{project.title}</span>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }} aria-hidden>
-          {[0, 1, 2].map((i) => <div key={i} style={{ width: 9, height: 1, background: dropTarget ? "#444" : `hsla(${hue}, 40%, 55%, 0.7)` }} />)}
-        </div>
-        <span style={{
-          fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
-          letterSpacing: "0.12em", color: dropTarget ? "#cfcfcf" : badgeColor,
-        }}>{dropTarget ? "MERGE INTO ▾" : label}</span>
-      </div>
+      {dropTarget ? (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 44, color: "#cfcfcf", fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.14em" }}>MERGE INTO ▾</div>
+      ) : (
+        <>
+          {/* project title — shown as a heading (auto-capitalized) */}
+          <span style={{
+            fontSize: 13, color: "#e8e8e8", fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
+            lineHeight: 1.35, overflowWrap: "anywhere", textTransform: "uppercase", letterSpacing: "0.02em",
+          }}>{project.title}</span>
+          {/* every task in the project, listed under the title */}
+          {count > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              {project.items.map((it) => (
+                <div key={it.id} style={{ display: "flex", gap: 6, alignItems: "baseline", minWidth: 0 }}>
+                  <span aria-hidden style={{ color: badgeColor, fontSize: 11, lineHeight: 1.4, flexShrink: 0 }}>›</span>
+                  <span style={{ fontSize: 12, color: "#9a9a9a", lineHeight: 1.4, overflowWrap: "anywhere", minWidth: 0 }}>{it.text || "Untitled"}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: "#808080" }}>NO TASKS</span>
+          )}
+        </>
+      )}
     </div>
   );
 }
