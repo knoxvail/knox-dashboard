@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
+
+// useLayoutEffect on the client, useEffect on the server (avoids the SSR warning
+// while still measuring/positioning before paint in the browser).
+const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 type Task = { id: string; title: string };
 type ChecklistItem = { id: string; text: string; checked: boolean }; // id = Notion BLOCK id
@@ -366,20 +370,26 @@ function DoneButton({ onClick }: { onClick: () => void }) {
 
 function TaskItem({
   task,
+  itemCount = 0,
   isEditing,
   onEdit,
   onComplete,
   onStartEdit,
   onCancelEdit,
   onOpen,
+  onHover,
+  onLeave,
 }: {
   task: Task;
+  itemCount?: number; // how many checklist items this task/project holds (drives the hover preview)
   isEditing: boolean;
   onEdit: (id: string, newTitle: string) => Promise<void>;
   onComplete: (id: string) => void;
   onStartEdit: (id: string) => void;
   onCancelEdit: () => void;
   onOpen?: (id: string) => void; // when set, clicking the row opens the modal instead of inline-editing
+  onHover?: (id: string, rect: DOMRect) => void; // preview this row's checklist on hover (only when it has content)
+  onLeave?: () => void;
 }) {
   const [inputValue, setInputValue] = useState(task.title);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -421,6 +431,7 @@ function TaskItem({
         e.dataTransfer.setData("text/plain", task.id);
         e.dataTransfer.effectAllowed = "move";
         e.currentTarget.style.opacity = "0.4";
+        onLeave?.(); // don't leave a stale preview pinned while dragging
       }}
       onDragEnd={(e) => { e.currentTarget.style.opacity = "1"; }}
       style={{
@@ -438,6 +449,8 @@ function TaskItem({
         if (!isEditing) {
           (e.currentTarget as HTMLElement).style.borderLeftColor = "#777";
           (e.currentTarget as HTMLElement).style.paddingLeft = "12px";
+          // preview the checklist only when there's actually content to show
+          if (onHover && itemCount > 0) onHover(task.id, (e.currentTarget as HTMLElement).getBoundingClientRect());
         }
       }}
       onMouseLeave={e => {
@@ -445,6 +458,7 @@ function TaskItem({
           (e.currentTarget as HTMLElement).style.borderLeftColor = "#2a2a2a";
           (e.currentTarget as HTMLElement).style.paddingLeft = "10px";
         }
+        onLeave?.();
       }}
     >
       {isEditing ? (
@@ -512,7 +526,7 @@ function TaskItem({
   );
 }
 
-function TaskList({ tasks, onComplete, onEdit, onOpen }: { tasks: Task[]; onComplete: (id: string) => void; onEdit: (id: string, newTitle: string) => Promise<void>; onOpen?: (id: string) => void }) {
+function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave }: { tasks: Task[]; onComplete: (id: string) => void; onEdit: (id: string, newTitle: string) => Promise<void>; onOpen?: (id: string) => void; onHover?: (id: string, rect: DOMRect) => void; onLeave?: () => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   if (tasks.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -525,12 +539,15 @@ function TaskList({ tasks, onComplete, onEdit, onOpen }: { tasks: Task[]; onComp
         <TaskItem
           key={t.id}
           task={t}
+          itemCount={(t as Project).items?.length ?? 0}
           isEditing={editingId === t.id}
           onEdit={onEdit}
           onComplete={onComplete}
           onStartEdit={(id) => setEditingId(id)}
           onCancelEdit={() => setEditingId(null)}
           onOpen={onOpen}
+          onHover={onHover}
+          onLeave={onLeave}
         />
       ))}
     </>
@@ -770,65 +787,146 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
         e.currentTarget.style.transform = "translateY(0)";
       }}
       style={{
+        position: "relative",
         background: dropTarget ? "rgba(255,255,255,0.08)" : baseBg,
         border: dropTarget ? "1px solid #9a9a9a" : "1px solid #2a2a2a",
         borderRadius: 5,
         padding: "12px 13px 10px",
-        marginBottom: 10,
         cursor: "pointer",
         display: "flex",
         flexDirection: "column",
         gap: 8,
-        breakInside: "avoid",
         transition: "border-color 0.2s, background 0.2s, transform 0.2s",
       }}
     >
-      {dropTarget ? (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 44, color: "#cfcfcf", fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.14em" }}>MERGE INTO ▾</div>
-      ) : (
-        <>
-          {/* project title — shown as a heading (auto-capitalized) */}
-          <span style={{
-            fontSize: 13, color: "#e8e8e8", fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
-            lineHeight: 1.35, overflowWrap: "anywhere", textTransform: "capitalize",
-          }}>{project.title}</span>
-          {/* every task in the project, listed under the title */}
-          {count > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-              {project.items.map((it) => (
-                <div key={it.id} style={{ display: "flex", gap: 6, alignItems: "baseline", minWidth: 0 }}>
-                  <span aria-hidden style={{ color: badgeColor, fontSize: 11, lineHeight: 1.4, flexShrink: 0 }}>›</span>
-                  <span style={{ fontSize: 12, color: "#9a9a9a", lineHeight: 1.4, overflowWrap: "anywhere", minWidth: 0 }}>{it.text || "Untitled"}</span>
-                </div>
-              ))}
+      {/* merge affordance: an absolute banner over the top edge, so the project's
+          title + tasks stay visible AND the card height never changes (no reflow
+          of the masonry) while another item is dragged over it */}
+      {dropTarget && (
+        <div style={{
+          position: "absolute", top: 0, left: 0, right: 0, pointerEvents: "none",
+          fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.14em",
+          color: "#f0f0f0", background: "rgba(255,255,255,0.14)", borderRadius: "5px 5px 0 0",
+          padding: "4px 6px", textAlign: "center",
+        }}>MERGE INTO ▾</div>
+      )}
+      {/* project title — shown as a heading (auto-capitalized) */}
+      <span style={{
+        fontSize: 13, color: "#e8e8e8", fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
+        lineHeight: 1.35, overflowWrap: "anywhere", textTransform: "capitalize",
+      }}>{project.title}</span>
+      {/* every task in the project, listed under the title */}
+      {count > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          {project.items.map((it) => (
+            <div key={it.id} style={{ display: "flex", gap: 6, alignItems: "baseline", minWidth: 0 }}>
+              <span aria-hidden style={{ color: badgeColor, fontSize: 11, lineHeight: 1.4, flexShrink: 0 }}>›</span>
+              <span style={{ fontSize: 12, color: "#9a9a9a", lineHeight: 1.4, overflowWrap: "anywhere", minWidth: 0 }}>{it.text || "Untitled"}</span>
             </div>
-          ) : (
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: "#808080" }}>NO TASKS</span>
-          )}
-        </>
+          ))}
+        </div>
+      ) : (
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: "#808080" }}>NO TASKS</span>
       )}
     </div>
   );
 }
 
-function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge }: {
+// True masonry with "upward gravity": every bubble drops into the currently
+// SHORTEST column, so the topmost open slot always fills first and no gaps are
+// left behind. Heights are measured at the real column width (so wrapping is
+// exact), packed before paint, and re-packed on resize. CSS columns can't do
+// this — they balance/flow and leave holes — so we measure + absolutely place.
+function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge, onAddNew }: {
   projects: Project[];
   onOpen: (id: string) => void;
   onHover: (id: string, rect: DOMRect) => void;
   onLeave: () => void;
   onMerge: (targetId: string, sourceId: string) => void;
+  onAddNew?: () => void; // click empty space (gaps / below the cards) to start a new project
 }) {
+  const COL_W = 150, GAP = 10, TOP_PAD = 3; // TOP_PAD leaves room for the hover lift
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const cardRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const [pos, setPos] = useState<{ left: number; top: number; w: number }[]>([]);
+  const [wrapH, setWrapH] = useState(0);
+  const [ready, setReady] = useState(false); // gate transitions so cards don't slide in on first paint
+
+  // track the container's width in state; a real resize updates it (idempotent on
+  // equal values, so the height changes we cause ourselves don't loop)
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const update = () => setWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // pack whenever the projects or the width change: measure each card at the real
+  // column width, then drop it into the currently-shortest column
+  useIsoLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const cw = width || el.clientWidth; // sync fallback so the first paint is already packed
+    if (cw <= 0) return;
+    const n = Math.max(1, Math.floor((cw + GAP) / (COL_W + GAP)));
+    const colW = (cw - (n - 1) * GAP) / n;
+    // force every card to the real column width so offsetHeight reflects the
+    // actual wrapped height regardless of which column it currently sits in
+    cardRefs.current.forEach((node) => { node.style.width = `${colW}px`; });
+    const heights = new Array(n).fill(TOP_PAD);
+    const next = projects.map((p) => {
+      // shortest column wins (ties go left → fills top-left first)
+      let t = 0;
+      for (let c = 1; c < n; c++) if (heights[c] < heights[t] - 0.5) t = c;
+      const left = t * (colW + GAP);
+      const top = heights[t];
+      const h = cardRefs.current.get(p.id)?.offsetHeight ?? 90;
+      heights[t] += h + GAP;
+      return { left, top, w: colW };
+    });
+    setPos(next);
+    setWrapH(Math.max(TOP_PAD, ...heights) - GAP);
+  }, [projects, width]);
+
+  // enable the reflow animation only after the first (already-correct) paint
+  useEffect(() => { const id = requestAnimationFrame(() => setReady(true)); return () => cancelAnimationFrame(id); }, []);
+
   if (projects.length === 0) return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 60 }}>
-      <p style={{ color: "#808080", fontSize: 12, textAlign: "center" }}>No projects yet — add one below</p>
+    <div
+      onClick={() => onAddNew?.()}
+      style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 60, cursor: "pointer" }}
+    >
+      <p style={{ color: "#808080", fontSize: 12, textAlign: "center" }}>No projects yet — click anywhere to add one</p>
     </div>
   );
-  // masonry via CSS columns: bubbles size to their content and pack together
-  // (varied heights). paddingTop gives the hover-lift room so it isn't clipped.
+
+  // relative + explicit height so the absolutely-placed cards have a container;
+  // minHeight fills the panel so the whole empty area stays clickable-to-add,
+  // and clicks that land on a card bubble open that project instead.
   return (
-    <div style={{ columnWidth: 150, columnGap: 10, paddingTop: 3 }}>
-      {projects.map((p) => (
-        <BucketCard key={p.id} project={p} onOpen={onOpen} onHover={onHover} onLeave={onLeave} onMerge={onMerge} />
+    <div
+      ref={wrapRef}
+      onClick={(e) => { if (e.target === e.currentTarget) onAddNew?.(); }}
+      style={{ position: "relative", height: wrapH || undefined, minHeight: "100%", cursor: "pointer" }}
+    >
+      {projects.map((p, i) => (
+        <div
+          key={p.id}
+          ref={(node) => { if (node) cardRefs.current.set(p.id, node); else cardRefs.current.delete(p.id); }}
+          style={{
+            position: "absolute",
+            left: pos[i]?.left ?? 0,
+            top: pos[i]?.top ?? TOP_PAD,
+            width: pos[i]?.w ?? COL_W,
+            transition: ready ? "left 0.22s ease, top 0.22s ease" : "none",
+          }}
+        >
+          <BucketCard project={p} onOpen={onOpen} onHover={onHover} onLeave={onLeave} onMerge={onMerge} />
+        </div>
       ))}
     </div>
   );
@@ -843,13 +941,14 @@ function HoverPopover({ project, rect }: { project: Project; rect: DOMRect }) {
   const vw = typeof window !== "undefined" ? window.innerWidth : 1280;
   const vh = typeof window !== "undefined" ? window.innerHeight : 800;
   const estH = Math.min(40 + Math.min(items.length, 6) * 20 + (items.length > 6 ? 16 : 0), 220);
-  const left = Math.min(Math.max(rect.left, 8), vw - W - 8);
-  const openAbove = rect.bottom + 8 + estH > vh;
-  // when flipping above, anchor to the card's top edge and cap the height so the
-  // popover can never overlap the card it previews
-  const pos: React.CSSProperties = openAbove
-    ? { bottom: Math.max(vh - rect.top + 8, 8), maxHeight: Math.max(rect.top - 16, 60) }
-    : { top: rect.bottom + 8, maxHeight: Math.max(vh - rect.bottom - 16, 60) };
+  // open to the RIGHT of the hovered row (aligned to its top), so it never covers
+  // the sibling rows above/below in the list; flip to the left only if it would
+  // overflow the right edge of the viewport
+  const GAP = 8;
+  const rightOverflow = rect.right + GAP + W > vw - 8;
+  const left = rightOverflow ? Math.max(rect.left - GAP - W, 8) : rect.right + GAP;
+  const top = Math.min(Math.max(rect.top, 8), Math.max(vh - estH - 8, 8));
+  const pos: React.CSSProperties = { top, maxHeight: Math.max(vh - top - 8, 60) };
 
   return (
     <div style={{
@@ -1304,6 +1403,10 @@ function Dashboard() {
 
   // trim a title for use inside a short undo label
   const undoClip = (s: string) => (s.length > 24 ? s.slice(0, 24) + "…" : s);
+
+  // open a project's modal, clearing any hover preview first so a popover can't
+  // stay pinned on screen behind/after the modal
+  const handleOpenProject = useCallback((id: string) => { setHover(null); setOpenProjectId(id); }, []);
 
   const completeTask = async (id: string) => {
     const done = shortTerm.find(t => t.id === id) || longTerm.find(t => t.id === id) || clients.find(t => t.id === id);
@@ -1922,13 +2025,13 @@ function Dashboard() {
               </div>
               <div
                 onClick={(e) => { if (e.target === e.currentTarget) highAddRef.current?.open(); }}
-                style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0 }}
+                style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0, cursor: "pointer" }}
               >
                 {loading ? null : shortHigh.length === 0 ? (
                   <div style={{ borderLeft: "1px dashed #4a4a4a", padding: "2px 0 2px 10px" }}>
                     <p style={{ margin: 0, color: "#808080", fontSize: 11, fontStyle: "italic" }}>Drag tasks here, or use + to add</p>
                   </div>
-                ) : <TaskList tasks={shortHigh} onComplete={completeTask} onEdit={editTask} onOpen={setOpenProjectId} />}
+                ) : <TaskList tasks={shortHigh} onComplete={completeTask} onEdit={editTask} onOpen={handleOpenProject} onHover={(id, rect) => setHover({ id, rect })} onLeave={() => setHover(null)} />}
               </div>
               <AddTaskInput ref={highAddRef} onAdd={(title) => addTask(title, "Short Term", true)} placeholder="New priority task..." />
             </div>
@@ -1946,7 +2049,7 @@ function Dashboard() {
                 onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setPriorityDrag(null); if (id) dropToPriority(id, false); }}
                 onClick={(e) => { if (e.target === e.currentTarget) shortAddRef.current?.open(); }}
                 style={{
-                  flex: 1, overflowY: "auto", scrollbarWidth: "none", borderRadius: 2, outlineOffset: -2,
+                  flex: 1, overflowY: "auto", scrollbarWidth: "none", borderRadius: 2, outlineOffset: -2, cursor: "pointer",
                   outline: priorityDrag === "normal" ? "1px dashed #8a8a8a" : "1px dashed transparent",
                   background: priorityDrag === "normal" ? "rgba(255,255,255,0.025)" : "transparent",
                   transition: "background 0.15s, outline-color 0.15s",
@@ -1958,7 +2061,7 @@ function Dashboard() {
                       <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 8}%` }} />
                     </div>
                   ))
-                ) : <TaskList tasks={shortNormal} onComplete={completeTask} onEdit={editTask} onOpen={setOpenProjectId} />}
+                ) : <TaskList tasks={shortNormal} onComplete={completeTask} onEdit={editTask} onOpen={handleOpenProject} onHover={(id, rect) => setHover({ id, rect })} onLeave={() => setHover(null)} />}
               </div>
               <AddTaskInput ref={shortAddRef} onAdd={(title) => addTask(title, "Short Term")} />
             </Panel>
@@ -1978,7 +2081,7 @@ function Dashboard() {
                 onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setDragOver(null); if (id) moveTask(id, "Long Term"); }}
                 onClick={(e) => { if (e.target === e.currentTarget) longAddRef.current?.open(); }}
                 style={{
-                  flex: 1, overflowY: "auto", scrollbarWidth: "none", borderRadius: 2, outlineOffset: -2,
+                  flex: 1, overflowY: "auto", scrollbarWidth: "none", borderRadius: 2, outlineOffset: -2, cursor: "pointer",
                   outline: dragOver === "Long Term" ? "1px dashed #8a8a8a" : "1px dashed transparent",
                   background: dragOver === "Long Term" ? "rgba(255,255,255,0.025)" : "transparent",
                   transition: "background 0.15s, outline-color 0.15s",
@@ -1993,10 +2096,11 @@ function Dashboard() {
                 ) : (
                   <ProjectGrid
                     projects={longTerm}
-                    onOpen={setOpenProjectId}
+                    onOpen={handleOpenProject}
                     onHover={(id, rect) => setHover({ id, rect })}
                     onLeave={() => setHover(null)}
                     onMerge={mergeInto}
+                    onAddNew={() => longAddRef.current?.open()}
                   />
                 )}
               </div>
@@ -2007,7 +2111,7 @@ function Dashboard() {
               <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
               <div
                 onClick={(e) => { if (e.target === e.currentTarget) scheduleAddRef.current?.open(); }}
-                style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}
+                style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", cursor: "pointer" }}
               >
                 {events.length === 0 ? (
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", paddingTop: 20 }}>
