@@ -634,6 +634,7 @@ const AddEventInput = forwardRef<AddHandle, { onAdd: (title: string, date: strin
   const [loading, setLoading] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
 
   useImperativeHandle(ref, () => ({ open: () => setOpen(true) }), []);
   useEffect(() => { if (open) setTimeout(() => titleRef.current?.focus(), 50); }, [open]);
@@ -654,6 +655,15 @@ const AddEventInput = forwardRef<AddHandle, { onAdd: (title: string, date: strin
     setTitle(""); setDate(""); setTime(""); setType(""); setOpen(false); setLoading(false);
   };
   const onKey = (e: React.KeyboardEvent) => { if (e.key === "Enter") submit(); if (e.key === "Escape") setOpen(false); };
+  // Enter in the title advances to the date field and pops its picker open
+  const onTitleKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") { setOpen(false); return; }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      dateRef.current?.focus();
+      try { (dateRef.current as any)?.showPicker?.(); } catch {}
+    }
+  };
 
   if (!open) return (
     <button onClick={() => setOpen(true)} aria-label="Add event" title="Add event" style={{
@@ -674,9 +684,9 @@ const AddEventInput = forwardRef<AddHandle, { onAdd: (title: string, date: strin
   };
   return (
     <div ref={wrapRef} style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-      <input ref={titleRef} value={title} onChange={e => setTitle(e.target.value)} onKeyDown={onKey}
+      <input ref={titleRef} value={title} onChange={e => setTitle(e.target.value)} onKeyDown={onTitleKey}
         placeholder="Event…" aria-label="Event name" style={{ ...field, flex: "1 1 100px", minWidth: 0 }} />
-      <input type="date" value={date} onChange={e => setDate(e.target.value)} onKeyDown={onKey}
+      <input ref={dateRef} type="date" value={date} onChange={e => setDate(e.target.value)} onKeyDown={onKey}
         aria-label="Date" style={field} />
       <input type="time" value={time} onChange={e => setTime(e.target.value)} onKeyDown={onKey}
         aria-label="Time (optional)" title="Time (optional)" style={field} />
