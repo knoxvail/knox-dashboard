@@ -623,32 +623,37 @@ const AddTaskInput = forwardRef<AddHandle, { onAdd: (title: string) => Promise<v
   );
 });
 
-// Add a scheduled event (title + when + optional type) from the dashboard.
-function AddEventInput({ onAdd }: { onAdd: (title: string, datetimeLocal: string, type: string) => Promise<void> }) {
+// Add a scheduled event (title + date, optional time + type) from the dashboard.
+const AddEventInput = forwardRef<AddHandle, { onAdd: (title: string, date: string, time: string, type: string) => Promise<void> }>(
+  function AddEventInput({ onAdd }, ref) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
-  const [dt, setDt] = useState("");
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
   const [type, setType] = useState("");
   const [loading, setLoading] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
+  useImperativeHandle(ref, () => ({ open: () => setOpen(true) }), []);
   useEffect(() => { if (open) setTimeout(() => titleRef.current?.focus(), 50); }, [open]);
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node) && !title.trim() && !dt) setOpen(false);
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node) && !title.trim() && !date && !time) setOpen(false);
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
-  }, [open, title, dt]);
+  }, [open, title, date, time]);
 
+  const canSubmit = !!title.trim() && !!date;
   const submit = async () => {
-    if (!title.trim() || !dt) return;
+    if (!canSubmit) return;
     setLoading(true);
-    await onAdd(title.trim(), dt, type);
-    setTitle(""); setDt(""); setType(""); setOpen(false); setLoading(false);
+    await onAdd(title.trim(), date, time, type); // time may be "" → all-day event
+    setTitle(""); setDate(""); setTime(""); setType(""); setOpen(false); setLoading(false);
   };
+  const onKey = (e: React.KeyboardEvent) => { if (e.key === "Enter") submit(); if (e.key === "Escape") setOpen(false); };
 
   if (!open) return (
     <button onClick={() => setOpen(true)} aria-label="Add event" title="Add event" style={{
@@ -667,16 +672,15 @@ function AddEventInput({ onAdd }: { onAdd: (title: string, datetimeLocal: string
     fontSize: 12, padding: "5px 8px", fontFamily: "'DM Sans', sans-serif",
     outline: "none", borderRadius: 2, colorScheme: "dark",
   };
-  const canSubmit = !!title.trim() && !!dt;
   return (
     <div ref={wrapRef} style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-      <input ref={titleRef} value={title} onChange={e => setTitle(e.target.value)}
-        onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") setOpen(false); }}
-        placeholder="Event…" aria-label="Event name" style={{ ...field, flex: "1 1 110px", minWidth: 0 }} />
-      <input type="datetime-local" value={dt} onChange={e => setDt(e.target.value)}
-        onKeyDown={e => { if (e.key === "Enter") submit(); }}
-        aria-label="Date and time" style={field} />
-      <select value={type} onChange={e => setType(e.target.value)} aria-label="Type" style={{ ...field, cursor: "pointer" }}>
+      <input ref={titleRef} value={title} onChange={e => setTitle(e.target.value)} onKeyDown={onKey}
+        placeholder="Event…" aria-label="Event name" style={{ ...field, flex: "1 1 100px", minWidth: 0 }} />
+      <input type="date" value={date} onChange={e => setDate(e.target.value)} onKeyDown={onKey}
+        aria-label="Date" style={field} />
+      <input type="time" value={time} onChange={e => setTime(e.target.value)} onKeyDown={onKey}
+        aria-label="Time (optional)" title="Time (optional)" style={field} />
+      <select value={type} onChange={e => setType(e.target.value)} onKeyDown={onKey} aria-label="Type" style={{ ...field, cursor: "pointer" }}>
         <option value="">Type…</option>
         <option value="Appointment">Appointment</option>
         <option value="Meeting">Meeting</option>
@@ -693,7 +697,7 @@ function AddEventInput({ onAdd }: { onAdd: (title: string, datetimeLocal: string
       }}>✕</button>
     </div>
   );
-}
+});
 
 // A Long Term "project" bucket: a draggable box that opens a modal on click and
 // previews its checklist on hover. Drag (move to Short Term) and click (open) are
@@ -1091,6 +1095,7 @@ function Dashboard() {
   const longAddRef = useRef<AddHandle>(null);
   const clientsAddRef = useRef<AddHandle>(null);
   const highAddRef = useRef<AddHandle>(null);
+  const scheduleAddRef = useRef<AddHandle>(null);
 
   const toast = useCallback((msg: string, undo?: () => void) => {
     const id = (typeof performance !== "undefined" ? performance.now() : 0) + Math.random();
@@ -1538,25 +1543,27 @@ function Dashboard() {
     } catch { await fetchSchedule(); toast("Couldn’t delete — reverted"); }
   };
 
-  const addEvent = async (title: string, datetimeLocal: string, type: string) => {
-    // datetime-local is browser-local; store as a UTC ISO so it round-trips
-    const iso = new Date(datetimeLocal).toISOString();
+  const addEvent = async (title: string, date: string, time: string, type: string) => {
+    // with a time it's a timed event (stored as a UTC ISO so it round-trips);
+    // without a time it's an all-day event (date-only string)
+    const hasTime = !!time;
+    const notionDate = hasTime ? new Date(`${date}T${time}`).toISOString() : date;
     const tempId = `temp-${Date.now()}`;
     // optimistic display (reconciled by fetchSchedule)
-    const d = new Date(datetimeLocal);
     const now = new Date();
-    const evDay = iso.split("T")[0];
     const todayStr = now.toISOString().split("T")[0];
     const tom = new Date(now); tom.setUTCDate(now.getUTCDate() + 1);
     const tomStr = tom.toISOString().split("T")[0];
-    const displayDate = evDay === todayStr ? "Today" : evDay === tomStr ? "Tomorrow" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    const displayTime = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    const evDay = hasTime ? notionDate.split("T")[0] : date;
+    const dObj = new Date(hasTime ? `${date}T${time}` : `${date}T00:00`);
+    const displayDate = evDay === todayStr ? "Today" : evDay === tomStr ? "Tomorrow" : dObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const displayTime = hasTime ? dObj.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }) : "";
     setEvents(prev => [...prev, { id: tempId, title, displayDate, displayTime, type }]);
     try {
       const res = await fetch("/api/schedule", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, date: iso, type }),
+        body: JSON.stringify({ title, date: notionDate, type }),
       });
       if (!res.ok) { setEvents(prev => prev.filter(e => e.id !== tempId)); toast("Couldn’t add event — try again"); return; }
     } catch { setEvents(prev => prev.filter(e => e.id !== tempId)); toast("Couldn’t add event — try again"); return; }
@@ -1824,7 +1831,10 @@ function Dashboard() {
 
             <Panel style={{ flex: 0.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
               <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
-              <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
+              <div
+                onClick={(e) => { if (e.target === e.currentTarget) scheduleAddRef.current?.open(); }}
+                style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}
+              >
                 {events.length === 0 ? (
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", paddingTop: 20 }}>
                     <p style={{ color: "#808080", fontSize: 12 }}>Nothing scheduled</p>
@@ -1853,7 +1863,7 @@ function Dashboard() {
                   </div>
                 )}
               </div>
-              <AddEventInput onAdd={addEvent} />
+              <AddEventInput ref={scheduleAddRef} onAdd={addEvent} />
             </Panel>
           </div>
         </div>
