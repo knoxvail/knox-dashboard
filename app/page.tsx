@@ -734,6 +734,12 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
   const baseBg = `hsla(${hue}, 55%, 55%, 0.08)`;
   const hoverBg = `hsla(${hue}, 55%, 55%, 0.15)`;
   const badgeColor = `hsl(${hue}, 45%, 72%)`;
+  // warmer (more to do) = a little bigger, with the font scaling to match
+  const tier = Math.min(count, TASK_HUES.length - 1);
+  const scale = 1 + (tier / (TASK_HUES.length - 1)) * 0.32;
+  const titleSize = Math.round(13 * scale);
+  const badgeSize = Math.round(9 * scale);
+  const pad = (n: number) => `${+(n * scale).toFixed(1)}px`;
 
   return (
     <div
@@ -776,7 +782,7 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
         background: dropTarget ? "rgba(255,255,255,0.08)" : baseBg,
         border: dropTarget ? "1px solid #9a9a9a" : "1px solid #2a2a2a",
         borderRadius: 5,
-        padding: "12px 13px 10px",
+        padding: `${pad(12)} ${pad(13)} ${pad(10)}`,
         marginBottom: 10,
         cursor: "pointer",
         display: "flex",
@@ -788,7 +794,7 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
     >
       {/* full title — no clamp, wrap long words so nothing is cut off */}
       <span style={{
-        fontSize: 13, color: "#cfcfcf", fontFamily: "'DM Sans', sans-serif",
+        fontSize: titleSize, color: "#cfcfcf", fontFamily: "'DM Sans', sans-serif",
         lineHeight: 1.4, overflowWrap: "anywhere",
       }}>{project.title}</span>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -796,7 +802,7 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
           {[0, 1, 2].map((i) => <div key={i} style={{ width: 9, height: 1, background: dropTarget ? "#444" : `hsla(${hue}, 40%, 55%, 0.7)` }} />)}
         </div>
         <span style={{
-          fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
+          fontFamily: "'JetBrains Mono', monospace", fontSize: badgeSize,
           letterSpacing: "0.12em", color: dropTarget ? "#cfcfcf" : badgeColor,
         }}>{dropTarget ? "MERGE INTO ▾" : label}</span>
       </div>
