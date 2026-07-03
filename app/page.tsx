@@ -559,7 +559,7 @@ const AddTaskInput = forwardRef<AddHandle, { onAdd: (title: string) => Promise<v
   // typed (doesn't rely on focus/blur, so it always fires)
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: Event) => {
+    const onDown = (e: PointerEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node) && !value.trim()) {
         setOpen(false); setValue("");
       }
