@@ -16,56 +16,6 @@ type NowPlaying = {
 };
 type Playlist = { id: string; name: string; uri: string; image?: string };
 
-// Small white circle cursor. The transform is written straight to the DOM on
-// every mousemove — no rAF, no easing, no React re-render — so it tracks the
-// pointer with the minimum possible latency. Hides when the pointer leaves.
-function CustomCursor() {
-  const dotRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let shown = false;
-    const setShown = (v: boolean) => {
-      if (shown === v) return;
-      shown = v;
-      if (dotRef.current) dotRef.current.style.opacity = v ? "1" : "0";
-    };
-    const move = (e: MouseEvent | DragEvent) => {
-      const d = dotRef.current;
-      if (d) d.style.transform = `translate3d(${e.clientX}px,${e.clientY}px,0) translate(-50%,-50%)`;
-      if (!shown) setShown(true);
-    };
-    const out = (e: MouseEvent) => { if (!e.relatedTarget) setShown(false); };
-    const leaveDoc = () => setShown(false);
-    const blur = () => setShown(false);
-
-    window.addEventListener("mousemove", move, { passive: true });
-    window.addEventListener("dragover", move, { passive: true }); // keep tracking while dragging
-    window.addEventListener("mouseout", out, { passive: true });
-    document.addEventListener("mouseleave", leaveDoc);
-    window.addEventListener("blur", blur);
-    return () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("dragover", move);
-      window.removeEventListener("mouseout", out);
-      document.removeEventListener("mouseleave", leaveDoc);
-      window.removeEventListener("blur", blur);
-    };
-  }, []);
-
-  return (
-    <>
-      <div ref={dotRef} aria-hidden style={{
-        position: "fixed", top: 0, left: 0,
-        width: 9, height: 9, borderRadius: "50%",
-        background: "#fff",
-        boxShadow: "0 0 3px rgba(0,0,0,0.7)",
-        pointerEvents: "none", zIndex: 99999, opacity: 0,
-        willChange: "transform",
-      }} />
-    </>
-  );
-}
-
 // Glowy waves background — thin, subtle mouse-reactive lines kept up in the
 // clock/time band so they don't read as being over the panel text.
 function GlowyWaves() {
@@ -625,6 +575,78 @@ const AddTaskInput = forwardRef<AddHandle, { onAdd: (title: string) => Promise<v
   );
 });
 
+// Add a scheduled event (title + when + optional type) from the dashboard.
+function AddEventInput({ onAdd }: { onAdd: (title: string, datetimeLocal: string, type: string) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [dt, setDt] = useState("");
+  const [type, setType] = useState("");
+  const [loading, setLoading] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (open) setTimeout(() => titleRef.current?.focus(), 50); }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node) && !title.trim() && !dt) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [open, title, dt]);
+
+  const submit = async () => {
+    if (!title.trim() || !dt) return;
+    setLoading(true);
+    await onAdd(title.trim(), dt, type);
+    setTitle(""); setDt(""); setType(""); setOpen(false); setLoading(false);
+  };
+
+  if (!open) return (
+    <button onClick={() => setOpen(true)} aria-label="Add event" title="Add event" style={{
+      background: "none", border: "1px solid #2a2a2a", cursor: "pointer",
+      marginTop: 10, width: 26, height: 26, borderRadius: 4, flexShrink: 0,
+      display: "flex", alignItems: "center", justifyContent: "center", color: "#808080",
+      transition: "color 0.2s, border-color 0.2s, background 0.2s",
+    }}
+      onMouseEnter={e => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+      onMouseLeave={e => { e.currentTarget.style.color = "#808080"; e.currentTarget.style.borderColor = "#2a2a2a"; e.currentTarget.style.background = "none"; }}
+    ><span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>+</span></button>
+  );
+
+  const field: React.CSSProperties = {
+    background: "#1a1a1a", border: "1px solid #333", color: "#ccc",
+    fontSize: 12, padding: "5px 8px", fontFamily: "'DM Sans', sans-serif",
+    outline: "none", borderRadius: 2, colorScheme: "dark",
+  };
+  const canSubmit = !!title.trim() && !!dt;
+  return (
+    <div ref={wrapRef} style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+      <input ref={titleRef} value={title} onChange={e => setTitle(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") setOpen(false); }}
+        placeholder="Event…" aria-label="Event name" style={{ ...field, flex: "1 1 110px", minWidth: 0 }} />
+      <input type="datetime-local" value={dt} onChange={e => setDt(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") submit(); }}
+        aria-label="Date and time" style={field} />
+      <select value={type} onChange={e => setType(e.target.value)} aria-label="Type" style={{ ...field, cursor: "pointer" }}>
+        <option value="">Type…</option>
+        <option value="Appointment">Appointment</option>
+        <option value="Meeting">Meeting</option>
+        <option value="Deadline">Deadline</option>
+        <option value="Personal">Personal</option>
+      </select>
+      <button onClick={submit} disabled={loading || !canSubmit} style={{
+        background: "#1e1e1e", border: "1px solid #505050", color: "#aaa",
+        fontSize: 11, padding: "4px 10px", cursor: canSubmit ? "pointer" : "default", borderRadius: 2, flexShrink: 0,
+        fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.1em", opacity: (loading || !canSubmit) ? 0.5 : 1,
+      }}>{loading ? "..." : "ADD"}</button>
+      <button onClick={() => setOpen(false)} aria-label="Cancel" style={{
+        background: "none", border: "none", color: "#808080", fontSize: 14, cursor: "pointer", padding: "0 4px",
+      }}>✕</button>
+    </div>
+  );
+}
+
 // A Long Term "project" bucket: a draggable box that opens a modal on click and
 // previews its checklist on hover. Drag (move to Short Term) and click (open) are
 // disambiguated by a per-card drag flag.
@@ -1014,9 +1036,6 @@ function Dashboard() {
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const [openEmail, setOpenEmail] = useState<{ source: "gmail" | "zoho"; email: Email } | null>(null);
   const [hover, setHover] = useState<{ id: string; rect: DOMRect } | null>(null);
-  // the custom reticle only replaces the native cursor on a fine pointer with
-  // motion allowed; otherwise the OS cursor stays (accessibility)
-  const [reticle, setReticle] = useState(false);
   const [toasts, setToasts] = useState<{ id: number; msg: string; undo?: () => void }[]>([]);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
   // let each list open its add-input when its empty space is clicked
@@ -1141,19 +1160,6 @@ function Dashboard() {
     return () => { if (spotifyInterval.current) clearInterval(spotifyInterval.current); };
   }, [fetchSpotify]);
 
-  useEffect(() => {
-    const m = window.matchMedia("(pointer: fine) and (prefers-reduced-motion: no-preference)");
-    const upd = () => {
-      const on = m.matches;
-      setReticle(on);
-      // flag <html> too, so cursor:none also covers body-level portals (the
-      // project modal / email reader); otherwise the native cursor shows there
-      document.documentElement.classList.toggle("reticle-on", on);
-    };
-    upd();
-    m.addEventListener?.("change", upd);
-    return () => { m.removeEventListener?.("change", upd); document.documentElement.classList.remove("reticle-on"); };
-  }, []);
 
   // the hover popover is pinned to a captured rect, so it detaches on scroll —
   // just dismiss it (capture:true also catches the inner panel's scroll)
@@ -1484,6 +1490,31 @@ function Dashboard() {
     } catch { await fetchSchedule(); toast("Couldn’t delete — reverted"); }
   };
 
+  const addEvent = async (title: string, datetimeLocal: string, type: string) => {
+    // datetime-local is browser-local; store as a UTC ISO so it round-trips
+    const iso = new Date(datetimeLocal).toISOString();
+    const tempId = `temp-${Date.now()}`;
+    // optimistic display (reconciled by fetchSchedule)
+    const d = new Date(datetimeLocal);
+    const now = new Date();
+    const evDay = iso.split("T")[0];
+    const todayStr = now.toISOString().split("T")[0];
+    const tom = new Date(now); tom.setUTCDate(now.getUTCDate() + 1);
+    const tomStr = tom.toISOString().split("T")[0];
+    const displayDate = evDay === todayStr ? "Today" : evDay === tomStr ? "Tomorrow" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const displayTime = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    setEvents(prev => [...prev, { id: tempId, title, displayDate, displayTime, type }]);
+    try {
+      const res = await fetch("/api/schedule", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, date: iso, type }),
+      });
+      if (!res.ok) { setEvents(prev => prev.filter(e => e.id !== tempId)); toast("Couldn’t add event — try again"); return; }
+    } catch { setEvents(prev => prev.filter(e => e.id !== tempId)); toast("Couldn’t add event — try again"); return; }
+    fetchSchedule();
+  };
+
   const spotifyAction = async (action: string) => {
     // optimistic: flip play/pause in the UI immediately
     if (action === "play" || action === "pause") {
@@ -1525,7 +1556,7 @@ function Dashboard() {
   const shortNormal = shortTerm.filter(t => !t.priority);
 
   return (
-    <div className={reticle ? "reticle-on" : undefined} style={{
+    <div style={{
       background: "#0a0a0a",
       minHeight: "100vh",
       width: "100vw",
@@ -1537,7 +1568,6 @@ function Dashboard() {
       fontFamily: "'DM Sans', sans-serif",
     }}>
       <GlowyWaves />
-      {reticle && <CustomCursor />}
       {/* scanline sweeps behind the panels (z0), not over the text */}
       <div className="scan" aria-hidden style={{
         position: "fixed", top: 0, left: 0, right: 0, height: 1,
@@ -1775,6 +1805,7 @@ function Dashboard() {
                   </div>
                 )}
               </div>
+              <AddEventInput onAdd={addEvent} />
             </Panel>
           </div>
         </div>
@@ -2027,10 +2058,6 @@ function Dashboard() {
         :focus-visible { outline: 2px solid #cfcfcf !important; outline-offset: 2px; }
         /* keep the ring from being clipped by panel overflow */
         .reveal-row:focus-within, .reveal-row .row-action:focus-visible { outline-offset: -2px; }
-        /* the reticle only hides the native cursor when it is actually active */
-        .reticle-on * { cursor: none !important; }
-        .reticle-on input, .reticle-on textarea { cursor: text !important; }
-        .reticle-on input[type="range"] { cursor: pointer !important; }
         /* row action buttons: hidden until the row is hovered / keyboard-focused */
         .reveal-row .row-action { opacity: 0; transition: opacity 0.15s; }
         .reveal-row:hover .row-action,

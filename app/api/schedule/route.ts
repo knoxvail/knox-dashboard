@@ -120,3 +120,43 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed" }, { status: 500 });
   }
 }
+
+// Create a scheduled event
+export async function PUT(request: Request) {
+  const token = process.env.NOTION_TOKEN;
+  const dbId = process.env.NOTION_SCHEDULE_DB_ID;
+  if (!token || !dbId) return NextResponse.json({ error: "No token" }, { status: 401 });
+  try {
+    const { title, date, type } = await request.json();
+    if (!title || typeof title !== "string" || !title.trim()) {
+      return NextResponse.json({ error: "Missing title" }, { status: 400 });
+    }
+    if (!date) return NextResponse.json({ error: "Missing date" }, { status: 400 });
+
+    const properties: Record<string, unknown> = {
+      Name: { title: [{ text: { content: title.trim() } }] },
+      Date: { date: { start: date } },
+    };
+    if (type && ["Meeting", "Appointment", "Deadline", "Personal"].includes(type)) {
+      properties.Type = { select: { name: type } };
+    }
+
+    const res = await fetch("https://api.notion.com/v1/pages", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ parent: { database_id: dbId }, properties }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      return NextResponse.json({ error: err }, { status: res.status });
+    }
+    const created = await res.json();
+    return NextResponse.json({ success: true, id: created.id });
+  } catch {
+    return NextResponse.json({ error: "Failed" }, { status: 500 });
+  }
+}
