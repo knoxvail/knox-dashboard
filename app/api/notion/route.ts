@@ -69,8 +69,8 @@ export async function GET() {
     });
     const data = await res.json();
 
-    const shortTerm: { id: string; title: string }[] = [];
-    const longTerm: { id: string; title: string }[] = [];
+    const shortTerm: { id: string; title: string; priority: boolean }[] = [];
+    const longTerm: { id: string; title: string; priority: boolean }[] = [];
     const clients: { id: string; title: string }[] = [];
 
     (data.results || []).forEach((page: any) => {
@@ -88,9 +88,10 @@ export async function GET() {
 
       const statusProp = Object.values(page.properties).find((p: any) => p.type === "status") as any;
       const status = statusProp?.status?.name || "";
+      const priority = !!(page.properties as any)["Priority"]?.checkbox;
 
-      if (status === "Short Term") shortTerm.push({ id: page.id, title });
-      else if (status === "Long Term") longTerm.push({ id: page.id, title });
+      if (status === "Short Term") shortTerm.push({ id: page.id, title, priority });
+      else if (status === "Long Term") longTerm.push({ id: page.id, title, priority });
     });
 
     // enrich Short Term and Long Term with their checklists (child to_do blocks)
@@ -252,6 +253,28 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({ success: true, id: itemId });
+    }
+
+    // Flag/unflag a task as high priority (Priority checkbox on the page)
+    if (action === "setPriority") {
+      if (!id) return NextResponse.json({ error: "Missing task id" }, { status: 400 });
+      if (typeof body.priority !== "boolean") {
+        return NextResponse.json({ error: "Invalid priority" }, { status: 400 });
+      }
+      const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ properties: { Priority: { checkbox: body.priority } } }),
+      });
+      if (!notionRes.ok) {
+        const err = await notionRes.json();
+        return NextResponse.json({ error: err }, { status: notionRes.status });
+      }
+      return NextResponse.json({ success: true });
     }
 
     // Merge one task/project INTO another: append the source's title (and its

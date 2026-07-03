@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 
 type Task = { id: string; title: string };
 type ChecklistItem = { id: string; text: string; checked: boolean }; // id = Notion BLOCK id
-type Project = { id: string; title: string; items: ChecklistItem[] }; // id = Notion PAGE id
+type Project = { id: string; title: string; items: ChecklistItem[]; priority?: boolean }; // id = Notion PAGE id
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
 type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string };
@@ -916,6 +916,7 @@ function Dashboard() {
   const [volume, setVolume] = useState(50);
   const [loading, setLoading] = useState(true);
   const [dragOver, setDragOver] = useState<"Short Term" | "Long Term" | null>(null);
+  const [priorityDrag, setPriorityDrag] = useState<"high" | "normal" | null>(null);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const [hover, setHover] = useState<{ id: string; rect: DOMRect } | null>(null);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
@@ -1267,6 +1268,33 @@ function Dashboard() {
     }
   };
 
+  // Flag/unflag a Short Term task as high priority (persists to Notion's Priority
+  // checkbox); optimistic, reverts via a refetch on failure.
+  const setPriority = async (id: string, priority: boolean) => {
+    if (id.startsWith("temp-")) return;
+    const cur = findProject(id);
+    if (cur && !!cur.priority === priority) return; // already in that state
+    patchProject(id, p => ({ ...p, priority }));
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setPriority", id, priority }),
+      });
+      if (!res.ok) await fetchTasks();
+    } catch {
+      await fetchTasks();
+    }
+  };
+
+  // Drop handler for the Short Term high/normal zones: pull the item into Short
+  // Term if it came from Long Term, then set its priority flag.
+  const dropToPriority = (id: string, priority: boolean) => {
+    if (!id || id.startsWith("temp-")) return;
+    if (longTerm.some(p => p.id === id)) moveTask(id, "Short Term");
+    setPriority(id, priority);
+  };
+
   const archiveEmail = async (id: string) => {
     setEmails(prev => prev.filter(e => e.id !== id));
     await fetch("/api/gmail", {
@@ -1324,6 +1352,8 @@ function Dashboard() {
   // modal + hover read live project state so optimistic item edits reflect instantly
   const openProject = openProjectId ? findProject(openProjectId) : null;
   const hoverProject = hover && !openProjectId ? findProject(hover.id) : null;
+  const shortHigh = shortTerm.filter(t => t.priority);
+  const shortNormal = shortTerm.filter(t => !t.priority);
 
   return (
     <div style={{
@@ -1443,24 +1473,52 @@ function Dashboard() {
                 {shortTerm.length}
               </span>
             } />
-            <div
-              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOver !== "Short Term") setDragOver("Short Term"); }}
-              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
-              onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setDragOver(null); if (id) moveTask(id, "Short Term"); }}
-              style={{
-                flex: 1, overflowY: "auto", scrollbarWidth: "none", borderRadius: 2, outlineOffset: -2,
-                outline: dragOver === "Short Term" ? "1px dashed #6a6a6a" : "1px dashed transparent",
-                background: dragOver === "Short Term" ? "rgba(255,255,255,0.025)" : "transparent",
-                transition: "background 0.15s, outline-color 0.15s",
-              }}
-            >
-              {loading ? (
-                Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>
-                    <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 8}%` }} />
+            <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", display: "flex", flexDirection: "column", minHeight: 0 }}>
+              {/* HIGH PRIORITY — drop a task here to flag it (always shown as a target) */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (priorityDrag !== "high") setPriorityDrag("high"); }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setPriorityDrag(null); }}
+                onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setPriorityDrag(null); if (id) dropToPriority(id, true); }}
+                style={{
+                  paddingBottom: 10, borderBottom: "1px solid #1e1e1e", borderRadius: 2, outlineOffset: -2,
+                  outline: priorityDrag === "high" ? "1px dashed #6a6a6a" : "1px dashed transparent",
+                  background: priorityDrag === "high" ? "rgba(255,255,255,0.03)" : "transparent",
+                  transition: "background 0.15s, outline-color 0.15s",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.18em", color: "#8a8a8a", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
+                    <span aria-hidden style={{ color: "#9a9a9a", fontSize: 8 }}>▲</span> High Priority
+                  </span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>{shortHigh.length}</span>
+                </div>
+                {loading ? null : shortHigh.length === 0 ? (
+                  <div style={{ borderLeft: "1px dashed #333", padding: "2px 0 2px 10px" }}>
+                    <p style={{ margin: 0, color: "#555", fontSize: 11, fontStyle: "italic" }}>Drag tasks here to prioritize</p>
                   </div>
-                ))
-              ) : <TaskList tasks={shortTerm} onComplete={completeTask} onEdit={editTask} onOpen={setOpenProjectId} />}
+                ) : <TaskList tasks={shortHigh} onComplete={completeTask} onEdit={editTask} onOpen={setOpenProjectId} />}
+              </div>
+
+              {/* everything else */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (priorityDrag !== "normal") setPriorityDrag("normal"); }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setPriorityDrag(null); }}
+                onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setPriorityDrag(null); if (id) dropToPriority(id, false); }}
+                style={{
+                  flex: 1, minHeight: 40, paddingTop: 10, borderRadius: 2, outlineOffset: -2,
+                  outline: priorityDrag === "normal" ? "1px dashed #6a6a6a" : "1px dashed transparent",
+                  background: priorityDrag === "normal" ? "rgba(255,255,255,0.025)" : "transparent",
+                  transition: "background 0.15s, outline-color 0.15s",
+                }}
+              >
+                {loading ? (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>
+                      <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 8}%` }} />
+                    </div>
+                  ))
+                ) : <TaskList tasks={shortNormal} onComplete={completeTask} onEdit={editTask} onOpen={setOpenProjectId} />}
+              </div>
             </div>
             <AddTaskInput onAdd={(title) => addTask(title, "Short Term")} />
           </Panel>
