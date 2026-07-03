@@ -791,7 +791,7 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
         background: dropTarget ? "rgba(255,255,255,0.08)" : baseBg,
         border: dropTarget ? "1px solid #9a9a9a" : "1px solid #2a2a2a",
         borderRadius: 5,
-        padding: "12px 13px 10px",
+        padding: "13px 16px 11px",
         cursor: "pointer",
         display: "flex",
         flexDirection: "column",
@@ -813,7 +813,7 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
       {/* project title — shown as a heading (auto-capitalized) */}
       <span style={{
         fontSize: 13, color: "#e8e8e8", fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
-        lineHeight: 1.35, overflowWrap: "anywhere", textTransform: "capitalize",
+        lineHeight: 1.35, overflowWrap: "break-word", textTransform: "capitalize",
       }}>{project.title}</span>
       {/* every task in the project, listed under the title */}
       {count > 0 ? (
@@ -821,7 +821,7 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
           {project.items.map((it) => (
             <div key={it.id} style={{ display: "flex", gap: 6, alignItems: "baseline", minWidth: 0 }}>
               <span aria-hidden style={{ color: badgeColor, fontSize: 11, lineHeight: 1.4, flexShrink: 0 }}>›</span>
-              <span style={{ fontSize: 12, color: "#9a9a9a", lineHeight: 1.4, overflowWrap: "anywhere", minWidth: 0 }}>{it.text || "Untitled"}</span>
+              <span style={{ fontSize: 12, color: "#9a9a9a", lineHeight: 1.4, overflowWrap: "break-word", minWidth: 0 }}>{it.text || "Untitled"}</span>
             </div>
           ))}
         </div>
@@ -845,7 +845,7 @@ function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge, onAddNew }: 
   onMerge: (targetId: string, sourceId: string) => void;
   onAddNew?: () => void; // click empty space (gaps / below the cards) to start a new project
 }) {
-  const COL_W = 150, GAP = 10, TOP_PAD = 3; // TOP_PAD leaves room for the hover lift
+  const COL_W = 210, GAP = 10, TOP_PAD = 3; // wider columns so long text wraps comfortably (not word-by-word); TOP_PAD leaves room for the hover lift
   const wrapRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLElement>>(new Map());
   const [pos, setPos] = useState<{ left: number; top: number; w: number }[]>([]);
