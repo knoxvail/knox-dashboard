@@ -585,6 +585,8 @@ const AddTaskInput = forwardRef<AddHandle, { onAdd: (title: string) => Promise<v
         value={value}
         onChange={e => setValue(e.target.value)}
         onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") { setOpen(false); setValue(""); } }}
+        // auto-collapse when you click away and nothing was typed
+        onBlur={() => { if (!value.trim()) { setOpen(false); setValue(""); } }}
         placeholder={placeholder}
         style={{
           flex: 1, background: "#1a1a1a", border: "1px solid #333",
