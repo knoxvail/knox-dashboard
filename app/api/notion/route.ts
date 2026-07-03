@@ -93,13 +93,15 @@ export async function GET() {
       else if (status === "Long Term") longTerm.push({ id: page.id, title });
     });
 
-    // enrich each Long Term project with its checklist (child to_do blocks).
-    // Promise.all keeps wall-time to ~one round trip for a handful of projects.
-    const longTermFull = await Promise.all(
-      longTerm.map(async (p) => ({ ...p, items: await fetchChecklist(token, p.id) }))
-    );
+    // enrich Short Term and Long Term with their checklists (child to_do blocks)
+    // so items persist when a task moves between the two lists. Promise.all keeps
+    // wall-time to ~one round trip for a handful of tasks.
+    const [longTermFull, shortTermFull] = await Promise.all([
+      Promise.all(longTerm.map(async (p) => ({ ...p, items: await fetchChecklist(token, p.id) }))),
+      Promise.all(shortTerm.map(async (t) => ({ ...t, items: await fetchChecklist(token, t.id) }))),
+    ]);
 
-    return NextResponse.json({ shortTerm, longTerm: longTermFull, clients });
+    return NextResponse.json({ shortTerm: shortTermFull, longTerm: longTermFull, clients });
   } catch {
     return NextResponse.json({ shortTerm: [], longTerm: [], clients: [] });
   }
@@ -276,6 +278,46 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({ success: true, id: itemId });
+    }
+
+    // Merge one task/project INTO another: append the source's title (and its
+    // checklist items) as to_do blocks in the target page, then archive the source.
+    if (action === "mergeInto") {
+      const { targetId, sourceId, title, items } = body;
+      if (!targetId || !sourceId) {
+        return NextResponse.json({ error: "Missing targetId or sourceId" }, { status: 400 });
+      }
+
+      const children = [
+        { type: "to_do", to_do: { rich_text: [{ type: "text", text: { content: String(title || "Untitled").slice(0, 2000) } }], checked: false } },
+        ...(Array.isArray(items) ? items : []).map((it: any) => ({
+          type: "to_do",
+          to_do: { rich_text: [{ type: "text", text: { content: String(it?.text || "").slice(0, 2000) } }], checked: !!it?.checked },
+        })),
+      ];
+
+      const appendRes = await fetch(`https://api.notion.com/v1/blocks/${targetId}/children`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" },
+        body: JSON.stringify({ children }),
+      });
+      if (!appendRes.ok) {
+        const err = await appendRes.json();
+        return NextResponse.json({ error: err }, { status: appendRes.status });
+      }
+
+      // archive the now-merged source page
+      const archiveRes = await fetch(`https://api.notion.com/v1/pages/${sourceId}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: true }),
+      });
+      if (!archiveRes.ok) {
+        const err = await archiveRes.json();
+        return NextResponse.json({ error: err, appended: true }, { status: archiveRes.status });
+      }
+
+      return NextResponse.json({ success: true });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });

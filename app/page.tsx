@@ -349,6 +349,7 @@ function TaskItem({
   onComplete,
   onStartEdit,
   onCancelEdit,
+  onOpen,
 }: {
   task: Task;
   isEditing: boolean;
@@ -356,6 +357,7 @@ function TaskItem({
   onComplete: (id: string) => void;
   onStartEdit: (id: string) => void;
   onCancelEdit: () => void;
+  onOpen?: (id: string) => void; // when set, clicking the row opens the modal instead of inline-editing
 }) {
   const [inputValue, setInputValue] = useState(task.title);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -453,7 +455,7 @@ function TaskItem({
         />
       ) : (
         <p
-          onClick={() => onStartEdit(task.id)}
+          onClick={() => (onOpen ? onOpen(task.id) : onStartEdit(task.id))}
           style={{
             margin: 0,
             fontSize: 13,
@@ -483,7 +485,7 @@ function TaskItem({
   );
 }
 
-function TaskList({ tasks, onComplete, onEdit }: { tasks: Task[]; onComplete: (id: string) => void; onEdit: (id: string, newTitle: string) => Promise<void> }) {
+function TaskList({ tasks, onComplete, onEdit, onOpen }: { tasks: Task[]; onComplete: (id: string) => void; onEdit: (id: string, newTitle: string) => Promise<void>; onOpen?: (id: string) => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   if (tasks.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -501,6 +503,7 @@ function TaskList({ tasks, onComplete, onEdit }: { tasks: Task[]; onComplete: (i
           onComplete={onComplete}
           onStartEdit={(id) => setEditingId(id)}
           onCancelEdit={() => setEditingId(null)}
+          onOpen={onOpen}
         />
       ))}
     </>
@@ -574,13 +577,15 @@ function AddTaskInput({ onAdd, placeholder = "New task..." }: { onAdd: (title: s
 // A Long Term "project" bucket: a draggable box that opens a modal on click and
 // previews its checklist on hover. Drag (move to Short Term) and click (open) are
 // disambiguated by a per-card drag flag.
-function BucketCard({ project, onOpen, onHover, onLeave }: {
+function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
   project: Project;
   onOpen: (id: string) => void;
   onHover: (id: string, rect: DOMRect) => void;
   onLeave: () => void;
+  onMerge: (targetId: string, sourceId: string) => void; // drop another item onto this box
 }) {
   const dragging = useRef(false);
+  const [dropTarget, setDropTarget] = useState(false); // another item is hovering over this box
   const count = project.items.length;
   const done = project.items.filter((i) => i.checked).length;
   const label = count === 0 ? "EMPTY" : done > 0 ? `${done}/${count} DONE` : `${count} ITEM${count > 1 ? "S" : ""}`;
@@ -595,7 +600,16 @@ function BucketCard({ project, onOpen, onHover, onLeave }: {
         e.dataTransfer.effectAllowed = "move";
         onLeave();
       }}
-      onDragEnd={() => { setTimeout(() => { dragging.current = false; }, 0); }}
+      onDragEnd={() => { setTimeout(() => { dragging.current = false; }, 0); setDropTarget(false); }}
+      // accept another item dropped onto this box (merge it in)
+      onDragOver={(e) => { if (dragging.current) return; e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move"; if (!dropTarget) setDropTarget(true); }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTarget(false); }}
+      onDrop={(e) => {
+        e.preventDefault(); e.stopPropagation();
+        setDropTarget(false);
+        const sourceId = e.dataTransfer.getData("text/plain");
+        if (sourceId) onMerge(project.id, sourceId);
+      }}
       onClick={() => { if (dragging.current) return; onOpen(project.id); }}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(project.id); } }}
       onMouseEnter={(e) => {
@@ -606,13 +620,13 @@ function BucketCard({ project, onOpen, onHover, onLeave }: {
       }}
       onMouseLeave={(e) => {
         onLeave();
-        e.currentTarget.style.borderColor = "#2a2a2a";
-        e.currentTarget.style.background = "rgba(255,255,255,0.02)";
+        e.currentTarget.style.borderColor = dropTarget ? "#9a9a9a" : "#2a2a2a";
+        e.currentTarget.style.background = dropTarget ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.02)";
         e.currentTarget.style.transform = "translateY(0)";
       }}
       style={{
-        background: "rgba(255,255,255,0.02)",
-        border: "1px solid #2a2a2a",
+        background: dropTarget ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.02)",
+        border: dropTarget ? "1px solid #9a9a9a" : "1px solid #2a2a2a",
         borderRadius: 4,
         padding: "14px 15px 12px",
         minHeight: 88,
@@ -642,21 +656,23 @@ function BucketCard({ project, onOpen, onHover, onLeave }: {
   );
 }
 
-function ProjectGrid({ projects, onOpen, onHover, onLeave }: {
+function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge }: {
   projects: Project[];
   onOpen: (id: string) => void;
   onHover: (id: string, rect: DOMRect) => void;
   onLeave: () => void;
+  onMerge: (targetId: string, sourceId: string) => void;
 }) {
   if (projects.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 60 }}>
       <p style={{ color: "#444", fontSize: 12, textAlign: "center" }}>None</p>
     </div>
   );
+  // paddingTop gives the top row's hover-lift room so its top edge isn't clipped
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(158px, 1fr))", gap: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(158px, 1fr))", gap: 10, paddingTop: 3 }}>
       {projects.map((p) => (
-        <BucketCard key={p.id} project={p} onOpen={onOpen} onHover={onHover} onLeave={onLeave} />
+        <BucketCard key={p.id} project={p} onOpen={onOpen} onHover={onHover} onLeave={onLeave} onMerge={onMerge} />
       ))}
     </div>
   );
@@ -891,7 +907,7 @@ function ProjectModal({ project, onClose, onAddItem, onToggleItem, onDeleteItem,
 
 function Dashboard() {
   const clock = useClock();
-  const [shortTerm, setShortTerm] = useState<Task[]>([]);
+  const [shortTerm, setShortTerm] = useState<Project[]>([]);
   const [longTerm, setLongTerm] = useState<Project[]>([]);
   const [clients, setClients] = useState<Task[]>([]);
   const [verse, setVerse] = useState<Verse | null>(null);
@@ -1071,15 +1087,22 @@ function Dashboard() {
         await fetchTasks(); // revert just the task lists (no full-dashboard reload)
       }
     } catch {
-      await fetchStatic(); // Revert on error
+      await fetchTasks(); // revert just the task lists
     }
   };
 
+  // Short Term tasks and Clients differ in shape (Short Term carries a checklist,
+  // Clients don't), so add to the right list with the right shape.
   const addTask = async (title: string, status: "Short Term" | "Clients") => {
-    // optimistic: show the task right away with a temporary id
     const tempId = `temp-${Date.now()}`;
-    const setList = status === "Short Term" ? setShortTerm : setClients;
-    setList(prev => [...prev, { id: tempId, title }]);
+    if (status === "Short Term") setShortTerm(prev => [...prev, { id: tempId, title, items: [] }]);
+    else setClients(prev => [...prev, { id: tempId, title }]);
+    const rollback = () => status === "Short Term"
+      ? setShortTerm(prev => prev.filter(t => t.id !== tempId))
+      : setClients(prev => prev.filter(t => t.id !== tempId));
+    const swap = (realId: string) => status === "Short Term"
+      ? setShortTerm(prev => prev.map(t => t.id === tempId ? { ...t, id: realId } : t))
+      : setClients(prev => prev.map(t => t.id === tempId ? { ...t, id: realId } : t));
     try {
       const res = await fetch("/api/notion", {
         method: "PUT",
@@ -1087,16 +1110,12 @@ function Dashboard() {
         body: JSON.stringify({ title, status }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setList(prev => prev.filter(t => t.id !== tempId)); // roll back on failure
-        return;
-      }
-      // swap the temp id for the real page id in place — avoids a full reconcile
-      // GET that could clobber another list's in-flight optimistic edits
-      if (data.id) setList(prev => prev.map(t => t.id === tempId ? { ...t, id: data.id } : t));
+      if (!res.ok) { rollback(); return; }
+      // swap the temp id for the real page id in place (no reconcile GET)
+      if (data.id) swap(data.id);
       else fetchTasks();
     } catch {
-      setList(prev => prev.filter(t => t.id !== tempId));
+      rollback();
     }
   };
 
@@ -1128,15 +1147,22 @@ function Dashboard() {
     }
   };
 
-  // ----- Checklist items within a Long Term project (optimistic) -----
+  // A project can live in either Short Term or Long Term, so update whichever
+  // list holds it (ids are unique, so at most one list actually changes).
+  const patchProject = (projectId: string, fn: (p: Project) => Project) => {
+    setLongTerm(prev => prev.map(p => p.id === projectId ? fn(p) : p));
+    setShortTerm(prev => prev.map(p => p.id === projectId ? fn(p) : p));
+  };
+  const findProject = (projectId: string): Project | null =>
+    longTerm.find(p => p.id === projectId) || shortTerm.find(p => p.id === projectId) || null;
+
+  // ----- Checklist items within a project (optimistic) -----
   const addChecklistItem = async (projectId: string, text: string) => {
     if (projectId.startsWith("temp-")) return; // project page doesn't exist yet
     const trimmed = text.trim();
     if (!trimmed) return;
     const tempId = `temp-${Date.now()}`;
-    setLongTerm(prev => prev.map(p => p.id === projectId
-      ? { ...p, items: [...p.items, { id: tempId, text: trimmed, checked: false }] }
-      : p));
+    patchProject(projectId, p => ({ ...p, items: [...p.items, { id: tempId, text: trimmed, checked: false }] }));
     try {
       const res = await fetch("/api/notion", {
         method: "POST",
@@ -1145,25 +1171,20 @@ function Dashboard() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.item?.id) {
-        setLongTerm(prev => prev.map(p => p.id === projectId
-          ? { ...p, items: p.items.filter(it => it.id !== tempId) } : p));
+        patchProject(projectId, p => ({ ...p, items: p.items.filter(it => it.id !== tempId) }));
         return;
       }
       // swap the temp id for the real Notion block id
-      setLongTerm(prev => prev.map(p => p.id === projectId
-        ? { ...p, items: p.items.map(it => it.id === tempId ? { ...it, id: data.item.id } : it) } : p));
+      patchProject(projectId, p => ({ ...p, items: p.items.map(it => it.id === tempId ? { ...it, id: data.item.id } : it) }));
     } catch {
-      setLongTerm(prev => prev.map(p => p.id === projectId
-        ? { ...p, items: p.items.filter(it => it.id !== tempId) } : p));
+      patchProject(projectId, p => ({ ...p, items: p.items.filter(it => it.id !== tempId) }));
     }
   };
 
   const toggleChecklistItem = async (projectId: string, itemId: string, checked: boolean) => {
     if (itemId.startsWith("temp-")) return; // block doesn't exist yet
-    setLongTerm(prev => prev.map(p => p.id === projectId
-      ? { ...p, items: p.items.map(it => it.id === itemId ? { ...it, checked } : it) } : p));
-    const revert = () => setLongTerm(prev => prev.map(p => p.id === projectId
-      ? { ...p, items: p.items.map(it => it.id === itemId ? { ...it, checked: !checked } : it) } : p));
+    patchProject(projectId, p => ({ ...p, items: p.items.map(it => it.id === itemId ? { ...it, checked } : it) }));
+    const revert = () => patchProject(projectId, p => ({ ...p, items: p.items.map(it => it.id === itemId ? { ...it, checked: !checked } : it) }));
     try {
       const res = await fetch("/api/notion", {
         method: "POST",
@@ -1178,22 +1199,20 @@ function Dashboard() {
 
   const deleteChecklistItem = async (projectId: string, itemId: string) => {
     if (itemId.startsWith("temp-")) return;
-    const proj = longTerm.find(p => p.id === projectId);
+    const proj = findProject(projectId);
     const idx = proj ? proj.items.findIndex(it => it.id === itemId) : -1;
     const removed = idx >= 0 ? proj!.items[idx] : null;
-    setLongTerm(prev => prev.map(p => p.id === projectId
-      ? { ...p, items: p.items.filter(it => it.id !== itemId) } : p));
+    patchProject(projectId, p => ({ ...p, items: p.items.filter(it => it.id !== itemId) }));
     // on failure re-insert only the removed item at its old spot, keeping any
     // concurrent toggles/adds to sibling items intact
     const restore = () => {
       if (!removed) return;
-      setLongTerm(prev => prev.map(p => {
-        if (p.id !== projectId) return p;
+      patchProject(projectId, p => {
         if (p.items.some(it => it.id === removed.id)) return p;
         const items = [...p.items];
         items.splice(Math.min(idx, items.length), 0, removed);
         return { ...p, items };
-      }));
+      });
     };
     try {
       const res = await fetch("/api/notion", {
@@ -1207,6 +1226,41 @@ function Dashboard() {
     }
   };
 
+  // Merge one movable item INTO a bucket: its title (and its own checklist items)
+  // become checklist items in the target, and the source page is archived.
+  const mergeInto = async (targetId: string, sourceId: string) => {
+    setDragOver(null);
+    if (!sourceId || sourceId === targetId) return;
+    if (targetId.startsWith("temp-") || sourceId.startsWith("temp-")) return;
+    const source = findProject(sourceId);
+    if (!source) return;
+
+    const stamp = Date.now();
+    const merged = [
+      { id: `temp-${stamp}-t`, text: source.title, checked: false },
+      ...source.items.map((it, i) => ({ id: `temp-${stamp}-${i}`, text: it.text, checked: it.checked })),
+    ];
+    // optimistic: remove the source, append its content to the target
+    setLongTerm(prev => prev.filter(p => p.id !== sourceId));
+    setShortTerm(prev => prev.filter(p => p.id !== sourceId));
+    if (openProjectId === sourceId) setOpenProjectId(null);
+    patchProject(targetId, p => ({ ...p, items: [...p.items, ...merged] }));
+
+    try {
+      await fetch("/api/notion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "mergeInto", targetId, sourceId,
+          title: source.title, items: source.items.map(it => ({ text: it.text, checked: it.checked })),
+        }),
+      });
+    } catch {}
+    // reconcile: swaps temp item ids for real block ids and confirms the source
+    // is gone (or restores the true state if the merge failed)
+    await fetchTasks();
+  };
+
   // Move a task between Short Term and Long Term by dragging it to the other list
   const moveTask = async (id: string, target: "Short Term" | "Long Term") => {
     if (id.startsWith("temp-")) return; // not yet reconciled to a real page id
@@ -1217,15 +1271,14 @@ function Dashboard() {
     // already in the target list -> nothing to do
     if ((inShort && target === "Short Term") || (inLong && target === "Long Term")) return;
 
-    // optimistic move between the two lists — shapes differ (Task vs Project),
-    // so build the right element for the destination (items reappear on reconcile
-    // since a status move never deletes a page's child blocks).
+    // optimistic move between the two lists — both carry a checklist now, so move
+    // the whole project across; the items persist (its Notion blocks stay put).
     if (target === "Short Term") {
       setLongTerm(prev => prev.filter(p => p.id !== id));
-      setShortTerm(prev => [...prev, { id: src.id, title: src.title }]);
+      setShortTerm(prev => [...prev, src]);
     } else {
       setShortTerm(prev => prev.filter(t => t.id !== id));
-      setLongTerm(prev => [...prev, { id: src.id, title: src.title, items: [] }]);
+      setLongTerm(prev => [...prev, src]);
     }
 
     try {
@@ -1295,8 +1348,8 @@ function Dashboard() {
   const progressPct = nowPlaying.duration ? (nowPlaying.progress || 0) / nowPlaying.duration * 100 : 0;
 
   // modal + hover read live project state so optimistic item edits reflect instantly
-  const openProject = openProjectId ? longTerm.find(p => p.id === openProjectId) || null : null;
-  const hoverProject = hover && !openProjectId ? longTerm.find(p => p.id === hover.id) || null : null;
+  const openProject = openProjectId ? findProject(openProjectId) : null;
+  const hoverProject = hover && !openProjectId ? findProject(hover.id) : null;
 
   return (
     <div style={{
@@ -1433,7 +1486,7 @@ function Dashboard() {
                     <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 8}%` }} />
                   </div>
                 ))
-              ) : <TaskList tasks={shortTerm} onComplete={completeTask} onEdit={editTask} />}
+              ) : <TaskList tasks={shortTerm} onComplete={completeTask} onEdit={editTask} onOpen={setOpenProjectId} />}
             </div>
             <AddTaskInput onAdd={(title) => addTask(title, "Short Term")} />
           </Panel>
@@ -1469,6 +1522,7 @@ function Dashboard() {
                     onOpen={setOpenProjectId}
                     onHover={(id, rect) => setHover({ id, rect })}
                     onLeave={() => setHover(null)}
+                    onMerge={mergeInto}
                   />
                 )}
               </div>
@@ -1482,15 +1536,20 @@ function Dashboard() {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", paddingTop: 20 }}>
                     <p style={{ color: "#444", fontSize: 12 }}>Nothing scheduled</p>
                   </div>
-                ) : events.map((event) => (
-                  // stacked top-to-bottom: title, then date / time / type each below it
-                  <div key={event.id} style={{ borderBottom: "1px solid #1e1e1e", padding: "9px 0", display: "flex", flexDirection: "column", gap: 4 }}>
-                    <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.4 }}>{event.title}</p>
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#666", letterSpacing: "0.05em" }}>{event.displayDate}</span>
-                    {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555", letterSpacing: "0.05em" }}>{event.displayTime}</span>}
-                    {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#555", letterSpacing: "0.12em" }}>{event.type.toUpperCase()}</span>}
+                ) : (
+                  // grid stretches the events across the panel's full width; each
+                  // event still reads top-to-bottom (title, date, time, type)
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: "14px 18px", paddingBottom: 2 }}>
+                    {events.map((event) => (
+                      <div key={event.id} style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{event.title}</p>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#666", letterSpacing: "0.05em" }}>{event.displayDate}</span>
+                        {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555", letterSpacing: "0.05em" }}>{event.displayTime}</span>}
+                        {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#555", letterSpacing: "0.12em" }}>{event.type.toUpperCase()}</span>}
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             </Panel>
           </div>
