@@ -225,7 +225,8 @@ function EmailReader({ source, email, onClose }: { source: "gmail" | "zoho"; ema
           {replying && (
             <>
               <textarea autoFocus value={replyText} onChange={(e) => setReplyText(e.target.value)}
-                placeholder={`Reply to ${email.from}…`} rows={4}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); } }}
+                placeholder={`Reply to ${email.from}… (Enter to send, Shift+Enter for a new line)`} rows={4}
                 style={{ width: "100%", boxSizing: "border-box", background: "#1a1a1a", border: "1px solid #333", color: "#ddd", fontSize: 13, padding: "8px 10px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 4, resize: "vertical", lineHeight: 1.5 }} />
               {replyErr && <span style={{ color: "#c06464", fontSize: 11, lineHeight: 1.4 }}>{replyErr}</span>}
             </>

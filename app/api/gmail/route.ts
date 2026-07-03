@@ -217,10 +217,27 @@ async function gmailReply(id: string, replyBody: string, token: string | undefin
   const msgId = get("Message-ID");
   const references = [get("References"), msgId].filter(Boolean).join(" ");
 
+  // fetch the account's Gmail signature (HTML, may include a hosted image) to
+  // append — needs the gmail.settings.basic scope; if absent we just skip it
+  let signature = "";
+  try {
+    const sigRes = await gmailFetch("/users/me/settings/sendAs", t as string);
+    if (sigRes.ok) {
+      const sd = await sigRes.json();
+      const list = sd.sendAs || [];
+      const primary = list.find((s: any) => s.isDefault) || list.find((s: any) => s.isPrimary) || list[0];
+      signature = primary?.signature || "";
+    }
+  } catch {}
+
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const bodyHtml = esc(replyBody).replace(/\r?\n/g, "<br>");
+  const html = signature ? `<div>${bodyHtml}</div><br><br>${signature}` : `<div>${bodyHtml}</div>`;
+
   const lines = [`To: ${to}`, `Subject: ${subject}`];
   if (msgId) lines.push(`In-Reply-To: ${msgId}`);
   if (references) lines.push(`References: ${references}`);
-  lines.push('Content-Type: text/plain; charset="UTF-8"', "MIME-Version: 1.0", "", replyBody);
+  lines.push('Content-Type: text/html; charset="UTF-8"', "MIME-Version: 1.0", "", html);
   const raw = Buffer.from(lines.join("\r\n"), "utf-8").toString("base64url");
 
   const sendRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {

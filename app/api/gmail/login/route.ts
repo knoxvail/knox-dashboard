@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     client_id: process.env.GOOGLE_CLIENT_ID!,
     redirect_uri: `${SITE_URL}/api/gmail/callback`,
     response_type: "code",
-    scope: "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send",
+    scope: "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.settings.basic",
     access_type: "offline",
     prompt: "consent",
     state,
