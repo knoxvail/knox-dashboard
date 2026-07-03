@@ -546,6 +546,7 @@ const AddTaskInput = forwardRef<AddHandle, { onAdd: (title: string) => Promise<v
   const [value, setValue] = useState("");
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   // let the surrounding panel open the input by clicking empty space
   useImperativeHandle(ref, () => ({ open: () => setOpen(true) }), []);
@@ -553,6 +554,19 @@ const AddTaskInput = forwardRef<AddHandle, { onAdd: (title: string) => Promise<v
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50);
   }, [open]);
+
+  // auto-collapse when you interact anywhere outside the input and nothing was
+  // typed (doesn't rely on focus/blur, so it always fires)
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: Event) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node) && !value.trim()) {
+        setOpen(false); setValue("");
+      }
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [open, value]);
 
   const submit = async () => {
     const trimmed = value.trim();
@@ -579,7 +593,7 @@ const AddTaskInput = forwardRef<AddHandle, { onAdd: (title: string) => Promise<v
   );
 
   return (
-    <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+    <div ref={wrapRef} style={{ marginTop: 10, display: "flex", gap: 6 }}>
       <input
         ref={inputRef}
         value={value}
