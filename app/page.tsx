@@ -1129,10 +1129,16 @@ function Dashboard() {
 
   useEffect(() => {
     const m = window.matchMedia("(pointer: fine) and (prefers-reduced-motion: no-preference)");
-    const upd = () => setReticle(m.matches);
+    const upd = () => {
+      const on = m.matches;
+      setReticle(on);
+      // flag <html> too, so cursor:none also covers body-level portals (the
+      // project modal / email reader); otherwise the native cursor shows there
+      document.documentElement.classList.toggle("reticle-on", on);
+    };
     upd();
     m.addEventListener?.("change", upd);
-    return () => m.removeEventListener?.("change", upd);
+    return () => { m.removeEventListener?.("change", upd); document.documentElement.classList.remove("reticle-on"); };
   }, []);
 
   // the hover popover is pinned to a captured rect, so it detaches on scroll —
