@@ -192,15 +192,64 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Send a plain-text reply on the same thread as message `id`.
+async function gmailReply(id: string, replyBody: string, token: string | undefined, refreshToken: string | undefined) {
+  if (!id || !replyBody || !replyBody.trim()) return NextResponse.json({ error: "Missing id or body" }, { status: 400 });
+  let t: string | undefined = token;
+  if (!t && refreshToken) t = (await refreshGmailToken(refreshToken)) || undefined;
+  if (!t) return NextResponse.json({ error: "not_connected" }, { status: 401 });
+
+  const metaUrl = `/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Message-ID&metadataHeaders=References`;
+  let metaRes = await gmailFetch(metaUrl, t);
+  if (metaRes.status === 401 && refreshToken) {
+    const nt = await refreshGmailToken(refreshToken);
+    if (nt) { t = nt; metaRes = await gmailFetch(metaUrl, nt); }
+  }
+  if (!metaRes.ok) return NextResponse.json({ error: "fetch_failed" }, { status: metaRes.status });
+  const meta = await metaRes.json();
+  const headers = meta.payload?.headers || [];
+  const get = (n: string) => headers.find((h: any) => h.name?.toLowerCase() === n.toLowerCase())?.value || "";
+
+  const fromRaw = get("From");
+  const to = fromRaw.match(/<([^>]+)>/)?.[1] || fromRaw.trim();
+  const subjectRaw = get("Subject") || "";
+  const subject = /^re:/i.test(subjectRaw) ? subjectRaw : `Re: ${subjectRaw}`;
+  const msgId = get("Message-ID");
+  const references = [get("References"), msgId].filter(Boolean).join(" ");
+
+  const lines = [`To: ${to}`, `Subject: ${subject}`];
+  if (msgId) lines.push(`In-Reply-To: ${msgId}`);
+  if (references) lines.push(`References: ${references}`);
+  lines.push('Content-Type: text/plain; charset="UTF-8"', "MIME-Version: 1.0", "", replyBody);
+  const raw = Buffer.from(lines.join("\r\n"), "utf-8").toString("base64url");
+
+  const sendRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ raw, threadId: meta.threadId }),
+  });
+  if (!sendRes.ok) {
+    const err = await sendRes.json().catch(() => ({}));
+    // 403 = insufficient scope (the app needs the send scope re-granted)
+    return NextResponse.json({ error: err, needsReconnect: sendRes.status === 403 || sendRes.status === 401 }, { status: sendRes.status });
+  }
+  return NextResponse.json({ success: true });
+}
+
 export async function POST(request: NextRequest) {
   const acct = getAcct(request);
   const token = request.cookies.get(cookieNames(acct).access)?.value;
-  if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
+  const refreshToken = request.cookies.get(cookieNames(acct).refresh)?.value;
+  if (!token && !refreshToken) return NextResponse.json({ error: "No token" }, { status: 401 });
 
-  const { id } = await request.json();
+  const body = await request.json();
+  if (body.action === "reply") return gmailReply(body.id, body.body, token, refreshToken);
+
+  const { id } = body;
   if (!id || typeof id !== "string") {
     return NextResponse.json({ error: "Missing message id" }, { status: 400 });
   }
+  if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
 
   try {
     const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}/modify`, {

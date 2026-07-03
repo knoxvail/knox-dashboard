@@ -147,6 +147,11 @@ function EmailRow({ email, onArchive, onOpen }: { email: Email; onArchive: (id: 
 // scripts) with a link out to the original message.
 function EmailReader({ source, email, onClose }: { source: "gmail" | "zoho"; email: Email; onClose: () => void }) {
   const [state, setState] = useState<{ loading: boolean; err: boolean; html?: string; text?: string; link?: string }>({ loading: true, err: false });
+  const [replying, setReplying] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [replyErr, setReplyErr] = useState<string | null>(null);
 
   useEffect(() => {
     let cancel = false;
@@ -168,6 +173,28 @@ function EmailReader({ source, email, onClose }: { source: "gmail" | "zoho"; ema
   const hasHtml = !!state.html && state.html.trim().length > 0;
   const hasText = !!state.text && state.text.trim().length > 0;
 
+  const sendReply = async () => {
+    if (!replyText.trim()) return;
+    setSending(true); setReplyErr(null);
+    try {
+      const res = await fetch(`/api/${source}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reply", id: email.id, body: replyText }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.success) { setSent(true); setReplying(false); setReplyText(""); }
+      else if (d.needsReconnect) setReplyErr("Reconnect Gmail (Triad) to grant send permission, then try again.");
+      else setReplyErr("Couldn’t send the reply.");
+    } catch { setReplyErr("Couldn’t send the reply."); }
+    setSending(false);
+  };
+
+  // wrap the email HTML in a dark base document so it matches the theme
+  const darkDoc = (html: string) => `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="dark"><base target="_blank"><style>:root{color-scheme:dark;}html,body{background:#0e1014;color:#cfcfcf;margin:0;padding:14px 16px;font-family:-apple-system,'DM Sans',Segoe UI,sans-serif;font-size:14px;line-height:1.55;word-break:break-word;}a{color:#9fc0ff;}img{max-width:100%;height:auto;}table{max-width:100%!important;}blockquote{border-left:2px solid #3a3a3a;margin:0 0 0 4px;padding-left:12px;color:#9a9a9a;}pre{white-space:pre-wrap;}</style></head><body>${html}</body></html>`;
+
+  const btnSolid: React.CSSProperties = { background: "#1e1e1e", border: "1px solid #505050", color: "#ddd", fontSize: 11, padding: "5px 14px", borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.12em", textTransform: "uppercase" };
+  const btnGhost: React.CSSProperties = { background: "none", border: "1px solid #333", color: "#9a9a9a", fontSize: 11, padding: "5px 12px", borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.12em", textTransform: "uppercase" };
+
   return createPortal(
     <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", zIndex: 9000, display: "grid", placeItems: "center", fontFamily: "'DM Sans', sans-serif", animation: "fadeIn 0.18s ease-out" }}>
@@ -185,7 +212,7 @@ function EmailReader({ source, email, onClose }: { source: "gmail" | "zoho"; ema
           {state.loading ? (
             <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#808080", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: "0.12em" }}>LOADING…</div>
           ) : hasHtml ? (
-            <iframe title="Email content" sandbox="" srcDoc={state.html} style={{ flex: 1, width: "100%", border: "none", background: "#fff" }} />
+            <iframe title="Email content" sandbox="allow-popups allow-popups-to-escape-sandbox" srcDoc={darkDoc(state.html!)} style={{ flex: 1, width: "100%", border: "none", background: "#0e1014" }} />
           ) : hasText ? (
             <pre style={{ flex: 1, margin: 0, padding: "16px 18px", overflow: "auto", color: "#cfcfcf", fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "'DM Sans', sans-serif" }}>{state.text}</pre>
           ) : (
@@ -194,9 +221,29 @@ function EmailReader({ source, email, onClose }: { source: "gmail" | "zoho"; ema
             </div>
           )}
         </div>
-        <div style={{ padding: "10px 18px", borderTop: "1px solid #242424", display: "flex", justifyContent: "flex-end" }}>
-          <a href={link} target="_blank" rel="noopener noreferrer" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: "#9a9a9a", textTransform: "uppercase", textDecoration: "none" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#e8e8e8")} onMouseLeave={(e) => (e.currentTarget.style.color = "#9a9a9a")}>Open original ↗</a>
+        <div style={{ padding: "10px 18px", borderTop: "1px solid #242424", display: "flex", flexDirection: "column", gap: 8 }}>
+          {replying && (
+            <>
+              <textarea autoFocus value={replyText} onChange={(e) => setReplyText(e.target.value)}
+                placeholder={`Reply to ${email.from}…`} rows={4}
+                style={{ width: "100%", boxSizing: "border-box", background: "#1a1a1a", border: "1px solid #333", color: "#ddd", fontSize: 13, padding: "8px 10px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 4, resize: "vertical", lineHeight: 1.5 }} />
+              {replyErr && <span style={{ color: "#c06464", fontSize: 11, lineHeight: 1.4 }}>{replyErr}</span>}
+            </>
+          )}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <a href={link} target="_blank" rel="noopener noreferrer" style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: "#9a9a9a", textTransform: "uppercase", textDecoration: "none" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "#e8e8e8")} onMouseLeave={(e) => (e.currentTarget.style.color = "#9a9a9a")}>Open original ↗</a>
+            {replying ? (
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                <button onClick={() => { setReplying(false); setReplyText(""); setReplyErr(null); }} style={btnGhost}>Cancel</button>
+                <button onClick={sendReply} disabled={sending || !replyText.trim()} style={{ ...btnSolid, opacity: (sending || !replyText.trim()) ? 0.5 : 1, cursor: (sending || !replyText.trim()) ? "default" : "pointer" }}>{sending ? "Sending…" : "Send"}</button>
+              </div>
+            ) : sent ? (
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: "#7bd88f", textTransform: "uppercase", flexShrink: 0 }}>Sent ✓</span>
+            ) : (
+              <button onClick={() => setReplying(true)} style={btnSolid}>Reply</button>
+            )}
+          </div>
         </div>
       </div>
     </div>,

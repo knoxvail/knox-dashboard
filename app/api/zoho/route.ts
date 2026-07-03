@@ -193,6 +193,51 @@ export async function POST(request: NextRequest) {
   const token = await getAccessToken();
   if (!token) return NextResponse.json({ error: "Token refresh failed" }, { status: 401 });
 
+  // Reply on the same thread (requires the ZohoMail.messages.ALL scope, which
+  // the token already has). Resolves the sender + subject server-side.
+  if (bodyJson.action === "reply") {
+    const replyBody = bodyJson.body;
+    if (!replyBody || typeof replyBody !== "string" || !replyBody.trim()) {
+      return NextResponse.json({ error: "Missing body" }, { status: 400 });
+    }
+    try {
+      const acctRes = await zohoFetch("/api/accounts", token);
+      if (!acctRes.ok) return NextResponse.json({ error: "accounts_failed" }, { status: acctRes.status });
+      const acctData = await acctRes.json();
+      const acct = (acctData.data || [])[0] || {};
+      const accountId = String(acct.accountId || "");
+      const fromAddress = acct.sendMailId || acct.primaryEmailAddress || acct.mailboxAddress || acct.incomingUserName || "";
+      if (!accountId || !fromAddress) return NextResponse.json({ error: "no_send_address" }, { status: 500 });
+
+      let folderId = "";
+      try {
+        const folders = await getFolders(token, accountId);
+        const inbox = findFolder(folders, ["inbox"], ["inbox"]);
+        if (inbox?.folderId) folderId = String(inbox.folderId);
+      } catch {}
+      let toAddress = "", subject = "";
+      try {
+        const detUrl = folderId
+          ? `/api/accounts/${accountId}/folders/${folderId}/messages/${id}/details`
+          : `/api/accounts/${accountId}/messages/${id}/details`;
+        const det = await zohoFetch(detUrl, token);
+        if (det.ok) { const dd = await det.json(); const m = dd.data || dd; toAddress = m.fromAddress || m.sender || ""; subject = m.subject || ""; }
+      } catch {}
+      if (!toAddress) return NextResponse.json({ error: "no_recipient" }, { status: 500 });
+      const replySubject = /^re:/i.test(subject) ? subject : `Re: ${subject}`;
+
+      const sendRes = await zohoFetch(`/api/accounts/${accountId}/messages`, token, {
+        method: "POST",
+        body: JSON.stringify({ fromAddress, toAddress, subject: replySubject, content: replyBody, mailFormat: "plaintext", askReceipt: "no" }),
+      });
+      const sendBody = await sendRes.json().catch(() => ({}));
+      if (!sendRes.ok) return NextResponse.json({ error: sendBody }, { status: sendRes.status });
+      return NextResponse.json({ success: true });
+    } catch (e: any) {
+      return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
+    }
+  }
+
   try {
     const accountId = await getAccountId(token);
     const res = await zohoFetch(`/api/accounts/${accountId}/updatemessage`, token, {
