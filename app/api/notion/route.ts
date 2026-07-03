@@ -255,6 +255,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, id: itemId });
     }
 
+    // Rename a checklist item (itemId = Notion BLOCK id)
+    if (action === "updateChecklistItem") {
+      const { itemId, text } = body;
+      if (!itemId) return NextResponse.json({ error: "Missing itemId" }, { status: 400 });
+      if (typeof text !== "string" || text.trim().length === 0) {
+        return NextResponse.json({ error: "Invalid text" }, { status: 400 });
+      }
+      const notionRes = await fetch(`https://api.notion.com/v1/blocks/${itemId}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ to_do: { rich_text: [{ type: "text", text: { content: text.trim() } }] } }),
+      });
+      if (!notionRes.ok) {
+        const err = await notionRes.json();
+        return NextResponse.json({ error: err }, { status: notionRes.status });
+      }
+      return NextResponse.json({ success: true, item: { id: itemId, text: text.trim() } });
+    }
+
     // Flag/unflag a task as high priority (Priority checkbox on the page)
     if (action === "setPriority") {
       if (!id) return NextResponse.json({ error: "Missing task id" }, { status: 400 });

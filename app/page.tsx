@@ -883,18 +883,21 @@ function HoverPopover({ project, rect }: { project: Project; rect: DOMRect }) {
 
 // Click-to-open editor for a project's checklist. Portalled to document.body so
 // the panel's overflow/backdrop-filter stacking context can't clip it.
-function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditTitle, onArchive, onMove }: {
+function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditItem, onEditTitle, onArchive, onMove }: {
   project: Project;
   list: "Short Term" | "Long Term" | null; // which list the project is in (for the Move control)
   onClose: () => void;
   onAddItem: (projectId: string, text: string) => void;
   onDeleteItem: (projectId: string, itemId: string) => void;
+  onEditItem: (projectId: string, itemId: string, text: string) => void;
   onEditTitle: (id: string, title: string) => Promise<void>;
   onArchive: (id: string) => void;
   onMove: (id: string, target: "Short Term" | "Long Term") => void;
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState(project.title);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [itemDraft, setItemDraft] = useState("");
   const [newItem, setNewItem] = useState("");
   const addRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -1025,10 +1028,25 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditT
                   onMouseEnter={(e) => { if (temp) return; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; e.currentTarget.style.background = "#2a2a2a"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; e.currentTarget.style.background = "#1e1e1e"; }}
                 >✓</button>
-                <span style={{
-                  flex: 1, fontSize: 13, color: "#b0b0b0",
-                  lineHeight: 1.4, minWidth: 0, wordBreak: "break-word",
-                }}>{it.text || "Untitled"}</span>
+                {editingItemId === it.id ? (
+                  <input
+                    autoFocus
+                    value={itemDraft}
+                    onChange={(e) => setItemDraft(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { onEditItem(project.id, it.id, itemDraft); setEditingItemId(null); } if (e.key === "Escape") setEditingItemId(null); }}
+                    onBlur={() => { onEditItem(project.id, it.id, itemDraft); setEditingItemId(null); }}
+                    style={{ flex: 1, minWidth: 0, background: "#1a1a1a", border: "1px solid #333", color: "#ddd", fontSize: 13, padding: "2px 6px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 3 }}
+                  />
+                ) : (
+                  <span
+                    onClick={() => { if (!temp) { setEditingItemId(it.id); setItemDraft(it.text); } }}
+                    title={temp ? undefined : "Click to edit"}
+                    style={{
+                      flex: 1, fontSize: 13, color: "#b0b0b0",
+                      lineHeight: 1.4, minWidth: 0, wordBreak: "break-word", cursor: temp ? "default" : "text",
+                    }}
+                  >{it.text || "Untitled"}</span>
+                )}
               </div>
             );
           })}
@@ -1410,6 +1428,25 @@ function Dashboard() {
       if (!res.ok) restore();
     } catch {
       restore();
+    }
+  };
+
+  const editChecklistItem = async (projectId: string, itemId: string, text: string) => {
+    if (itemId.startsWith("temp-")) return;
+    const trimmed = text.trim();
+    const prev = findProject(projectId)?.items.find(it => it.id === itemId)?.text ?? "";
+    if (!trimmed || trimmed === prev) return;
+    patchProject(projectId, p => ({ ...p, items: p.items.map(it => it.id === itemId ? { ...it, text: trimmed } : it) }));
+    const revert = () => patchProject(projectId, p => ({ ...p, items: p.items.map(it => it.id === itemId ? { ...it, text: prev } : it) }));
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "updateChecklistItem", itemId, text: trimmed }),
+      });
+      if (!res.ok) { revert(); toast("Couldn’t rename item — reverted"); }
+    } catch {
+      revert(); toast("Couldn’t rename item — reverted");
     }
   };
 
@@ -2087,6 +2124,7 @@ function Dashboard() {
           onClose={() => setOpenProjectId(null)}
           onAddItem={addChecklistItem}
           onDeleteItem={deleteChecklistItem}
+          onEditItem={editChecklistItem}
           onEditTitle={editTask}
           onArchive={(id) => { completeTask(id); setOpenProjectId(null); }}
           onMove={moveTask}
