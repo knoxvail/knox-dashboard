@@ -51,7 +51,8 @@ function CustomCursor() {
     const blur = () => setShown(false);
     const over = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
-      setHovering(t.tagName === "BUTTON" || t.tagName === "A" || !!t.closest("button") || !!t.closest("a"));
+      // grow the reticle over anything interactive, not just links/buttons
+      setHovering(!!t.closest?.('button, a, input, textarea, select, [role="button"], [tabindex]'));
     };
 
     window.addEventListener("mousemove", move, { passive: true });
@@ -63,8 +64,8 @@ function CustomCursor() {
 
     // the ring eases toward the cursor each frame — close follow, gentle lag
     const loop = () => {
-      rx += (mx - rx) * 0.35;
-      ry += (my - ry) * 0.35;
+      rx += (mx - rx) * 0.45;
+      ry += (my - ry) * 0.45;
       const r = ringRef.current;
       if (r) r.style.transform = `translate3d(${rx}px,${ry}px,0) translate(-50%,-50%)`;
       raf = requestAnimationFrame(loop);
@@ -129,11 +130,11 @@ function GlowyWaves() {
     // thin waves kept up in the clock/time band (small amplitudes so they never
     // reach down over the panel text below)
     const waves = [
-      { offset: 0, amplitude: 46, frequency: 0.003, color: "rgb(222,232,248)", opacity: 0.17 },
-      { offset: Math.PI / 2, amplitude: 60, frequency: 0.0026, color: "rgb(190,206,230)", opacity: 0.14 },
-      { offset: Math.PI, amplitude: 38, frequency: 0.0034, color: "rgb(164,182,210)", opacity: 0.12 },
-      { offset: Math.PI * 1.5, amplitude: 52, frequency: 0.0022, color: "rgb(146,166,198)", opacity: 0.10 },
-      { offset: Math.PI * 2, amplitude: 34, frequency: 0.004, color: "rgb(204,216,238)", opacity: 0.085 },
+      { offset: 0, amplitude: 46, frequency: 0.003, color: "rgb(228,228,228)", opacity: 0.17 },
+      { offset: Math.PI / 2, amplitude: 60, frequency: 0.0026, color: "rgb(200,200,200)", opacity: 0.14 },
+      { offset: Math.PI, amplitude: 38, frequency: 0.0034, color: "rgb(180,180,180)", opacity: 0.12 },
+      { offset: Math.PI * 1.5, amplitude: 52, frequency: 0.0022, color: "rgb(165,165,165)", opacity: 0.10 },
+      { offset: Math.PI * 2, amplitude: 34, frequency: 0.004, color: "rgb(214,214,214)", opacity: 0.085 },
     ];
 
     const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -225,7 +226,7 @@ function EmailRow({ email, onArchive }: { email: Email; onArchive: (id: string) 
       <a href={email.link} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", minWidth: 0, flex: 1 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
           <span style={{ fontSize: 12, color: "#d8d8d8", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%" }}>{email.from}</span>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444", flexShrink: 0 }}>{email.date}</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#808080", flexShrink: 0 }}>{email.date}</span>
         </div>
         <p style={{ margin: 0, fontSize: 12, color: "#808080", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email.subject}</p>
       </a>
@@ -261,7 +262,7 @@ function Tag({ children, accent }: { children: React.ReactNode; accent?: boolean
       fontSize: 10,
       letterSpacing: "0.15em",
       textTransform: "uppercase" as const,
-      color: accent ? "#e8e8e8" : "#707070",
+      color: accent ? "#e8e8e8" : "#808080",
     }}>{children}</span>
   );
 }
@@ -290,7 +291,11 @@ function Panel({ children, style }: { children: React.ReactNode; style?: React.C
 function PanelHeader({ label, right }: { label: string; right?: React.ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-      <Tag accent>{label}</Tag>
+      {/* real heading for the screen-reader outline, styled to match the accent Tag */}
+      <h2 style={{
+        margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 400,
+        letterSpacing: "0.15em", textTransform: "uppercase" as const, color: "#e8e8e8",
+      }}>{label}</h2>
       {right}
     </div>
   );
@@ -398,7 +403,9 @@ function TaskItem({
       onDragStart={(e) => {
         e.dataTransfer.setData("text/plain", task.id);
         e.dataTransfer.effectAllowed = "move";
+        e.currentTarget.style.opacity = "0.4";
       }}
+      onDragEnd={(e) => { e.currentTarget.style.opacity = "1"; }}
       style={{
         borderLeft: "1px solid #2a2a2a",
         paddingLeft: 10,
@@ -456,6 +463,9 @@ function TaskItem({
       ) : (
         <p
           onClick={() => (onOpen ? onOpen(task.id) : onStartEdit(task.id))}
+          role={onOpen ? "button" : undefined}
+          tabIndex={onOpen ? 0 : undefined}
+          onKeyDown={onOpen ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(task.id); } } : undefined}
           style={{
             margin: 0,
             fontSize: 13,
@@ -489,7 +499,7 @@ function TaskList({ tasks, onComplete, onEdit, onOpen }: { tasks: Task[]; onComp
   const [editingId, setEditingId] = useState<string | null>(null);
   if (tasks.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <p style={{ color: "#444", fontSize: 12, textAlign: "center" }}>None</p>
+      <p style={{ color: "#808080", fontSize: 12, textAlign: "center" }}>None</p>
     </div>
   );
   return (
@@ -531,15 +541,15 @@ function AddTaskInput({ onAdd, placeholder = "New task..." }: { onAdd: (title: s
   };
 
   if (!open) return (
-    <button onClick={() => setOpen(true)} style={{
+    <button onClick={() => setOpen(true)} aria-label="Add new" style={{
       background: "none", border: "none", cursor: "pointer",
       padding: 0, marginTop: 10, display: "flex", alignItems: "center", gap: 6,
     }}
       onMouseEnter={e => (e.currentTarget.querySelector("span")!.style.color = "#888")}
-      onMouseLeave={e => (e.currentTarget.querySelector("span")!.style.color = "#444")}
+      onMouseLeave={e => (e.currentTarget.querySelector("span")!.style.color = "#808080")}
     >
-      <span style={{ color: "#444", fontSize: 16, lineHeight: 1, transition: "color 0.2s" }}>+</span>
-      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.15em", color: "#444", textTransform: "uppercase" as const, transition: "color 0.2s" }}>ADD NEW</span>
+      <span style={{ color: "#808080", fontSize: 16, lineHeight: 1, transition: "color 0.2s" }}>+</span>
+      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.15em", color: "#808080", textTransform: "uppercase" as const, transition: "color 0.2s" }}>ADD NEW</span>
     </button>
   );
 
@@ -566,8 +576,8 @@ function AddTaskInput({ onAdd, placeholder = "New task..." }: { onAdd: (title: s
       }}>
         {loading ? "..." : "ADD"}
       </button>
-      <button onClick={() => { setOpen(false); setValue(""); }} style={{
-        background: "none", border: "none", color: "#555",
+      <button onClick={() => { setOpen(false); setValue(""); }} aria-label="Cancel" style={{
+        background: "none", border: "none", color: "#808080",
         fontSize: 14, cursor: "pointer", padding: "0 4px",
       }}>✕</button>
     </div>
@@ -594,13 +604,16 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
     <div
       draggable
       tabIndex={0}
+      role="button"
+      aria-label={`${project.title} — ${label}. Open project`}
       onDragStart={(e) => {
         dragging.current = true;
         e.dataTransfer.setData("text/plain", project.id);
         e.dataTransfer.effectAllowed = "move";
+        e.currentTarget.style.opacity = "0.4";
         onLeave();
       }}
-      onDragEnd={() => { setTimeout(() => { dragging.current = false; }, 0); setDropTarget(false); }}
+      onDragEnd={(e) => { setTimeout(() => { dragging.current = false; }, 0); setDropTarget(false); e.currentTarget.style.opacity = "1"; }}
       // accept another item dropped onto this box (merge it in)
       onDragOver={(e) => { if (dragging.current) return; e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move"; if (!dropTarget) setDropTarget(true); }}
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropTarget(false); }}
@@ -649,8 +662,8 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
         </div>
         <span style={{
           fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
-          letterSpacing: "0.12em", color: "#555",
-        }}>{label}</span>
+          letterSpacing: "0.12em", color: dropTarget ? "#cfcfcf" : "#808080",
+        }}>{dropTarget ? "MERGE INTO ▾" : label}</span>
       </div>
     </div>
   );
@@ -665,7 +678,7 @@ function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge }: {
 }) {
   if (projects.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", minHeight: 60 }}>
-      <p style={{ color: "#444", fontSize: 12, textAlign: "center" }}>None</p>
+      <p style={{ color: "#808080", fontSize: 12, textAlign: "center" }}>No projects yet — add one below</p>
     </div>
   );
   // paddingTop gives the top row's hover-lift room so its top edge isn't clipped
@@ -706,11 +719,11 @@ function HoverPopover({ project, rect }: { project: Project; rect: DOMRect }) {
     }}>
       <div style={{
         fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em",
-        color: "#666", textTransform: "uppercase", marginBottom: items.length ? 8 : 0,
+        color: "#808080", textTransform: "uppercase", marginBottom: items.length ? 8 : 0,
         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
       }}>{project.title}</div>
       {items.length === 0 ? (
-        <div style={{ fontSize: 12, color: "#555" }}>Empty</div>
+        <div style={{ fontSize: 12, color: "#808080" }}>Empty</div>
       ) : (
         <>
           {items.slice(0, 6).map((it) => (
@@ -724,7 +737,7 @@ function HoverPopover({ project, rect }: { project: Project; rect: DOMRect }) {
             </div>
           ))}
           {items.length > 6 && (
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#555", marginTop: 2 }}>+{items.length - 6} MORE</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#808080", marginTop: 2 }}>+{items.length - 6} MORE</div>
           )}
         </>
       )}
@@ -734,19 +747,23 @@ function HoverPopover({ project, rect }: { project: Project; rect: DOMRect }) {
 
 // Click-to-open editor for a project's checklist. Portalled to document.body so
 // the panel's overflow/backdrop-filter stacking context can't clip it.
-function ProjectModal({ project, onClose, onAddItem, onDeleteItem, onEditTitle, onArchive }: {
+function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditTitle, onArchive, onMove }: {
   project: Project;
+  list: "Short Term" | "Long Term" | null; // which list the project is in (for the Move control)
   onClose: () => void;
   onAddItem: (projectId: string, text: string) => void;
   onDeleteItem: (projectId: string, itemId: string) => void;
   onEditTitle: (id: string, title: string) => Promise<void>;
   onArchive: (id: string) => void;
+  onMove: (id: string, target: "Short Term" | "Long Term") => void;
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState(project.title);
   const [newItem, setNewItem] = useState("");
   const addRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const isTemp = project.id.startsWith("temp-");
+  const titleId = "proj-modal-title";
 
   useEffect(() => { setTitleValue(project.title); }, [project.title]);
   useEffect(() => {
@@ -756,6 +773,22 @@ function ProjectModal({ project, onClose, onAddItem, onDeleteItem, onEditTitle, 
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, editingTitle]);
   useEffect(() => { if (!isTemp) setTimeout(() => addRef.current?.focus(), 60); }, [isTemp]);
+  // return focus to whatever opened the modal when it closes
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    return () => { try { opener?.focus?.(); } catch {} };
+  }, []);
+  // keep Tab focus inside the dialog
+  const onDialogKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== "Tab" || !dialogRef.current) return;
+    const focusables = Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>('button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])')
+    ).filter(el => !el.hasAttribute("disabled") && el.offsetParent !== null);
+    if (focusables.length === 0) return;
+    const first = focusables[0], last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
 
   const submitTitle = async () => {
     const t = titleValue.trim();
@@ -777,16 +810,23 @@ function ProjectModal({ project, onClose, onAddItem, onDeleteItem, onEditTitle, 
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
         backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
         zIndex: 9000, display: "grid", placeItems: "center",
-        fontFamily: "'DM Sans', sans-serif",
+        fontFamily: "'DM Sans', sans-serif", animation: "fadeIn 0.18s ease-out",
       }}
     >
-      <div style={{
-        width: "min(440px, 92vw)", maxHeight: "78vh",
-        background: "rgba(12,14,18,0.92)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
-        border: "1px solid #3a3a3a", borderRadius: 6, padding: "20px 22px",
-        display: "flex", flexDirection: "column",
-        boxShadow: "0 20px 60px rgba(0,0,0,0.7)", position: "relative",
-      }}>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onKeyDown={onDialogKeyDown}
+        style={{
+          width: "min(440px, 92vw)", maxHeight: "78vh",
+          background: "rgba(12,14,18,0.92)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+          border: "1px solid #3a3a3a", borderRadius: 6, padding: "20px 22px",
+          display: "flex", flexDirection: "column",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.7)", position: "relative",
+          animation: "modalIn 0.2s ease-out",
+        }}>
         <div style={{ position: "absolute", top: -1, left: 16, width: 32, height: 1, background: "#999" }} />
         <div style={{ position: "absolute", top: -1, left: -1, width: 10, height: 10, borderTop: "1px solid #999", borderLeft: "1px solid #999" }} />
 
@@ -807,16 +847,18 @@ function ProjectModal({ project, onClose, onAddItem, onDeleteItem, onEditTitle, 
             />
           ) : (
             <h2
+              id={titleId}
               onClick={() => !isTemp && setEditingTitle(true)}
+              title={isTemp ? undefined : "Click to rename"}
               style={{ margin: 0, fontSize: 18, fontWeight: 500, color: "#e8e8e8", lineHeight: 1.3, cursor: isTemp ? "default" : "pointer", flex: 1, minWidth: 0, wordBreak: "break-word" }}
             >{project.title}</h2>
           )}
-          <button onClick={onClose} style={{
-            background: "none", border: "none", cursor: "pointer", color: "#666",
+          <button onClick={onClose} aria-label="Close" style={{
+            background: "none", border: "none", cursor: "pointer", color: "#808080",
             fontSize: 18, lineHeight: 1, padding: 0, flexShrink: 0, transition: "color 0.15s",
           }}
             onMouseEnter={(e) => (e.currentTarget.style.color = "#ccc")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#666")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}
           >✕</button>
         </div>
 
@@ -824,7 +866,7 @@ function ProjectModal({ project, onClose, onAddItem, onDeleteItem, onEditTitle, 
         <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 40 }}>
           {project.items.length === 0 ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 0" }}>
-              <p style={{ color: "#444", fontSize: 12 }}>No items yet</p>
+              <p style={{ color: "#808080", fontSize: 12 }}>No items yet</p>
             </div>
           ) : project.items.map((it) => {
             const temp = it.id.startsWith("temp-");
@@ -878,15 +920,25 @@ function ProjectModal({ project, onClose, onAddItem, onDeleteItem, onEditTitle, 
           }}>ADD</button>
         </div>
 
-        {/* archive whole project */}
-        <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
+        {/* move (keyboard-accessible alternative to dragging) + archive */}
+        <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          {list && !isTemp ? (
+            <button onClick={() => { onMove(project.id, list === "Short Term" ? "Long Term" : "Short Term"); onClose(); }} style={{
+              background: "none", border: "1px solid #4a4a4a", cursor: "pointer",
+              fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em",
+              color: "#9a9a9a", textTransform: "uppercase", padding: "4px 9px", borderRadius: 3, transition: "color 0.15s, border-color 0.15s",
+            }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#4a4a4a"; }}
+            >Move to {list === "Short Term" ? "Long Term" : "Short Term"}</button>
+          ) : <span />}
           <button onClick={() => onArchive(project.id)} style={{
             background: "none", border: "none", cursor: "pointer",
             fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.15em",
-            color: "#444", textTransform: "uppercase", padding: 0, transition: "color 0.15s",
+            color: "#808080", textTransform: "uppercase", padding: 0, transition: "color 0.15s",
           }}
             onMouseEnter={(e) => (e.currentTarget.style.color = "#c06464")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#444")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}
           >Archive Project</button>
         </div>
       </div>
@@ -919,7 +971,17 @@ function Dashboard() {
   const [priorityDrag, setPriorityDrag] = useState<"high" | "normal" | null>(null);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const [hover, setHover] = useState<{ id: string; rect: DOMRect } | null>(null);
+  // the custom reticle only replaces the native cursor on a fine pointer with
+  // motion allowed; otherwise the OS cursor stays (accessibility)
+  const [reticle, setReticle] = useState(false);
+  const [toasts, setToasts] = useState<{ id: number; msg: string; undo?: () => void }[]>([]);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
+
+  const toast = useCallback((msg: string, undo?: () => void) => {
+    const id = (typeof performance !== "undefined" ? performance.now() : 0) + Math.random();
+    setToasts(prev => [...prev, { id, msg, undo }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), undo ? 7000 : 4000);
+  }, []);
 
   // Each source fetches independently so one slow endpoint never blocks the
   // others — no single-dependency bottleneck.
@@ -1031,6 +1093,14 @@ function Dashboard() {
     return () => { if (spotifyInterval.current) clearInterval(spotifyInterval.current); };
   }, [fetchSpotify]);
 
+  useEffect(() => {
+    const m = window.matchMedia("(pointer: fine) and (prefers-reduced-motion: no-preference)");
+    const upd = () => setReticle(m.matches);
+    upd();
+    m.addEventListener?.("change", upd);
+    return () => m.removeEventListener?.("change", upd);
+  }, []);
+
   // the hover popover is pinned to a captured rect, so it detaches on scroll —
   // just dismiss it (capture:true also catches the inner panel's scroll)
   useEffect(() => {
@@ -1055,9 +1125,9 @@ function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, action: "complete" }),
       });
-      if (!res.ok) await fetchTasks(); // revert just the tasks on failure
+      if (!res.ok) { await fetchTasks(); toast("Couldn’t complete — reverted"); }
     } catch {
-      await fetchTasks();
+      await fetchTasks(); toast("Couldn’t complete — reverted");
     }
   };
 
@@ -1076,9 +1146,11 @@ function Dashboard() {
       });
       if (!res.ok) {
         await fetchTasks(); // revert just the task lists (no full-dashboard reload)
+        toast("Rename failed — reverted");
       }
     } catch {
-      await fetchTasks(); // revert just the task lists
+      await fetchTasks();
+      toast("Rename failed — reverted");
     }
   };
 
@@ -1101,12 +1173,12 @@ function Dashboard() {
         body: JSON.stringify({ title, status }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) { rollback(); return; }
+      if (!res.ok) { rollback(); toast("Couldn’t add — try again"); return; }
       // swap the temp id for the real page id in place (no reconcile GET)
       if (data.id) swap(data.id);
       else fetchTasks();
     } catch {
-      rollback();
+      rollback(); toast("Couldn’t add — try again");
     }
   };
 
@@ -1123,6 +1195,7 @@ function Dashboard() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setLongTerm(prev => prev.filter(p => p.id !== tempId));
+        toast("Couldn’t create project — try again");
         return;
       }
       if (data.id) {
@@ -1135,6 +1208,7 @@ function Dashboard() {
       }
     } catch {
       setLongTerm(prev => prev.filter(p => p.id !== tempId));
+      toast("Couldn’t create project — try again");
     }
   };
 
@@ -1209,6 +1283,7 @@ function Dashboard() {
     if (targetId.startsWith("temp-") || sourceId.startsWith("temp-")) return;
     const source = findProject(sourceId);
     if (!source) return;
+    const targetTitle = findProject(targetId)?.title || "";
 
     const stamp = Date.now();
     const merged = [
@@ -1221,8 +1296,10 @@ function Dashboard() {
     if (openProjectId === sourceId) setOpenProjectId(null);
     patchProject(targetId, p => ({ ...p, items: [...p.items, ...merged] }));
 
+    let ok = false;
+    let appendedIds: string[] = [];
     try {
-      await fetch("/api/notion", {
+      const res = await fetch("/api/notion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1230,10 +1307,25 @@ function Dashboard() {
           title: source.title, items: source.items.map(it => ({ text: it.text, checked: it.checked })),
         }),
       });
+      const data = await res.json().catch(() => ({}));
+      ok = res.ok && !!data.success;
+      appendedIds = data.appendedIds || [];
     } catch {}
     // reconcile: swaps temp item ids for real block ids and confirms the source
     // is gone (or restores the true state if the merge failed)
     await fetchTasks();
+    const clip = (s: string) => (s.length > 22 ? s.slice(0, 22) + "…" : s);
+    if (ok) {
+      toast(`Merged “${clip(source.title)}” into “${clip(targetTitle)}”`, async () => {
+        await fetch("/api/notion", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "unmerge", sourceId, blockIds: appendedIds }),
+        }).catch(() => {});
+        await fetchTasks();
+      });
+    } else {
+      toast("Merge failed — reverted");
+    }
   };
 
   // Move a task between Short Term and Long Term by dragging it to the other list
@@ -1262,9 +1354,9 @@ function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status: target, action: "move" }),
       });
-      if (!res.ok) await fetchTasks(); // revert on failure
+      if (!res.ok) { await fetchTasks(); toast("Move failed — reverted"); }
     } catch {
-      await fetchTasks();
+      await fetchTasks(); toast("Move failed — reverted");
     }
   };
 
@@ -1281,9 +1373,9 @@ function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "setPriority", id, priority }),
       });
-      if (!res.ok) await fetchTasks();
+      if (!res.ok) { await fetchTasks(); toast("Priority change failed — reverted"); }
     } catch {
-      await fetchTasks();
+      await fetchTasks(); toast("Priority change failed — reverted");
     }
   };
 
@@ -1297,21 +1389,27 @@ function Dashboard() {
 
   const archiveEmail = async (id: string) => {
     setEmails(prev => prev.filter(e => e.id !== id));
-    await fetch("/api/gmail", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
+    try {
+      const res = await fetch("/api/gmail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) toast("Archive failed — reverted");
+    } catch { toast("Archive failed — reverted"); }
     await fetchGmail();
   };
 
   const archiveSorenEmail = async (id: string) => {
     setSorenEmails(prev => prev.filter(e => e.id !== id));
-    await fetch("/api/zoho", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
+    try {
+      const res = await fetch("/api/zoho", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) toast("Archive failed — reverted");
+    } catch { toast("Archive failed — reverted"); }
     await fetchSoren();
   };
 
@@ -1356,7 +1454,7 @@ function Dashboard() {
   const shortNormal = shortTerm.filter(t => !t.priority);
 
   return (
-    <div style={{
+    <div className={reticle ? "reticle-on" : undefined} style={{
       background: "#0a0a0a",
       minHeight: "100vh",
       width: "100vw",
@@ -1366,17 +1464,18 @@ function Dashboard() {
       backgroundImage: "linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px)",
       backgroundSize: "48px 48px",
       fontFamily: "'DM Sans', sans-serif",
-      cursor: "none",
     }}>
       <GlowyWaves />
-      <CustomCursor />
-      <div style={{
+      {reticle && <CustomCursor />}
+      {/* scanline sweeps behind the panels (z0), not over the text */}
+      <div className="scan" aria-hidden style={{
         position: "fixed", top: 0, left: 0, right: 0, height: 1,
         background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)",
-        animation: "scan 12s linear infinite", zIndex: 100, pointerEvents: "none",
+        animation: "scan 12s linear infinite", zIndex: 0, pointerEvents: "none",
       }} />
 
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px 12px", position: "relative", zIndex: 1 }}>
+        <h1 style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0 }}>Knox Command Center</h1>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#999", boxShadow: "0 0 8px #999" }} />
           <Tag accent>KNOX // COMMAND CENTER</Tag>
@@ -1429,13 +1528,13 @@ function Dashboard() {
               // Self Client flow: connection comes from server env vars, so
               // there's nothing to click — just say what's missing.
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 12px" }}>
-                <p style={{ color: "#444", fontSize: 11, textAlign: "center", lineHeight: 1.6, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.05em" }}>
+                <p style={{ color: "#808080", fontSize: 11, textAlign: "center", lineHeight: 1.6, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.05em" }}>
                   ZOHO NOT CONNECTED — SET ZOHO_CLIENT_ID / ZOHO_CLIENT_SECRET / ZOHO_REFRESH_TOKEN IN VERCEL
                 </p>
               </div>
             ) : sorenEmails.length === 0 ? (
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <p style={{ color: "#444", fontSize: 12 }}>No emails</p>
+                <p style={{ color: "#808080", fontSize: 12 }}>No emails</p>
               </div>
             ) : (
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
@@ -1448,14 +1547,14 @@ function Dashboard() {
 
           <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
             <PanelHeader label="Clients" right={
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
                 {clients.length}
               </span>
             } />
             <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
               {loading ? (
                 Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>
+                  <div key={i} className="skeleton" style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>
                     <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 10}%` }} />
                   </div>
                 ))
@@ -1469,7 +1568,7 @@ function Dashboard() {
         <div style={{ display: "grid", gridTemplateColumns: "0.5fr 1fr", gap: 12, minHeight: 0 }}>
           <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <PanelHeader label="Short Term" right={
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
                 {shortTerm.length}
               </span>
             } />
@@ -1481,7 +1580,7 @@ function Dashboard() {
                 onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setPriorityDrag(null); if (id) dropToPriority(id, true); }}
                 style={{
                   paddingBottom: 10, borderBottom: "1px solid #1e1e1e", borderRadius: 2, outlineOffset: -2,
-                  outline: priorityDrag === "high" ? "1px dashed #6a6a6a" : "1px dashed transparent",
+                  outline: priorityDrag === "high" ? "1px dashed #8a8a8a" : "1px dashed transparent",
                   background: priorityDrag === "high" ? "rgba(255,255,255,0.03)" : "transparent",
                   transition: "background 0.15s, outline-color 0.15s",
                 }}
@@ -1490,11 +1589,11 @@ function Dashboard() {
                   <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.18em", color: "#8a8a8a", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
                     <span aria-hidden style={{ color: "#9a9a9a", fontSize: 8 }}>▲</span> High Priority
                   </span>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>{shortHigh.length}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>{shortHigh.length}</span>
                 </div>
                 {loading ? null : shortHigh.length === 0 ? (
                   <div style={{ borderLeft: "1px dashed #333", padding: "2px 0 2px 10px" }}>
-                    <p style={{ margin: 0, color: "#555", fontSize: 11, fontStyle: "italic" }}>Drag tasks here to prioritize</p>
+                    <p style={{ margin: 0, color: "#808080", fontSize: 11, fontStyle: "italic" }}>Drag tasks here to prioritize</p>
                   </div>
                 ) : <TaskList tasks={shortHigh} onComplete={completeTask} onEdit={editTask} onOpen={setOpenProjectId} />}
               </div>
@@ -1506,14 +1605,14 @@ function Dashboard() {
                 onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setPriorityDrag(null); if (id) dropToPriority(id, false); }}
                 style={{
                   flex: 1, minHeight: 40, paddingTop: 10, borderRadius: 2, outlineOffset: -2,
-                  outline: priorityDrag === "normal" ? "1px dashed #6a6a6a" : "1px dashed transparent",
+                  outline: priorityDrag === "normal" ? "1px dashed #8a8a8a" : "1px dashed transparent",
                   background: priorityDrag === "normal" ? "rgba(255,255,255,0.025)" : "transparent",
                   transition: "background 0.15s, outline-color 0.15s",
                 }}
               >
                 {loading ? (
                   Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>
+                    <div key={i} className="skeleton" style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>
                       <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 8}%` }} />
                     </div>
                   ))
@@ -1527,7 +1626,7 @@ function Dashboard() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
             <Panel style={{ flex: 1.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
               <PanelHeader label="Long Term" right={
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
                   {longTerm.length}
                 </span>
               } />
@@ -1537,7 +1636,7 @@ function Dashboard() {
                 onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setDragOver(null); if (id) moveTask(id, "Long Term"); }}
                 style={{
                   flex: 1, overflowY: "auto", scrollbarWidth: "none", borderRadius: 2, outlineOffset: -2,
-                  outline: dragOver === "Long Term" ? "1px dashed #6a6a6a" : "1px dashed transparent",
+                  outline: dragOver === "Long Term" ? "1px dashed #8a8a8a" : "1px dashed transparent",
                   background: dragOver === "Long Term" ? "rgba(255,255,255,0.025)" : "transparent",
                   transition: "background 0.15s, outline-color 0.15s",
                 }}
@@ -1545,7 +1644,7 @@ function Dashboard() {
                 {loading ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(158px, 1fr))", gap: 10 }}>
                     {Array.from({ length: 4 }).map((_, i) => (
-                      <div key={i} style={{ height: 88, background: "#141414", border: "1px solid #222", borderRadius: 4 }} />
+                      <div key={i} className="skeleton" style={{ height: 88, background: "rgba(255,255,255,0.02)", border: "1px solid #2a2a2a", borderRadius: 4 }} />
                     ))}
                   </div>
                 ) : (
@@ -1566,7 +1665,7 @@ function Dashboard() {
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                 {events.length === 0 ? (
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", paddingTop: 20 }}>
-                    <p style={{ color: "#444", fontSize: 12 }}>Nothing scheduled</p>
+                    <p style={{ color: "#808080", fontSize: 12 }}>Nothing scheduled</p>
                   </div>
                 ) : (
                   // grid stretches the events across the panel's full width; each
@@ -1575,9 +1674,9 @@ function Dashboard() {
                     {events.map((event) => (
                       <div key={event.id} style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
                         <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{event.title}</p>
-                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#666", letterSpacing: "0.05em" }}>{event.displayDate}</span>
-                        {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555", letterSpacing: "0.05em" }}>{event.displayTime}</span>}
-                        {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#555", letterSpacing: "0.12em" }}>{event.type.toUpperCase()}</span>}
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", letterSpacing: "0.05em" }}>{event.displayDate}</span>
+                        {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", letterSpacing: "0.05em" }}>{event.displayTime}</span>}
+                        {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#808080", letterSpacing: "0.12em" }}>{event.type.toUpperCase()}</span>}
                       </div>
                     ))}
                   </div>
@@ -1595,7 +1694,7 @@ function Dashboard() {
               <ConnectButton href="/api/gmail/login" label="CONNECT GMAIL" />
             ) : emails.length === 0 ? (
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <p style={{ color: "#444", fontSize: 12 }}>No emails</p>
+                <p style={{ color: "#808080", fontSize: 12 }}>No emails</p>
               </div>
             ) : (
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
@@ -1635,44 +1734,46 @@ function Dashboard() {
               <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                 <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                   {nowPlaying.albumArt && (
-                    <img src={nowPlaying.albumArt} alt="album" style={{ width: 44, height: 44, objectFit: "cover", border: "1px solid #2a2a2a", flexShrink: 0, filter: "grayscale(100%)" }} />
+                    <img src={nowPlaying.albumArt} alt={nowPlaying.track ? `Album art — ${nowPlaying.track}` : ""} style={{ width: 44, height: 44, objectFit: "cover", border: "1px solid #2a2a2a", flexShrink: 0, filter: "grayscale(100%)" }} />
                   )}
                   <div style={{ minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: 13, color: "#e0e0e0", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {nowPlaying.playing ? nowPlaying.track || "—" : <span style={{ color: "#444" }}>Not playing</span>}
+                      {nowPlaying.playing ? nowPlaying.track || "—" : <span style={{ color: "#808080" }}>Not playing</span>}
                     </p>
-                    {nowPlaying.artist && <p style={{ margin: "2px 0 0", fontSize: 12, color: "#777", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nowPlaying.artist}</p>}
+                    {nowPlaying.artist && <p style={{ margin: "2px 0 0", fontSize: 12, color: "#9a9a9a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nowPlaying.artist}</p>}
                   </div>
                 </div>
                 {nowPlaying.playing && (
-                  <div style={{ height: 1, background: "#1e1e1e", borderRadius: 1, margin: "8px 0" }}>
-                    <div style={{ height: "100%", width: `${progressPct}%`, background: "#888", transition: "width 1s linear" }} />
+                  <div role="progressbar" aria-label="Track progress" aria-valuenow={Math.round(progressPct)} aria-valuemin={0} aria-valuemax={100}
+                    style={{ height: 3, background: "#2e2e2e", borderRadius: 2, margin: "8px 0" }}>
+                    <div style={{ height: "100%", width: `${progressPct}%`, background: "#9a9a9a", transition: "width 1s linear", borderRadius: 2 }} />
                   </div>
                 )}
                 <div style={{ display: "flex", justifyContent: "center", gap: 16 }}>
                   {[
-                    { action: "previous", label: "⏮" },
-                    { action: nowPlaying.playing ? "pause" : "play", label: nowPlaying.playing ? "⏸" : "▶" },
-                    { action: "next", label: "⏭" },
+                    { action: "previous", label: "⏮", aria: "Previous track" },
+                    { action: nowPlaying.playing ? "pause" : "play", label: nowPlaying.playing ? "⏸" : "▶", aria: nowPlaying.playing ? "Pause" : "Play" },
+                    { action: "next", label: "⏭", aria: "Next track" },
                   ].map(btn => (
-                    <button key={btn.action} onClick={() => spotifyAction(btn.action)} style={{
+                    <button key={btn.action} aria-label={btn.aria} onClick={() => spotifyAction(btn.action)} style={{
                       background: "none", border: "none", cursor: "pointer",
-                      color: "#777", fontSize: 14, padding: "4px 8px", transition: "color 0.15s",
+                      color: "#9a9a9a", fontSize: 14, padding: "4px 8px", transition: "color 0.15s",
                     }}
                       onMouseEnter={e => (e.currentTarget.style.color = "#ddd")}
-                      onMouseLeave={e => (e.currentTarget.style.color = "#777")}
-                    >{btn.label}</button>
+                      onMouseLeave={e => (e.currentTarget.style.color = "#9a9a9a")}
+                    ><span aria-hidden>{btn.label}</span></button>
                   ))}
                 </div>
                 {/* Volume slider */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444" }}>VOL</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#808080" }}>VOL</span>
                   <input
                     type="range" min={0} max={100} value={volume}
+                    aria-label="Volume"
                     onChange={e => setSpotifyVolume(Number(e.target.value))}
-                    style={{ flex: 1, accentColor: "#888", cursor: "pointer", height: 2 }}
+                    style={{ flex: 1, accentColor: "#9a9a9a", cursor: "pointer", height: 4 }}
                   />
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#444", width: 24, textAlign: "right" }}>{volume}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#808080", width: 24, textAlign: "right" }}>{volume}</span>
                 </div>
               </div>
             )}
@@ -1701,19 +1802,20 @@ function Dashboard() {
               <button
                 onClick={rerollAphorismo}
                 disabled={aphorismoLoading}
+                aria-label="New aphorism"
                 style={{
                   background: "none", border: "1px solid #444", cursor: "pointer",
-                  color: "#777", fontSize: 11, padding: "4px 8px",
+                  color: "#9a9a9a", fontSize: 11, padding: "4px 8px",
                   fontFamily: "'JetBrains Mono', monospace",
                   transition: "all 0.15s", flexShrink: 0,
                   opacity: aphorismoLoading ? 0.5 : 1,
                 }}
                 onMouseEnter={e => !aphorismoLoading && (e.currentTarget.style.borderColor = "#999", e.currentTarget.style.color = "#aaa")}
-                onMouseLeave={e => !aphorismoLoading && (e.currentTarget.style.borderColor = "#444", e.currentTarget.style.color = "#777")}
+                onMouseLeave={e => !aphorismoLoading && (e.currentTarget.style.borderColor = "#444", e.currentTarget.style.color = "#9a9a9a")}
               >⟳</button>
               <Tag>APHORISMO</Tag>
               <span style={{ color: "#222" }}>|</span>
-              <p style={{ margin: 0, fontSize: 13, color: "#686868", fontStyle: "italic", minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 13, color: "#9a9a9a", fontStyle: "italic", minWidth: 0 }}>
                 {aphorismo}
               </p>
             </>
@@ -1730,23 +1832,24 @@ function Dashboard() {
             <>
               <button
                 onClick={() => setVerseIndex((i) => (i - 1 + allVerses.length) % allVerses.length)}
+                aria-label="Previous verse"
                 style={{
                   background: "none", border: "none", cursor: "pointer",
-                  color: "#666", fontSize: 12, padding: "4px 8px",
+                  color: "#808080", fontSize: 12, padding: "4px 8px",
                   fontFamily: "'JetBrains Mono', monospace",
                   transition: "color 0.15s", flexShrink: 0,
                 }}
                 onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
-                onMouseLeave={e => (e.currentTarget.style.color = "#666")}
+                onMouseLeave={e => (e.currentTarget.style.color = "#808080")}
               >←</button>
               <div style={{ textAlign: "right", minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 13, color: "#686868", fontStyle: "italic" }}>
+                <p style={{ margin: 0, fontSize: 13, color: "#9a9a9a", fontStyle: "italic" }}>
                   {allVerses[verseIndex]?.text || verse.text}
                 </p>
                 <span style={{
                   fontFamily: "'Barlow Condensed', sans-serif",
                   fontSize: 12, fontWeight: 500,
-                  color: "#777", letterSpacing: "0.06em",
+                  color: "#9a9a9a", letterSpacing: "0.06em",
                   whiteSpace: "nowrap",
                   display: "block",
                   marginTop: 4,
@@ -1756,14 +1859,15 @@ function Dashboard() {
               <Tag>DAILY WORD</Tag>
               <button
                 onClick={() => setVerseIndex((i) => (i + 1) % allVerses.length)}
+                aria-label="Next verse"
                 style={{
                   background: "none", border: "none", cursor: "pointer",
-                  color: "#666", fontSize: 12, padding: "4px 8px",
+                  color: "#808080", fontSize: 12, padding: "4px 8px",
                   fontFamily: "'JetBrains Mono', monospace",
                   transition: "color 0.15s", flexShrink: 0,
                 }}
                 onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
-                onMouseLeave={e => (e.currentTarget.style.color = "#666")}
+                onMouseLeave={e => (e.currentTarget.style.color = "#808080")}
               >→</button>
             </>
           ) : (
@@ -1777,28 +1881,70 @@ function Dashboard() {
       {openProject && (
         <ProjectModal
           project={openProject}
+          list={shortTerm.some(p => p.id === openProject.id) ? "Short Term" : longTerm.some(p => p.id === openProject.id) ? "Long Term" : null}
           onClose={() => setOpenProjectId(null)}
           onAddItem={addChecklistItem}
           onDeleteItem={deleteChecklistItem}
           onEditTitle={editTask}
           onArchive={(id) => { completeTask(id); setOpenProjectId(null); }}
+          onMove={moveTask}
         />
+      )}
+
+      {/* transient status toasts — sync failures and merge undo */}
+      {toasts.length > 0 && (
+        <div aria-live="polite" style={{ position: "fixed", left: "50%", bottom: 20, transform: "translateX(-50%)", zIndex: 9800, display: "flex", flexDirection: "column", gap: 8, alignItems: "center", pointerEvents: "none" }}>
+          {toasts.map(t => (
+            <div key={t.id} role="status" style={{
+              pointerEvents: "auto", display: "flex", alignItems: "center", gap: 12,
+              background: "rgba(14,16,20,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+              border: "1px solid #3a3a3a", borderRadius: 4, padding: "8px 14px",
+              boxShadow: "0 8px 28px rgba(0,0,0,0.6)", animation: "toastIn 0.18s ease-out",
+              fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: "0.04em", color: "#cfcfcf",
+            }}>
+              <span>{t.msg}</span>
+              {t.undo && (
+                <button onClick={() => { t.undo!(); setToasts(prev => prev.filter(x => x.id !== t.id)); }} style={{
+                  background: "none", border: "1px solid #505050", color: "#e8e8e8", cursor: "pointer",
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.1em",
+                  padding: "3px 8px", borderRadius: 3, textTransform: "uppercase",
+                }}>Undo</button>
+              )}
+            </div>
+          ))}
+        </div>
       )}
 
       <style dangerouslySetInnerHTML={{ __html: `
         @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400&family=DM+Sans:wght@300;400;500&display=swap');
-        @keyframes scan {
-          0% { transform: translateY(-2px); }
-          100% { transform: translateY(100vh); }
-        }
-        * { box-sizing: border-box; cursor: none !important; }
+        @keyframes scan { 0% { transform: translateY(-2px); } 100% { transform: translateY(100vh); } }
+        @keyframes skpulse { 0%,100% { opacity: 0.5 } 50% { opacity: 0.85 } }
+        @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        @keyframes modalIn { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        * { box-sizing: border-box; }
         body { margin: 0; overflow: hidden; }
-        ::-webkit-scrollbar { width: 2px; }
-        ::-webkit-scrollbar-thumb { background: #2a2a2a; }
-        /* row action checkmarks reveal only on row hover / keyboard focus */
-        .reveal-row .row-action { opacity: 0; }
+        ::-webkit-scrollbar { width: 3px; height: 3px; }
+        ::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 3px; }
+        /* visible keyboard focus everywhere (!important beats inline outline:none on inputs) */
+        :focus-visible { outline: 2px solid #cfcfcf !important; outline-offset: 2px; }
+        /* keep the ring from being clipped by panel overflow */
+        .reveal-row:focus-within, .reveal-row .row-action:focus-visible { outline-offset: -2px; }
+        /* the reticle only hides the native cursor when it is actually active */
+        .reticle-on * { cursor: none !important; }
+        .reticle-on input, .reticle-on textarea { cursor: text !important; }
+        .reticle-on input[type="range"] { cursor: pointer !important; }
+        /* row action buttons: dimmed at rest, full on hover / keyboard focus / touch */
+        .reveal-row .row-action { opacity: 0.4; transition: opacity 0.15s; }
         .reveal-row:hover .row-action,
         .reveal-row:focus-within .row-action { opacity: 1; }
+        @media (hover: none) { .reveal-row .row-action { opacity: 1; } }
+        .skeleton { animation: skpulse 1.4s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .scan { animation: none !important; }
+          .skeleton { animation: none !important; }
+          * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+        }
       ` }} />
     </div>
   );
@@ -1849,10 +1995,10 @@ function Lock({ onUnlock }: { onUnlock: () => void }) {
         }}>KNOX // COMMAND CENTER</span>
       </div>
 
-      <span style={{
+      <span role={error ? "alert" : undefined} aria-live="assertive" style={{
         fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
         letterSpacing: "0.2em", textTransform: "uppercase",
-        color: error ? "#c06464" : "#666",
+        color: error ? "#c06464" : "#808080",
         transition: "color 0.2s",
       }}>{error ? "ACCESS DENIED" : "ENTER ACCESS CODE"}</span>
 
@@ -1860,6 +2006,7 @@ function Lock({ onUnlock }: { onUnlock: () => void }) {
         ref={inputRef}
         type="password"
         inputMode="numeric"
+        aria-label="Access code"
         value={value}
         onChange={e => { setValue(e.target.value); if (error) setError(false); }}
         onKeyDown={e => { if (e.key === "Enter") submit(); }}

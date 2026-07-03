@@ -302,6 +302,8 @@ export async function POST(request: Request) {
         const err = await appendRes.json();
         return NextResponse.json({ error: err }, { status: appendRes.status });
       }
+      const appendJson = await appendRes.json();
+      const appendedIds = (appendJson.results || []).map((b: any) => b.id);
 
       // archive the now-merged source page
       const archiveRes = await fetch(`https://api.notion.com/v1/pages/${sourceId}`, {
@@ -314,6 +316,26 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: err, appended: true }, { status: archiveRes.status });
       }
 
+      // return the appended block ids so an Undo can remove them again
+      return NextResponse.json({ success: true, appendedIds });
+    }
+
+    // Undo a merge: restore the archived source page and delete the blocks that
+    // were appended to the target.
+    if (action === "unmerge") {
+      const { sourceId, blockIds } = body;
+      if (!sourceId) return NextResponse.json({ error: "Missing sourceId" }, { status: 400 });
+      const H = { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" };
+      await fetch(`https://api.notion.com/v1/pages/${sourceId}`, {
+        method: "PATCH", headers: H, body: JSON.stringify({ archived: false }),
+      }).catch(() => {});
+      if (Array.isArray(blockIds)) {
+        await Promise.all(blockIds.map((bid: string) =>
+          fetch(`https://api.notion.com/v1/blocks/${bid}`, {
+            method: "DELETE", headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28" },
+          }).catch(() => {})
+        ));
+      }
       return NextResponse.json({ success: true });
     }
 
