@@ -1726,7 +1726,7 @@ function Dashboard() {
               onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setPriorityDrag(null); if (id) dropToPriority(id, true); }}
               style={{
                 flexShrink: 0, maxHeight: "42%", display: "flex", flexDirection: "column", overflow: "hidden",
-                background: "rgba(18,20,26,0.6)", backdropFilter: "blur(7px)", WebkitBackdropFilter: "blur(7px)",
+                background: "rgba(42,45,53,0.6)", backdropFilter: "blur(7px)", WebkitBackdropFilter: "blur(7px)",
                 border: priorityDrag === "high" ? "1.5px solid #e8e8e8" : "1.5px solid #9a9a9a",
                 borderRadius: 7, padding: "13px 15px 11px",
                 boxShadow: "0 0 0 1px rgba(255,255,255,0.03), 0 8px 26px rgba(0,0,0,0.4)",
