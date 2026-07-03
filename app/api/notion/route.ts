@@ -233,32 +233,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, item: { id: blockId, text: text.trim(), checked: false } });
     }
 
-    // Toggle a checklist item's checkbox (itemId = Notion BLOCK id)
-    if (action === "toggleChecklistItem") {
-      const { itemId, checked } = body;
-      if (!itemId) return NextResponse.json({ error: "Missing itemId" }, { status: 400 });
-      if (typeof checked !== "boolean") {
-        return NextResponse.json({ error: "Invalid checked" }, { status: 400 });
-      }
-
-      const notionRes = await fetch(`https://api.notion.com/v1/blocks/${itemId}`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Notion-Version": "2022-06-28",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ to_do: { checked } }),
-      });
-
-      if (!notionRes.ok) {
-        const err = await notionRes.json();
-        return NextResponse.json({ error: err }, { status: notionRes.status });
-      }
-
-      return NextResponse.json({ success: true, item: { id: itemId, checked } });
-    }
-
     // Delete (archive) a checklist item (itemId = Notion BLOCK id)
     if (action === "deleteChecklistItem") {
       const { itemId } = body;

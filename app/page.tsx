@@ -734,11 +734,10 @@ function HoverPopover({ project, rect }: { project: Project; rect: DOMRect }) {
 
 // Click-to-open editor for a project's checklist. Portalled to document.body so
 // the panel's overflow/backdrop-filter stacking context can't clip it.
-function ProjectModal({ project, onClose, onAddItem, onToggleItem, onDeleteItem, onEditTitle, onArchive }: {
+function ProjectModal({ project, onClose, onAddItem, onDeleteItem, onEditTitle, onArchive }: {
   project: Project;
   onClose: () => void;
   onAddItem: (projectId: string, text: string) => void;
-  onToggleItem: (projectId: string, itemId: string, checked: boolean) => void;
   onDeleteItem: (projectId: string, itemId: string) => void;
   onEditTitle: (id: string, title: string) => Promise<void>;
   onArchive: (id: string) => void;
@@ -830,37 +829,28 @@ function ProjectModal({ project, onClose, onAddItem, onToggleItem, onDeleteItem,
           ) : project.items.map((it) => {
             const temp = it.id.startsWith("temp-");
             return (
-              <div key={it.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", borderBottom: "1px solid #1e1e1e" }}
-                onMouseEnter={(e) => { const x = e.currentTarget.querySelector("[data-del]") as HTMLElement | null; if (x) x.style.opacity = "1"; }}
-                onMouseLeave={(e) => { const x = e.currentTarget.querySelector("[data-del]") as HTMLElement | null; if (x) x.style.opacity = "0"; }}
-              >
+              <div key={it.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", borderBottom: "1px solid #1e1e1e" }}>
+                {/* click the check to remove the item */}
                 <button
                   disabled={temp}
-                  onClick={() => onToggleItem(project.id, it.id, !it.checked)}
-                  style={{
-                    width: 18, height: 18, flexShrink: 0, marginTop: 1,
-                    background: it.checked ? "#2a2a2a" : "#1e1e1e",
-                    border: "1px solid #505050", borderRadius: 3,
-                    color: "#fff", fontSize: 11, lineHeight: 1, cursor: temp ? "default" : "pointer",
-                    opacity: temp ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center",
-                  }}
-                >{it.checked ? "✓" : ""}</button>
-                <span style={{
-                  flex: 1, fontSize: 13, color: it.checked ? "#555" : "#b0b0b0",
-                  textDecoration: it.checked ? "line-through" : "none", lineHeight: 1.4, minWidth: 0, wordBreak: "break-word",
-                }}>{it.text || "Untitled"}</span>
-                <button
-                  data-del
-                  disabled={temp}
+                  title="Remove"
+                  aria-label="Remove item"
                   onClick={() => onDeleteItem(project.id, it.id)}
                   style={{
-                    background: "none", border: "none", cursor: temp ? "default" : "pointer",
-                    color: "#555", fontSize: 13, lineHeight: 1, padding: "0 2px", flexShrink: 0,
-                    opacity: 0, transition: "opacity 0.15s, color 0.15s",
+                    width: 18, height: 18, flexShrink: 0, marginTop: 1,
+                    background: "#1e1e1e",
+                    border: "1px solid #505050", borderRadius: 3,
+                    color: "#aaa", fontSize: 11, lineHeight: 1, cursor: temp ? "default" : "pointer",
+                    opacity: temp ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center",
+                    transition: "color 0.15s, border-color 0.15s, background 0.15s",
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = "#999")}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = "#555")}
-                >✕</button>
+                  onMouseEnter={(e) => { if (temp) return; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; e.currentTarget.style.background = "#2a2a2a"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; e.currentTarget.style.background = "#1e1e1e"; }}
+                >✓</button>
+                <span style={{
+                  flex: 1, fontSize: 13, color: "#b0b0b0",
+                  lineHeight: 1.4, minWidth: 0, wordBreak: "break-word",
+                }}>{it.text || "Untitled"}</span>
               </div>
             );
           })}
@@ -1178,22 +1168,6 @@ function Dashboard() {
       patchProject(projectId, p => ({ ...p, items: p.items.map(it => it.id === tempId ? { ...it, id: data.item.id } : it) }));
     } catch {
       patchProject(projectId, p => ({ ...p, items: p.items.filter(it => it.id !== tempId) }));
-    }
-  };
-
-  const toggleChecklistItem = async (projectId: string, itemId: string, checked: boolean) => {
-    if (itemId.startsWith("temp-")) return; // block doesn't exist yet
-    patchProject(projectId, p => ({ ...p, items: p.items.map(it => it.id === itemId ? { ...it, checked } : it) }));
-    const revert = () => patchProject(projectId, p => ({ ...p, items: p.items.map(it => it.id === itemId ? { ...it, checked: !checked } : it) }));
-    try {
-      const res = await fetch("/api/notion", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "toggleChecklistItem", itemId, checked }),
-      });
-      if (!res.ok) revert();
-    } catch {
-      revert();
     }
   };
 
@@ -1747,7 +1721,6 @@ function Dashboard() {
           project={openProject}
           onClose={() => setOpenProjectId(null)}
           onAddItem={addChecklistItem}
-          onToggleItem={toggleChecklistItem}
           onDeleteItem={deleteChecklistItem}
           onEditTitle={editTask}
           onArchive={(id) => { completeTask(id); setOpenProjectId(null); }}
