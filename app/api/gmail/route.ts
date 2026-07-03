@@ -245,6 +245,18 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   if (body.action === "reply") return gmailReply(body.id, body.body, token, refreshToken);
 
+  // Undo an archive: put the message back in the inbox
+  if (body.action === "unarchive") {
+    if (!body.id || !token) return NextResponse.json({ error: "No token or id" }, { status: 400 });
+    const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${body.id}/modify`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ addLabelIds: ["INBOX"] }),
+    });
+    if (!res.ok) return NextResponse.json({ error: "Unarchive failed" }, { status: res.status });
+    return NextResponse.json({ success: true });
+  }
+
   const { id } = body;
   if (!id || typeof id !== "string") {
     return NextResponse.json({ error: "Missing message id" }, { status: 400 });

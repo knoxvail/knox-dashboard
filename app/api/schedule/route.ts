@@ -95,12 +95,12 @@ export async function GET() {
   }
 }
 
-// Delete (archive) a scheduled event page
+// Delete (archive) a scheduled event page — or restore it (action:"restore") for Undo
 export async function POST(request: Request) {
   const token = process.env.NOTION_TOKEN;
   if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
   try {
-    const { id } = await request.json();
+    const { id, action } = await request.json();
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
     const res = await fetch(`https://api.notion.com/v1/pages/${id}`, {
       method: "PATCH",
@@ -109,7 +109,7 @@ export async function POST(request: Request) {
         "Notion-Version": "2022-06-28",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ archived: true }),
+      body: JSON.stringify({ archived: action !== "restore" }),
     });
     if (!res.ok) {
       const err = await res.json();

@@ -165,6 +165,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
 
+    // Restore (un-archive) a page — used by Undo
+    if (action === "restore") {
+      if (!id) return NextResponse.json({ error: "Missing task id" }, { status: 400 });
+      const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ archived: false }),
+      });
+      if (!notionRes.ok) {
+        const err = await notionRes.json();
+        return NextResponse.json({ error: err }, { status: notionRes.status });
+      }
+      return NextResponse.json({ success: true });
+    }
+
     // Handle task update (edit)
     if (action === "update") {
       if (!id || !title) {

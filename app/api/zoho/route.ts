@@ -193,6 +193,30 @@ export async function POST(request: NextRequest) {
   const token = await getAccessToken();
   if (!token) return NextResponse.json({ error: "Token refresh failed" }, { status: 401 });
 
+  // Undo an archive: move the message back to the inbox
+  if (bodyJson.action === "unarchive") {
+    try {
+      const accountId = await getAccountId(token);
+      let folderId = "";
+      try {
+        const folders = await getFolders(token, accountId);
+        const inbox = findFolder(folders, ["inbox"], ["inbox"]);
+        if (inbox?.folderId) folderId = String(inbox.folderId);
+      } catch {}
+      const res = await zohoFetch(`/api/accounts/${accountId}/updatemessage`, token, {
+        method: "PUT",
+        body: JSON.stringify(folderId
+          ? { mode: "moveMails", messageId: [id], destfolderId: folderId }
+          : { mode: "unArchiveMails", messageId: [id] }),
+      });
+      const b = await res.json().catch(() => ({}));
+      if (!res.ok) return NextResponse.json({ error: b }, { status: res.status });
+      return NextResponse.json({ success: true });
+    } catch (e: any) {
+      return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
+    }
+  }
+
   // Reply on the same thread (requires the ZohoMail.messages.ALL scope, which
   // the token already has). Resolves the sender + subject server-side.
   if (bodyJson.action === "reply") {

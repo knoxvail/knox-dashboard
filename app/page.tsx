@@ -1148,6 +1148,36 @@ function Dashboard() {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), undo ? 7000 : 4000);
   }, []);
 
+  // Global undo stack. Every mutation pushes an inverse closure; Ctrl/Cmd+Z pops
+  // and runs the most recent one. Capped so it can't grow without bound.
+  const undoStack = useRef<{ label: string; run: () => Promise<void> }[]>([]);
+  const pushUndo = useCallback((label: string, run: () => Promise<void>) => {
+    undoStack.current.push({ label, run });
+    if (undoStack.current.length > 40) undoStack.current.shift();
+  }, []);
+  const undoLast = useCallback(async () => {
+    const item = undoStack.current.pop();
+    if (!item) { toast("Nothing to undo"); return; }
+    try { await item.run(); toast(`Undid: ${item.label}`); }
+    catch { toast("Undo failed"); }
+  }, [toast]);
+
+  // Ctrl/Cmd+Z anywhere undoes the last mutation. Skip when the user is typing in
+  // a text field so the browser's native text-undo keeps working there.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+      if (e.key !== "z" && e.key !== "Z") return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = (el?.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || el?.isContentEditable) return;
+      e.preventDefault();
+      undoLast();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undoLast]);
+
   // Each source fetches independently so one slow endpoint never blocks the
   // others — no single-dependency bottleneck.
   const fetchTasks = useCallback(async () => {
@@ -1272,7 +1302,11 @@ function Dashboard() {
     };
   }, [hover]);
 
+  // trim a title for use inside a short undo label
+  const undoClip = (s: string) => (s.length > 24 ? s.slice(0, 24) + "…" : s);
+
   const completeTask = async (id: string) => {
+    const done = shortTerm.find(t => t.id === id) || longTerm.find(t => t.id === id) || clients.find(t => t.id === id);
     // optimistic: drop it from the UI immediately
     setShortTerm(prev => prev.filter(t => t.id !== id));
     setLongTerm(prev => prev.filter(t => t.id !== id));
@@ -1283,13 +1317,18 @@ function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, action: "complete" }),
       });
-      if (!res.ok) { await fetchTasks(); toast("Couldn’t complete — reverted"); }
+      if (!res.ok) { await fetchTasks(); toast("Couldn’t complete — reverted"); return; }
+      pushUndo(`complete “${undoClip(done?.title || "task")}”`, async () => {
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action: "restore" }) });
+        await fetchTasks();
+      });
     } catch {
       await fetchTasks(); toast("Couldn’t complete — reverted");
     }
   };
 
   const editTask = async (id: string, newTitle: string) => {
+    const prevTitle = (shortTerm.find(t => t.id === id) || longTerm.find(t => t.id === id) || clients.find(t => t.id === id))?.title ?? "";
     // Optimistic update
     setShortTerm(prev => prev.map(t => t.id === id ? { ...t, title: newTitle } : t));
     setLongTerm(prev => prev.map(t => t.id === id ? { ...t, title: newTitle } : t));
@@ -1305,6 +1344,13 @@ function Dashboard() {
       if (!res.ok) {
         await fetchTasks(); // revert just the task lists (no full-dashboard reload)
         toast("Rename failed — reverted");
+        return;
+      }
+      if (prevTitle && prevTitle !== newTitle) {
+        pushUndo(`rename to “${undoClip(newTitle)}”`, async () => {
+          await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, title: prevTitle, action: "update" }) });
+          await fetchTasks();
+        });
       }
     } catch {
       await fetchTasks();
@@ -1339,6 +1385,10 @@ function Dashboard() {
         if (priority && status === "Short Term") {
           fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setPriority", id: data.id, priority: true }) }).catch(() => {});
         }
+        pushUndo(`add “${undoClip(title)}”`, async () => {
+          await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: data.id, action: "complete" }) });
+          await fetchTasks();
+        });
       } else fetchTasks();
     } catch {
       rollback(); toast("Couldn’t add — try again");
@@ -1366,6 +1416,11 @@ function Dashboard() {
         // carry an already-open modal across the swap so it doesn't vanish
         setLongTerm(prev => prev.map(p => p.id === tempId ? { ...p, id: data.id } : p));
         setOpenProjectId(cur => (cur === tempId ? data.id : cur));
+        pushUndo(`add project “${undoClip(title)}”`, async () => {
+          setOpenProjectId(cur => (cur === data.id ? null : cur));
+          await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: data.id, action: "complete" }) });
+          await fetchTasks();
+        });
       } else {
         fetchTasks();
       }
@@ -1404,6 +1459,11 @@ function Dashboard() {
       }
       // swap the temp id for the real Notion block id
       patchProject(projectId, p => ({ ...p, items: p.items.map(it => it.id === tempId ? { ...it, id: data.item.id } : it) }));
+      const realId = data.item.id;
+      pushUndo(`add item “${undoClip(trimmed)}”`, async () => {
+        patchProject(projectId, p => ({ ...p, items: p.items.filter(it => it.id !== realId) }));
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "deleteChecklistItem", itemId: realId }) });
+      });
     } catch {
       patchProject(projectId, p => ({ ...p, items: p.items.filter(it => it.id !== tempId) }));
     }
@@ -1432,7 +1492,20 @@ function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "deleteChecklistItem", itemId }),
       });
-      if (!res.ok) restore();
+      if (!res.ok) { restore(); return; }
+      if (removed) {
+        // the original block is gone; undo re-creates it as a fresh block
+        pushUndo(`delete item “${undoClip(removed.text)}”`, async () => {
+          const r = await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "addChecklistItem", projectId, text: removed.text }) });
+          const d = await r.json().catch(() => ({}));
+          const newId = d.item?.id || `temp-${Date.now()}`;
+          patchProject(projectId, p => {
+            const items = [...p.items];
+            items.splice(Math.min(idx, items.length), 0, { id: newId, text: removed.text, checked: false });
+            return { ...p, items };
+          });
+        });
+      }
     } catch {
       restore();
     }
@@ -1451,7 +1524,11 @@ function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "updateChecklistItem", itemId, text: trimmed }),
       });
-      if (!res.ok) { revert(); toast("Couldn’t rename item — reverted"); }
+      if (!res.ok) { revert(); toast("Couldn’t rename item — reverted"); return; }
+      pushUndo(`rename item to “${undoClip(trimmed)}”`, async () => {
+        revert();
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "updateChecklistItem", itemId, text: prev }) });
+      });
     } catch {
       revert(); toast("Couldn’t rename item — reverted");
     }
@@ -1498,13 +1575,15 @@ function Dashboard() {
     await fetchTasks();
     const clip = (s: string) => (s.length > 22 ? s.slice(0, 22) + "…" : s);
     if (ok) {
-      toast(`Merged “${clip(source.title)}” into “${clip(targetTitle)}”`, async () => {
+      const undoMerge = async () => {
         await fetch("/api/notion", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "unmerge", sourceId, blockIds: appendedIds }),
         }).catch(() => {});
         await fetchTasks();
-      });
+      };
+      toast(`Merged “${clip(source.title)}” into “${clip(targetTitle)}”`, undoMerge);
+      pushUndo(`merge “${undoClip(source.title)}”`, undoMerge);
     } else {
       toast("Merge failed — reverted");
     }
@@ -1530,13 +1609,18 @@ function Dashboard() {
       setLongTerm(prev => [...prev, src]);
     }
 
+    const origin: "Short Term" | "Long Term" = inShort ? "Short Term" : "Long Term";
     try {
       const res = await fetch("/api/notion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status: target, action: "move" }),
       });
-      if (!res.ok) { await fetchTasks(); toast("Move failed — reverted"); }
+      if (!res.ok) { await fetchTasks(); toast("Move failed — reverted"); return; }
+      pushUndo(`move “${undoClip(src.title)}” to ${target}`, async () => {
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status: origin, action: "move" }) });
+        await fetchTasks();
+      });
     } catch {
       await fetchTasks(); toast("Move failed — reverted");
     }
@@ -1548,6 +1632,8 @@ function Dashboard() {
     if (id.startsWith("temp-")) return;
     const cur = findProject(id);
     if (cur && !!cur.priority === priority) return; // already in that state
+    const wasPriority = !!cur?.priority;
+    const title = cur?.title || "task";
     patchProject(id, p => ({ ...p, priority }));
     try {
       const res = await fetch("/api/notion", {
@@ -1555,7 +1641,11 @@ function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "setPriority", id, priority }),
       });
-      if (!res.ok) { await fetchTasks(); toast("Priority change failed — reverted"); }
+      if (!res.ok) { await fetchTasks(); toast("Priority change failed — reverted"); return; }
+      pushUndo(`${priority ? "flag" : "unflag"} “${undoClip(title)}”`, async () => {
+        patchProject(id, p => ({ ...p, priority: wasPriority }));
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setPriority", id, priority: wasPriority }) });
+      });
     } catch {
       await fetchTasks(); toast("Priority change failed — reverted");
     }
@@ -1570,6 +1660,7 @@ function Dashboard() {
   };
 
   const archiveEmail = async (id: string) => {
+    const em = emails.find(e => e.id === id);
     setEmails(prev => prev.filter(e => e.id !== id));
     try {
       const res = await fetch("/api/gmail", {
@@ -1577,12 +1668,17 @@ function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
       });
-      if (!res.ok) toast("Archive failed — reverted");
+      if (!res.ok) { toast("Archive failed — reverted"); }
+      else pushUndo(`archive “${undoClip(em?.subject || "email")}”`, async () => {
+        await fetch("/api/gmail", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action: "unarchive" }) });
+        await fetchGmail();
+      });
     } catch { toast("Archive failed — reverted"); }
     await fetchGmail();
   };
 
   const archiveSorenEmail = async (id: string) => {
+    const em = sorenEmails.find(e => e.id === id);
     setSorenEmails(prev => prev.filter(e => e.id !== id));
     try {
       const res = await fetch("/api/zoho", {
@@ -1590,12 +1686,17 @@ function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
       });
-      if (!res.ok) toast("Archive failed — reverted");
+      if (!res.ok) { toast("Archive failed — reverted"); }
+      else pushUndo(`archive “${undoClip(em?.subject || "email")}”`, async () => {
+        await fetch("/api/zoho", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action: "unarchive" }) });
+        await fetchSoren();
+      });
     } catch { toast("Archive failed — reverted"); }
     await fetchSoren();
   };
 
   const deleteEvent = async (id: string) => {
+    const ev = events.find(e => e.id === id);
     setEvents(prev => prev.filter(e => e.id !== id));
     try {
       const res = await fetch("/api/schedule", {
@@ -1603,7 +1704,11 @@ function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
       });
-      if (!res.ok) { await fetchSchedule(); toast("Couldn’t delete — reverted"); }
+      if (!res.ok) { await fetchSchedule(); toast("Couldn’t delete — reverted"); return; }
+      if (!id.startsWith("temp-")) pushUndo(`delete event “${undoClip(ev?.title || "event")}”`, async () => {
+        await fetch("/api/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action: "restore" }) });
+        await fetchSchedule();
+      });
     } catch { await fetchSchedule(); toast("Couldn’t delete — reverted"); }
   };
 
@@ -1629,7 +1734,12 @@ function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, date: notionDate, type }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) { setEvents(prev => prev.filter(e => e.id !== tempId)); toast("Couldn’t add event — try again"); return; }
+      if (data.id) pushUndo(`add event “${undoClip(title)}”`, async () => {
+        await fetch("/api/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: data.id }) });
+        await fetchSchedule();
+      });
     } catch { setEvents(prev => prev.filter(e => e.id !== tempId)); toast("Couldn’t add event — try again"); return; }
     fetchSchedule();
   };
