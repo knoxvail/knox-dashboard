@@ -7,9 +7,9 @@ import { createPortal } from "react-dom";
 // while still measuring/positioning before paint in the browser).
 const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
-type Task = { id: string; title: string };
+type Task = { id: string; title: string; order?: number | null };
 type ChecklistItem = { id: string; text: string; checked: boolean }; // id = Notion BLOCK id
-type Project = { id: string; title: string; items: ChecklistItem[]; priority?: boolean }; // id = Notion PAGE id
+type Project = { id: string; title: string; items: ChecklistItem[]; priority?: boolean; order?: number | null }; // id = Notion PAGE id
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
 type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string };
@@ -379,6 +379,8 @@ function TaskItem({
   onOpen,
   onHover,
   onLeave,
+  listKey,
+  onReorder,
 }: {
   task: Task;
   itemCount?: number; // how many checklist items this task/project holds (drives the hover preview)
@@ -390,9 +392,13 @@ function TaskItem({
   onOpen?: (id: string) => void; // when set, clicking the row opens the modal instead of inline-editing
   onHover?: (id: string, rect: DOMRect) => void; // preview this row's checklist on hover (only when it has content)
   onLeave?: () => void;
+  listKey?: string; // which list this row belongs to (for same-list drag-reorder)
+  onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => boolean;
 }) {
   const [inputValue, setInputValue] = useState(task.title);
+  const [overSide, setOverSide] = useState<null | "top" | "bottom">(null); // reorder drop indicator
   const inputRef = useRef<HTMLInputElement>(null);
+  const reorderType = `x-list/${listKey}`; // custom drag type, readable during dragover to detect same-list drags
 
   useEffect(() => {
     if (isEditing) {
@@ -429,11 +435,31 @@ function TaskItem({
       draggable={!isEditing}
       onDragStart={(e) => {
         e.dataTransfer.setData("text/plain", task.id);
+        if (listKey) e.dataTransfer.setData(reorderType, ""); // marks the source list so peers can detect same-list reorder
         e.dataTransfer.effectAllowed = "move";
         e.currentTarget.style.opacity = "0.4";
         onLeave?.(); // don't leave a stale preview pinned while dragging
       }}
-      onDragEnd={(e) => { e.currentTarget.style.opacity = "1"; }}
+      onDragEnd={(e) => { e.currentTarget.style.opacity = "1"; setOverSide(null); }}
+      // same-list drag hovering → show an insertion line; always preventDefault so
+      // cross-list drops still land here and bubble to the move/priority zone
+      onDragOver={onReorder ? (e) => {
+        e.preventDefault();
+        if (e.dataTransfer.types.includes(reorderType)) {
+          const b = e.currentTarget.getBoundingClientRect();
+          setOverSide(e.clientY - b.top < b.height / 2 ? "top" : "bottom");
+        }
+      } : undefined}
+      onDragLeave={onReorder ? (e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverSide(null); } : undefined}
+      onDrop={onReorder ? (e) => {
+        const draggedId = e.dataTransfer.getData("text/plain");
+        const before = overSide ? overSide === "top" : true;
+        setOverSide(null);
+        if (e.dataTransfer.types.includes(reorderType)) {
+          const handled = onReorder(draggedId, task.id, before);
+          if (handled) { e.preventDefault(); e.stopPropagation(); } // else let it bubble to the move/priority drop zone
+        }
+      } : undefined}
       style={{
         borderLeft: "1px solid #2a2a2a",
         paddingLeft: 10,
@@ -444,6 +470,7 @@ function TaskItem({
         gap: 8,
         marginBottom: 10,
         cursor: isEditing ? "auto" : "grab",
+        boxShadow: overSide === "top" ? "inset 0 2px 0 #8a8a8a" : overSide === "bottom" ? "inset 0 -2px 0 #8a8a8a" : "none",
       }}
       onMouseEnter={e => {
         if (!isEditing) {
@@ -526,7 +553,7 @@ function TaskItem({
   );
 }
 
-function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave }: { tasks: Task[]; onComplete: (id: string) => void; onEdit: (id: string, newTitle: string) => Promise<void>; onOpen?: (id: string) => void; onHover?: (id: string, rect: DOMRect) => void; onLeave?: () => void }) {
+function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave, listKey, onReorder }: { tasks: Task[]; onComplete: (id: string) => void; onEdit: (id: string, newTitle: string) => Promise<void>; onOpen?: (id: string) => void; onHover?: (id: string, rect: DOMRect) => void; onLeave?: () => void; listKey?: string; onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => boolean }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   if (tasks.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -548,6 +575,8 @@ function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave }: { tas
           onOpen={onOpen}
           onHover={onHover}
           onLeave={onLeave}
+          listKey={listKey}
+          onReorder={onReorder}
         />
       ))}
     </>
@@ -731,6 +760,9 @@ const AddEventInput = forwardRef<AddHandle, { onAdd: (title: string, date: strin
 const TASK_HUES = [140, 118, 96, 74, 54, 38, 22, 8, 352, 336, 320, 302, 285];
 const taskHue = (count: number) => TASK_HUES[Math.min(Math.max(count, 0), TASK_HUES.length - 1)];
 
+// stable sort by manual Order; unordered items (null) keep their fetch order (last)
+const byOrder = (a: { order?: number | null }, b: { order?: number | null }) => (a.order ?? Infinity) - (b.order ?? Infinity);
+
 // A Long Term "project" bucket: a draggable box that opens a modal on click and
 // previews its checklist on hover. Drag (move to Short Term) and click (open) are
 // disambiguated by a per-card drag flag.
@@ -812,7 +844,7 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
       )}
       {/* project title — shown as a heading (auto-capitalized) */}
       <span style={{
-        fontSize: 13, color: "#e8e8e8", fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
+        fontSize: 13, color: "#e8e8e8", fontFamily: "'DM Sans', sans-serif", fontWeight: 500,
         lineHeight: 1.35, overflowWrap: "break-word", textTransform: "capitalize",
       }}>{project.title}</span>
       {/* every task in the project, listed under the title */}
@@ -1000,7 +1032,7 @@ function HoverPopover({ project, rect }: { project: Project; rect: DOMRect }) {
 
 // Click-to-open editor for a project's checklist. Portalled to document.body so
 // the panel's overflow/backdrop-filter stacking context can't clip it.
-function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditItem, onEditTitle, onArchive, onMove }: {
+function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditItem, onEditTitle, onArchive, onMove, onReorderItems, onExtractItem }: {
   project: Project;
   list: "Short Term" | "Long Term" | null; // which list the project is in (for the Move control)
   onClose: () => void;
@@ -1010,12 +1042,15 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
   onEditTitle: (id: string, title: string) => Promise<void>;
   onArchive: (id: string) => void;
   onMove: (id: string, target: "Short Term" | "Long Term") => void;
+  onReorderItems: (projectId: string, items: ChecklistItem[]) => void; // drag-reorder the checklist
+  onExtractItem: (projectId: string, itemId: string) => void; // drag an item off the window → its own task
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState(project.title);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [itemDraft, setItemDraft] = useState("");
   const [newItem, setNewItem] = useState("");
+  const [itemOver, setItemOver] = useState<{ id: string; side: "top" | "bottom" } | null>(null); // reorder drop indicator
   const addRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const isTemp = project.id.startsWith("temp-");
@@ -1126,8 +1161,52 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
             </div>
           ) : project.items.map((it) => {
             const temp = it.id.startsWith("temp-");
+            const draggableItem = !temp && editingItemId !== it.id;
             return (
-              <div key={it.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", borderBottom: "1px solid #1e1e1e" }}>
+              <div
+                key={it.id}
+                draggable={draggableItem}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("text/plain", it.id);
+                  e.dataTransfer.setData("x-checklist", "");
+                  e.dataTransfer.effectAllowed = "move";
+                  e.currentTarget.style.opacity = "0.4";
+                }}
+                onDragEnd={(e) => {
+                  e.currentTarget.style.opacity = "1";
+                  // released off the modal card → pull it out into its own task
+                  const r = dialogRef.current?.getBoundingClientRect();
+                  const outside = r ? (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) : false;
+                  if (outside && !temp) onExtractItem(project.id, it.id);
+                  setItemOver(null);
+                }}
+                onDragOver={(e) => {
+                  if (!e.dataTransfer.types.includes("x-checklist")) return;
+                  e.preventDefault();
+                  const b = e.currentTarget.getBoundingClientRect();
+                  setItemOver({ id: it.id, side: e.clientY - b.top < b.height / 2 ? "top" : "bottom" });
+                }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setItemOver(cur => (cur?.id === it.id ? null : cur)); }}
+                onDrop={(e) => {
+                  const draggedId = e.dataTransfer.getData("text/plain");
+                  const side = itemOver?.id === it.id ? itemOver.side : "top";
+                  setItemOver(null);
+                  if (!draggedId || draggedId === it.id || !e.dataTransfer.types.includes("x-checklist")) return;
+                  e.preventDefault(); e.stopPropagation();
+                  const dr = project.items.find(x => x.id === draggedId);
+                  if (!dr) return;
+                  const arr = project.items.filter(x => x.id !== draggedId);
+                  const ti = arr.findIndex(x => x.id === it.id);
+                  if (ti < 0) return;
+                  arr.splice(side === "top" ? ti : ti + 1, 0, dr);
+                  onReorderItems(project.id, arr);
+                }}
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", borderBottom: "1px solid #1e1e1e",
+                  cursor: draggableItem ? "grab" : "default",
+                  boxShadow: itemOver?.id === it.id ? (itemOver.side === "top" ? "inset 0 2px 0 #8a8a8a" : "inset 0 -2px 0 #8a8a8a") : "none",
+                }}
+              >
                 {/* click the check to remove the item */}
                 <button
                   disabled={temp}
@@ -1288,15 +1367,22 @@ function Dashboard() {
     return () => window.removeEventListener("keydown", onKey);
   }, [undoLast]);
 
+  // ensure the tasks DB has an "Order" field so manual reordering can persist
+  useEffect(() => {
+    fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "ensureOrderField" }) }).catch(() => {});
+  }, []);
+
   // Each source fetches independently so one slow endpoint never blocks the
   // others — no single-dependency bottleneck.
   const fetchTasks = useCallback(async () => {
     try {
       const res = await fetch("/api/notion");
       const data = await res.json();
-      setShortTerm(data.shortTerm || []);
+      // Short Term + Clients honor the manual Order (persisted in Notion); Long
+      // Term is arranged by warmth in ProjectGrid so its order is left alone.
+      setShortTerm((data.shortTerm || []).slice().sort(byOrder));
       setLongTerm(data.longTerm || []);
-      setClients(data.clients || []);
+      setClients((data.clients || []).slice().sort(byOrder));
     } catch {}
   }, []);
 
@@ -1648,6 +1734,62 @@ function Dashboard() {
     }
   };
 
+  // Reorder a project's checklist items. Notion can't move blocks, so we recreate
+  // them in the new order (server appends the new sequence then deletes the old
+  // blocks); the item ids therefore change, which we swap in from the response.
+  const reorderChecklistItems = async (projectId: string, newItems: ChecklistItem[]) => {
+    const proj = findProject(projectId);
+    if (!proj) return;
+    const prevItems = proj.items;
+    if (newItems.some(it => it.id.startsWith("temp-"))) return; // wait until every block is saved
+    if (newItems.length === prevItems.length && newItems.every((it, i) => it.id === prevItems[i].id)) return; // unchanged
+    patchProject(projectId, p => ({ ...p, items: newItems })); // optimistic
+    const oldIds = prevItems.map(it => it.id);
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reorderChecklist", projectId, items: newItems.map(it => ({ text: it.text, checked: it.checked })), oldIds }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !Array.isArray(data.items)) { await fetchTasks(); toast("Couldn’t reorder — reverted"); return; }
+      patchProject(projectId, p => ({ ...p, items: data.items })); // swap temp/old ids for the new block ids
+      pushUndo("reorder items", async () => {
+        await fetch("/api/notion", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "reorderChecklist", projectId, items: prevItems.map(it => ({ text: it.text, checked: it.checked })), oldIds: data.items.map((it: any) => it.id) }),
+        }).catch(() => {});
+        await fetchTasks();
+      });
+    } catch { await fetchTasks(); toast("Couldn’t reorder — reverted"); }
+  };
+
+  // Pull a checklist item OUT of a project (drag it off the modal): it becomes its
+  // own Short Term task and the project window closes.
+  const extractChecklistItem = async (projectId: string, itemId: string) => {
+    if (itemId.startsWith("temp-") || projectId.startsWith("temp-")) return;
+    const removed = findProject(projectId)?.items.find(it => it.id === itemId);
+    if (!removed) return;
+    const text = removed.text;
+    patchProject(projectId, p => ({ ...p, items: p.items.filter(it => it.id !== itemId) })); // optimistic remove
+    const tempId = `temp-extract-${Date.now()}`;
+    setShortTerm(prev => [...prev, { id: tempId, title: text || "Untitled", items: [], priority: false }]);
+    setOpenProjectId(null); // pull the user out of the window view
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "extractItem", projectId, itemId, text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.id) { setShortTerm(prev => prev.filter(t => t.id !== tempId)); await fetchTasks(); toast("Couldn’t pull out — reverted"); return; }
+      setShortTerm(prev => prev.map(t => t.id === tempId ? { ...t, id: data.id } : t));
+      pushUndo(`pull out “${undoClip(text)}”`, async () => {
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: data.id, action: "complete" }) }).catch(() => {});
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "addChecklistItem", projectId, text }) }).catch(() => {});
+        await fetchTasks();
+      });
+    } catch { setShortTerm(prev => prev.filter(t => t.id !== tempId)); await fetchTasks(); toast("Couldn’t pull out — reverted"); }
+  };
+
   // Merge one movable item INTO a bucket: its title (and its own checklist items)
   // become checklist items in the target, and the source page is archived.
   const mergeInto = async (targetId: string, sourceId: string) => {
@@ -1771,6 +1913,44 @@ function Dashboard() {
     if (!id || id.startsWith("temp-")) return;
     if (longTerm.some(p => p.id === id)) moveTask(id, "Short Term");
     setPriority(id, priority);
+  };
+
+  // Persist a list's manual order to Notion (Order = index for each page id).
+  const persistTaskOrder = (ids: string[]) => {
+    fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "reorderTasks", ids }) }).catch(() => {});
+  };
+  const sortByIds = <T extends { id: string }>(arr: T[], ids: string[]) => {
+    const pos = new Map(ids.map((id, i) => [id, i]));
+    return [...arr].sort((a, b) => (pos.get(a.id) ?? Infinity) - (pos.get(b.id) ?? Infinity));
+  };
+
+  // Drag-reorder a task within its OWN list. Short Term reorders only within the
+  // same box (high vs normal); returns true if it actually reordered so the row's
+  // drop handler knows to stop the event (else it bubbles to the move/priority
+  // drop zone). Long Term isn't reorderable — it's arranged by warmth.
+  const reorderTask = (draggedId: string, targetId: string, placeBefore: boolean): boolean => {
+    if (!draggedId || draggedId === targetId || draggedId.startsWith("temp-")) return false;
+    const inShort = shortTerm.some(t => t.id === draggedId) && shortTerm.some(t => t.id === targetId);
+    const inClients = clients.some(t => t.id === draggedId) && clients.some(t => t.id === targetId);
+    const apply = (list: (Task | Project)[], setList: (v: any) => void) => {
+      const prevIds = list.map(t => t.id);
+      const dr = list.find(t => t.id === draggedId)!;
+      const arr = list.filter(t => t.id !== draggedId);
+      const ti = arr.findIndex(t => t.id === targetId);
+      arr.splice(placeBefore ? ti : ti + 1, 0, dr);
+      setList(arr);
+      persistTaskOrder(arr.map(t => t.id));
+      pushUndo("reorder", async () => { setList((cur: any[]) => sortByIds(cur, prevIds)); persistTaskOrder(prevIds); });
+    };
+    if (inShort) {
+      const dr = shortTerm.find(t => t.id === draggedId)!;
+      const tg = shortTerm.find(t => t.id === targetId)!;
+      if (!!dr.priority !== !!tg.priority) return false; // different box → let it move instead
+      apply(shortTerm, setShortTerm);
+      return true;
+    }
+    if (inClients) { apply(clients, setClients); return true; }
+    return false;
   };
 
   const archiveEmail = async (id: string) => {
@@ -2005,7 +2185,7 @@ function Dashboard() {
                     <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 10}%` }} />
                   </div>
                 ))
-              ) : <TaskList tasks={clients} onComplete={completeTask} onEdit={editTask} />}
+              ) : <TaskList tasks={clients} onComplete={completeTask} onEdit={editTask} listKey="clients" onReorder={reorderTask} />}
             </div>
             <AddTaskInput ref={clientsAddRef} onAdd={(title) => addTask(title, "Clients")} />
           </Panel>
@@ -2042,7 +2222,7 @@ function Dashboard() {
                   <div style={{ borderLeft: "1px dashed #4a4a4a", padding: "2px 0 2px 10px" }}>
                     <p style={{ margin: 0, color: "#808080", fontSize: 11, fontStyle: "italic" }}>Drag tasks here, or use + to add</p>
                   </div>
-                ) : <TaskList tasks={shortHigh} onComplete={completeTask} onEdit={editTask} onOpen={handleOpenProject} onHover={(id, rect) => setHover({ id, rect })} onLeave={() => setHover(null)} />}
+                ) : <TaskList tasks={shortHigh} onComplete={completeTask} onEdit={editTask} onOpen={handleOpenProject} onHover={(id, rect) => setHover({ id, rect })} onLeave={() => setHover(null)} listKey="short" onReorder={reorderTask} />}
               </div>
               <AddTaskInput ref={highAddRef} onAdd={(title) => addTask(title, "Short Term", true)} placeholder="New priority task..." />
             </div>
@@ -2072,7 +2252,7 @@ function Dashboard() {
                       <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 8}%` }} />
                     </div>
                   ))
-                ) : <TaskList tasks={shortNormal} onComplete={completeTask} onEdit={editTask} onOpen={handleOpenProject} onHover={(id, rect) => setHover({ id, rect })} onLeave={() => setHover(null)} />}
+                ) : <TaskList tasks={shortNormal} onComplete={completeTask} onEdit={editTask} onOpen={handleOpenProject} onHover={(id, rect) => setHover({ id, rect })} onLeave={() => setHover(null)} listKey="short" onReorder={reorderTask} />}
               </div>
               <AddTaskInput ref={shortAddRef} onAdd={(title) => addTask(title, "Short Term")} />
             </Panel>
@@ -2360,6 +2540,8 @@ function Dashboard() {
           onEditTitle={editTask}
           onArchive={(id) => { completeTask(id); setOpenProjectId(null); }}
           onMove={moveTask}
+          onReorderItems={reorderChecklistItems}
+          onExtractItem={extractChecklistItem}
         />
       )}
 

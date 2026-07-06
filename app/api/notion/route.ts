@@ -69,20 +69,23 @@ export async function GET() {
     });
     const data = await res.json();
 
-    const shortTerm: { id: string; title: string; priority: boolean }[] = [];
-    const longTerm: { id: string; title: string; priority: boolean }[] = [];
-    const clients: { id: string; title: string }[] = [];
+    const shortTerm: { id: string; title: string; priority: boolean; order: number | null }[] = [];
+    const longTerm: { id: string; title: string; priority: boolean; order: number | null }[] = [];
+    const clients: { id: string; title: string; order: number | null }[] = [];
 
     (data.results || []).forEach((page: any) => {
       const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
       const title = titleProp?.title?.map((t: any) => t.plain_text).join("") || "";
       if (!title) return;
 
+      // manual-reorder position (null until the user drags something)
+      const order = (page.properties as any)["Order"]?.number ?? null;
+
       // Clients are tagged with the Type select (status options can't be
       // created via the API, but select options can)
       const typeProp = (page.properties as any)["Type"];
       if (typeProp?.select?.name === "Client") {
-        clients.push({ id: page.id, title });
+        clients.push({ id: page.id, title, order });
         return;
       }
 
@@ -90,8 +93,8 @@ export async function GET() {
       const status = statusProp?.status?.name || "";
       const priority = !!(page.properties as any)["Priority"]?.checkbox;
 
-      if (status === "Short Term") shortTerm.push({ id: page.id, title, priority });
-      else if (status === "Long Term") longTerm.push({ id: page.id, title, priority });
+      if (status === "Short Term") shortTerm.push({ id: page.id, title, priority, order });
+      else if (status === "Long Term") longTerm.push({ id: page.id, title, priority, order });
     });
 
     // enrich Short Term and Long Term with their checklists (child to_do blocks)
@@ -379,6 +382,81 @@ export async function POST(request: Request) {
         ));
       }
       return NextResponse.json({ success: true });
+    }
+
+    // Ensure the tasks DB has an "Order" number property (used to persist manual
+    // reordering). Idempotent — safe to call on every load.
+    if (action === "ensureOrderField") {
+      const dbId = process.env.NOTION_DB_ID;
+      if (!dbId) return NextResponse.json({ error: "No db" }, { status: 500 });
+      const H = { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" };
+      const dbRes = await fetch(`https://api.notion.com/v1/databases/${dbId}`, { headers: H, cache: "no-store" });
+      if (!dbRes.ok) return NextResponse.json({ error: await dbRes.json() }, { status: dbRes.status });
+      const db = await dbRes.json();
+      if (db.properties?.Order) return NextResponse.json({ success: true, existed: true });
+      const patch = await fetch(`https://api.notion.com/v1/databases/${dbId}`, {
+        method: "PATCH", headers: H, body: JSON.stringify({ properties: { Order: { number: {} } } }),
+      });
+      if (!patch.ok) return NextResponse.json({ error: await patch.json() }, { status: patch.status });
+      return NextResponse.json({ success: true, created: true });
+    }
+
+    // Persist a manual reorder: write Order = index for each page id in `ids`.
+    if (action === "reorderTasks") {
+      const { ids } = body;
+      if (!Array.isArray(ids) || ids.length === 0) return NextResponse.json({ error: "Missing ids" }, { status: 400 });
+      const H = { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" };
+      const results = await Promise.all(ids.map((pid: string, i: number) =>
+        fetch(`https://api.notion.com/v1/pages/${pid}`, {
+          method: "PATCH", headers: H, body: JSON.stringify({ properties: { Order: { number: i } } }),
+        }).then((r) => r.ok).catch(() => false)
+      ));
+      return NextResponse.json({ success: results.every(Boolean), written: results.filter(Boolean).length });
+    }
+
+    // Persist a checklist reorder. Notion has no block-move API, so recreate the
+    // to_do blocks in the new order: append the new sequence FIRST, then delete
+    // the old blocks (append-first so a failure duplicates rather than loses data).
+    if (action === "reorderChecklist") {
+      const { projectId, items, oldIds } = body;
+      if (!projectId || !Array.isArray(items)) return NextResponse.json({ error: "Missing projectId or items" }, { status: 400 });
+      const H = { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" };
+      const children = items.map((it: any) => ({
+        type: "to_do",
+        to_do: { rich_text: [{ type: "text", text: { content: String(it?.text || "").slice(0, 2000) } }], checked: !!it?.checked },
+      }));
+      const appendRes = await fetch(`https://api.notion.com/v1/blocks/${projectId}/children`, {
+        method: "PATCH", headers: H, body: JSON.stringify({ children }),
+      });
+      if (!appendRes.ok) return NextResponse.json({ error: await appendRes.json() }, { status: appendRes.status });
+      const appendJson = await appendRes.json();
+      const newItems = (appendJson.results || []).map((b: any, i: number) => ({ id: b.id, text: items[i]?.text || "", checked: !!items[i]?.checked }));
+      if (Array.isArray(oldIds)) {
+        await Promise.all(oldIds.map((bid: string) =>
+          fetch(`https://api.notion.com/v1/blocks/${bid}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28" } }).catch(() => {})
+        ));
+      }
+      return NextResponse.json({ success: true, items: newItems });
+    }
+
+    // Pull a checklist item out of a project into its own Short Term task:
+    // create the task, then delete the item's block from the project.
+    if (action === "extractItem") {
+      const { projectId, itemId, text } = body;
+      const dbId = process.env.NOTION_DB_ID;
+      if (!dbId || !projectId || !itemId || typeof text !== "string") return NextResponse.json({ error: "Missing fields" }, { status: 400 });
+      const H = { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" };
+      const createRes = await fetch("https://api.notion.com/v1/pages", {
+        method: "POST", headers: H,
+        body: JSON.stringify({ parent: { database_id: dbId }, properties: {
+          Name: { title: [{ text: { content: (text.trim() || "Untitled").slice(0, 2000) } }] },
+          Status: { status: { name: "Short Term" } },
+        } }),
+      });
+      if (!createRes.ok) return NextResponse.json({ error: await createRes.json() }, { status: createRes.status });
+      const created = await createRes.json();
+      await fetch(`https://api.notion.com/v1/blocks/${itemId}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28" } }).catch(() => {});
+      return NextResponse.json({ success: true, id: created.id });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
