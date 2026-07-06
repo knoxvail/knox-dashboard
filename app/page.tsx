@@ -850,7 +850,7 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
       )}
       {/* project title — shown as a heading (auto-capitalized) */}
       <span style={{
-        fontSize: 13, color: "#e8e8e8", fontFamily: "'DM Sans', sans-serif", fontWeight: 500,
+        fontSize: 15, color: "#f0f0f0", fontFamily: "'DM Sans', sans-serif", fontWeight: 400,
         lineHeight: 1.35, overflowWrap: "break-word", textTransform: "capitalize",
       }}>{project.title}</span>
       {/* every task in the project, listed under the title */}
