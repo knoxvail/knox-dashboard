@@ -901,25 +901,13 @@ function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge, onAddNew }: 
       .map(({ p }) => p);
   }, [projects]);
 
-  // track the container's width in state; a real resize updates it (idempotent on
-  // equal values, so the height changes we cause ourselves don't loop)
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
+  // Measure every card at the real column width, then drop each into the
+  // currently-shortest column. Reads clientWidth live, so it's correct whenever
+  // it runs.
+  const relayout = useCallback(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const update = () => setWidth(el.clientWidth);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  // pack whenever the projects or the width change: measure each card at the real
-  // column width, then drop it into the currently-shortest column
-  useIsoLayoutEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const cw = width || el.clientWidth; // sync fallback so the first paint is already packed
+    const cw = el.clientWidth;
     if (cw <= 0) return;
     const n = Math.max(1, Math.floor((cw + GAP) / (COL_W + GAP)));
     const colW = (cw - (n - 1) * GAP) / n;
@@ -939,7 +927,24 @@ function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge, onAddNew }: 
     });
     setPos(next);
     setWrapH(Math.max(TOP_PAD, ...heights) - GAP);
-  }, [ordered, width]);
+  }, [ordered]);
+
+  // Re-pack on mount, when the set/order of projects changes, and — crucially —
+  // when the container OR ANY CARD changes size. The per-card observer is what
+  // catches a title (or item) growing AND shrinking back down; a container-only
+  // observer misses a card getting shorter because the container height is what
+  // we're driving. rAF-debounced so our own height writes don't loop.
+  useIsoLayoutEffect(() => {
+    relayout();
+    const el = wrapRef.current;
+    if (!el) return;
+    let raf = 0;
+    const schedule = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(relayout); };
+    const ro = new ResizeObserver(schedule);
+    ro.observe(el);
+    cardRefs.current.forEach((node) => ro.observe(node));
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  }, [relayout]);
 
   // enable the reflow animation only after the first (already-correct) paint
   useEffect(() => { const id = requestAnimationFrame(() => setReady(true)); return () => cancelAnimationFrame(id); }, []);
