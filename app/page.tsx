@@ -194,7 +194,13 @@ function EmailReader({ source, email, onClose }: { source: "gmail" | "zoho"; ema
   };
 
   // wrap the email HTML in a dark base document so it matches the theme
-  const darkDoc = (html: string) => `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="dark"><base target="_blank"><style>:root{color-scheme:dark;}html,body{background:#0e1014;color:#cfcfcf;margin:0;padding:14px 16px;font-family:-apple-system,'DM Sans',Segoe UI,sans-serif;font-size:14px;line-height:1.55;word-break:break-word;}a{color:#9fc0ff;}img{max-width:100%;height:auto;}table{max-width:100%!important;}blockquote{border-left:2px solid #3a3a3a;margin:0 0 0 4px;padding-left:12px;color:#9a9a9a;}pre{white-space:pre-wrap;}</style></head><body>${html}</body></html>`;
+  const darkDoc = (html: string) => `<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="dark"><base target="_blank"><style>:root{color-scheme:dark;}html,body{background:#0e1014;color:#e6e6e6;margin:0;padding:14px 16px;font-family:-apple-system,'DM Sans',Segoe UI,sans-serif;font-size:14px;line-height:1.55;word-break:break-word;}
+/* Force every bit of the sender's text to a readable light color and strip their
+   own (usually white) backgrounds, so black-on-white email content can't turn
+   invisible on the dark reader. Overrides inline styles + bgcolor/color attrs. */
+body *{color:#e6e6e6 !important;background-color:transparent !important;background-image:none !important;}
+body a,body a *{color:#9fc0ff !important;}
+img{max-width:100%;height:auto;}table{max-width:100%!important;}blockquote{border-left:2px solid #3a3a3a;margin:0 0 0 4px;padding-left:12px;}pre{white-space:pre-wrap;}</style></head><body>${html}</body></html>`;
 
   const btnSolid: React.CSSProperties = { background: "#1e1e1e", border: "1px solid #505050", color: "#ddd", fontSize: 11, padding: "5px 14px", borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.12em", textTransform: "uppercase" };
   const btnGhost: React.CSSProperties = { background: "none", border: "1px solid #333", color: "#9a9a9a", fontSize: 11, padding: "5px 12px", borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.12em", textTransform: "uppercase" };
