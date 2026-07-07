@@ -2629,7 +2629,7 @@ function Dashboard() {
                   )}
                   <div style={{ minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: 13, color: "#e0e0e0", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {nowPlaying.playing ? nowPlaying.track || "—" : <span style={{ color: "#808080" }}>Not playing</span>}
+                      {nowPlaying.track || <span style={{ color: "#808080" }}>Not playing</span>}
                     </p>
                     {nowPlaying.artist && <p style={{ margin: "2px 0 0", fontSize: 12, color: "#9a9a9a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{nowPlaying.artist}</p>}
                   </div>
