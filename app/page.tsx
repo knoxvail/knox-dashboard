@@ -2428,18 +2428,20 @@ function Dashboard() {
         {/* Tasks — Short Term stays tall but skinny; the buckets get the width */}
         <div style={{ display: "grid", gridTemplateColumns: "0.5fr 1fr", gap: 12, minHeight: 0 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
-            {/* HIGH PRIORITY — its own bold-outlined box; the page's focal point */}
+            {/* HIGH PRIORITY — same darkness as the other panels, framed in a
+                black/white hazard-tape border so it still reads as the focal point */}
             <div
               onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (priorityDrag !== "high") setPriorityDrag("high"); }}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setPriorityDrag(null); }}
               onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setPriorityDrag(null); if (id) dropToPriority(id, true); }}
               style={{
                 flexShrink: 0, maxHeight: "42%", display: "flex", flexDirection: "column", overflow: "hidden",
-                background: "rgba(42,45,53,0.6)", backdropFilter: "blur(7px)", WebkitBackdropFilter: "blur(7px)",
-                border: priorityDrag === "high" ? "1.5px solid #e8e8e8" : "1.5px solid #9a9a9a",
-                borderRadius: 7, padding: "13px 15px 11px",
-                boxShadow: "0 0 0 1px rgba(255,255,255,0.03), 0 8px 26px rgba(0,0,0,0.4)",
-                transition: "border-color 0.2s, background 0.2s",
+                background: "rgba(12,14,18,0.5)", backdropFilter: "blur(7px)", WebkitBackdropFilter: "blur(7px)",
+                border: "5px solid transparent",
+                borderImage: "repeating-linear-gradient(45deg, #0d0d0d 0 7px, #eaeaea 7px 14px) 5",
+                padding: "13px 15px 11px",
+                boxShadow: priorityDrag === "high" ? "inset 0 0 0 2px rgba(232,232,232,0.55)" : "none",
+                transition: "box-shadow 0.2s",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
