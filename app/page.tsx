@@ -12,7 +12,7 @@ type ChecklistItem = { id: string; text: string; checked: boolean }; // id = Not
 type Project = { id: string; title: string; items: ChecklistItem[]; priority?: boolean; order?: number | null }; // id = Notion PAGE id
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
-type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string };
+type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string; editDate?: string; editTime?: string };
 type NowPlaying = {
   connected: boolean; expired?: boolean; playing?: boolean;
   track?: string; artist?: string; album?: string;
@@ -1413,6 +1413,76 @@ function ClientNoteModal({ client, onClose, onSaveNotes, onEditTitle }: {
   );
 }
 
+// Edit a scheduled event — title, date, optional time, and type. Opened by
+// clicking an event in Up Next.
+function EventEditModal({ event, onClose, onSave, onDelete }: {
+  event: Event;
+  onClose: () => void;
+  onSave: (id: string, title: string, date: string, time: string, type: string) => Promise<void>;
+  onDelete: (id: string) => void;
+}) {
+  const [title, setTitle] = useState(event.title);
+  const [date, setDate] = useState(event.editDate || "");
+  const [time, setTime] = useState(event.editTime || "");
+  const [type, setType] = useState(event.type || "");
+  const [saving, setSaving] = useState(false);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const isTemp = event.id.startsWith("temp-");
+
+  useEffect(() => { setTimeout(() => titleRef.current?.focus(), 60); }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const canSave = !!title.trim() && !!date && !isTemp && !saving;
+  const save = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    await onSave(event.id, title.trim(), date, time, type);
+    onClose();
+  };
+
+  const field: React.CSSProperties = { background: "#1a1a1a", border: "1px solid #333", color: "#ddd", fontSize: 13, padding: "6px 8px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 3, colorScheme: "dark" };
+  return createPortal(
+    <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", zIndex: 9000, display: "grid", placeItems: "center", fontFamily: "'DM Sans', sans-serif", animation: "fadeIn 0.18s ease-out" }}>
+      <div role="dialog" aria-modal="true" aria-label="Edit event"
+        style={{ width: "min(380px, 92vw)", background: "rgba(12,14,18,0.92)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", border: "1px solid #3a3a3a", borderRadius: 6, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10, boxShadow: "0 20px 60px rgba(0,0,0,0.7)", position: "relative", animation: "modalIn 0.2s ease-out" }}>
+        <div style={{ position: "absolute", top: -1, left: 16, width: 32, height: 1, background: "#999" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
+          <h2 style={{ margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 400, letterSpacing: "0.16em", textTransform: "uppercase", color: "#f0f0f0" }}>Edit Event</h2>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "#808080", fontSize: 18, lineHeight: 1, padding: 0 }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#ccc")} onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}>✕</button>
+        </div>
+        <input ref={titleRef} value={title} onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); }} placeholder="Event…" aria-label="Event name" style={field} />
+        <div style={{ display: "flex", gap: 8 }}>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Date" style={{ ...field, flex: 1, minWidth: 0 }} />
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} aria-label="Time (optional)" title="Time (optional)" style={{ ...field, flex: 1, minWidth: 0 }} />
+        </div>
+        <select value={type} onChange={(e) => setType(e.target.value)} aria-label="Type" style={{ ...field, cursor: "pointer" }}>
+          <option value="">Type…</option>
+          <option value="Appointment">Appointment</option>
+          <option value="Meeting">Meeting</option>
+          <option value="Deadline">Deadline</option>
+          <option value="Personal">Personal</option>
+        </select>
+        <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <button onClick={() => { onDelete(event.id); onClose(); }} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.15em", color: "#808080", textTransform: "uppercase", padding: 0, transition: "color 0.15s" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#c06464")} onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}>Delete</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onClose} style={{ background: "none", border: "1px solid #333", color: "#9a9a9a", fontSize: 11, padding: "5px 12px", borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.12em", textTransform: "uppercase" }}>Cancel</button>
+            <button onClick={save} disabled={!canSave} style={{ background: "#1e1e1e", border: "1px solid #505050", color: "#ddd", fontSize: 11, padding: "5px 14px", borderRadius: 3, cursor: canSave ? "pointer" : "default", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.12em", textTransform: "uppercase", opacity: canSave ? 1 : 0.5 }}>{saving ? "Saving…" : "Save"}</button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function Dashboard() {
   const clock = useClock();
   const [shortTerm, setShortTerm] = useState<Project[]>([]);
@@ -1437,6 +1507,7 @@ function Dashboard() {
   const [priorityDrag, setPriorityDrag] = useState<"high" | "normal" | null>(null);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const [openClientId, setOpenClientId] = useState<string | null>(null);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [openEmail, setOpenEmail] = useState<{ source: "gmail" | "zoho"; email: Email } | null>(null);
   const [hover, setHover] = useState<{ id: string; rect: DOMRect } | null>(null);
   const [toasts, setToasts] = useState<{ id: number; msg: string; undo?: () => void }[]>([]);
@@ -2171,6 +2242,35 @@ function Dashboard() {
     fetchSchedule();
   };
 
+  // Edit an existing event's title / date / time / type.
+  const updateEvent = async (id: string, title: string, date: string, time: string, type: string) => {
+    const prev = events.find(e => e.id === id);
+    if (!prev || id.startsWith("temp-")) return;
+    const hasTime = !!time;
+    const notionDate = hasTime ? new Date(`${date}T${time}`).toISOString() : date;
+    // optimistic display (reconciled by fetchSchedule)
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+    const tom = new Date(now); tom.setUTCDate(now.getUTCDate() + 1);
+    const tomStr = tom.toISOString().split("T")[0];
+    const evDay = hasTime ? notionDate.split("T")[0] : date;
+    const dObj = new Date(hasTime ? `${date}T${time}` : `${date}T00:00`);
+    const displayDate = evDay === todayStr ? "Today" : evDay === tomStr ? "Tomorrow" : dObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const displayTime = hasTime ? dObj.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }) : "";
+    setEvents(evs => evs.map(e => e.id === id ? { ...e, title, type, displayDate, displayTime, editDate: date, editTime: time } : e));
+    try {
+      const res = await fetch("/api/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action: "update", title, date: notionDate, type }) });
+      if (!res.ok) { await fetchSchedule(); toast("Couldn’t save event — reverted"); return; }
+      pushUndo(`edit event “${undoClip(title)}”`, async () => {
+        const pHasTime = !!prev.editTime;
+        const pNotionDate = pHasTime ? new Date(`${prev.editDate}T${prev.editTime}`).toISOString() : (prev.editDate || "");
+        if (pNotionDate) await fetch("/api/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action: "update", title: prev.title, date: pNotionDate, type: prev.type }) }).catch(() => {});
+        await fetchSchedule();
+      });
+    } catch { await fetchSchedule(); toast("Couldn’t save event — reverted"); }
+    fetchSchedule();
+  };
+
   const spotifyAction = async (action: string) => {
     // optimistic: flip play/pause in the UI immediately
     if (action === "play" || action === "pause") {
@@ -2448,7 +2548,13 @@ function Dashboard() {
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: "14px 18px", paddingBottom: 2 }}>
                     {events.map((event) => (
                       <div key={event.id} className="reveal-row" style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6, minWidth: 0 }}>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+                        <div
+                          role="button" tabIndex={0}
+                          onClick={() => { if (!event.id.startsWith("temp-")) setEditingEvent(event); }}
+                          onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !event.id.startsWith("temp-")) { e.preventDefault(); setEditingEvent(event); } }}
+                          title="Click to edit"
+                          style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0, cursor: "pointer", flex: 1 }}
+                        >
                           <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{event.title}</p>
                           <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", letterSpacing: "0.05em" }}>{event.displayDate}</span>
                           {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", letterSpacing: "0.05em" }}>{event.displayTime}</span>}
@@ -2685,6 +2791,15 @@ function Dashboard() {
           onClose={() => setOpenClientId(null)}
           onSaveNotes={saveClientNotes}
           onEditTitle={editTask}
+        />
+      )}
+
+      {editingEvent && (
+        <EventEditModal
+          event={editingEvent}
+          onClose={() => setEditingEvent(null)}
+          onSave={updateEvent}
+          onDelete={deleteEvent}
         />
       )}
 

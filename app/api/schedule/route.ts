@@ -63,6 +63,9 @@ export async function GET() {
         let displayTime = "";
         let displayDate = "";
         let startMs = 0;
+        // raw values in the display timezone, for pre-filling the edit form
+        let editDate = "";
+        let editTime = "";
 
         if (start) {
           const d = new Date(start);
@@ -76,11 +79,19 @@ export async function GET() {
 
           displayDate = isToday ? "Today" : isTomorrow ? "Tomorrow" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-          if (isDatetime) displayTime = formatTime(d);
+          if (isDatetime) {
+            displayTime = formatTime(d);
+            try {
+              editDate = new Intl.DateTimeFormat("en-CA", { timeZone: DISPLAY_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+              editTime = new Intl.DateTimeFormat("en-GB", { timeZone: DISPLAY_TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+            } catch { editDate = eventDay; }
+          } else {
+            editDate = eventDay; // all-day: use the date as-is (no timezone shift)
+          }
         }
 
         const type = (page.properties as any)["Type"]?.select?.name || "";
-        return { id: page.id, title, displayDate, displayTime, type, startMs, isDatetime };
+        return { id: page.id, title, displayDate, displayTime, type, startMs, isDatetime, editDate, editTime };
       })
       .filter((event: any) => {
         if (!event.startMs) return true;
@@ -95,13 +106,36 @@ export async function GET() {
   }
 }
 
-// Delete (archive) a scheduled event page — or restore it (action:"restore") for Undo
+// Delete (archive) a scheduled event page — or restore it (action:"restore") for
+// Undo, or edit it (action:"update" with title/date/type).
 export async function POST(request: Request) {
   const token = process.env.NOTION_TOKEN;
   if (!token) return NextResponse.json({ error: "No token" }, { status: 401 });
   try {
-    const { id, action } = await request.json();
+    const body = await request.json();
+    const { id, action } = body;
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+
+    // edit an existing event's title / date / type
+    if (action === "update") {
+      const { title, date, type } = body;
+      if (!title || typeof title !== "string" || !title.trim()) return NextResponse.json({ error: "Missing title" }, { status: 400 });
+      if (!date) return NextResponse.json({ error: "Missing date" }, { status: 400 });
+      const properties: Record<string, unknown> = {
+        Name: { title: [{ text: { content: title.trim() } }] },
+        Date: { date: { start: date } },
+        // clear the type if none chosen, otherwise set it
+        Type: type && ["Meeting", "Appointment", "Deadline", "Personal"].includes(type) ? { select: { name: type } } : { select: null },
+      };
+      const upd = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" },
+        body: JSON.stringify({ properties }),
+      });
+      if (!upd.ok) return NextResponse.json({ error: await upd.json() }, { status: upd.status });
+      return NextResponse.json({ success: true });
+    }
+
     const res = await fetch(`https://api.notion.com/v1/pages/${id}`, {
       method: "PATCH",
       headers: {
