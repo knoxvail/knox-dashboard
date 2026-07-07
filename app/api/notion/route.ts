@@ -71,7 +71,7 @@ export async function GET() {
 
     const shortTerm: { id: string; title: string; priority: boolean; order: number | null }[] = [];
     const longTerm: { id: string; title: string; priority: boolean; order: number | null }[] = [];
-    const clients: { id: string; title: string; order: number | null }[] = [];
+    const clients: { id: string; title: string; order: number | null; notes: string }[] = [];
 
     (data.results || []).forEach((page: any) => {
       const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
@@ -85,7 +85,8 @@ export async function GET() {
       // created via the API, but select options can)
       const typeProp = (page.properties as any)["Type"];
       if (typeProp?.select?.name === "Client") {
-        clients.push({ id: page.id, title, order });
+        const notes = ((page.properties as any)["Notes"]?.rich_text || []).map((t: any) => t.plain_text).join("");
+        clients.push({ id: page.id, title, order, notes });
         return;
       }
 
@@ -384,8 +385,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
 
-    // Ensure the tasks DB has an "Order" number property (used to persist manual
-    // reordering). Idempotent — safe to call on every load.
+    // Ensure the tasks DB has the "Order" number property (persists manual
+    // reordering) and the "Notes" rich-text property (per-client notes).
+    // Idempotent — safe to call on every load.
     if (action === "ensureOrderField") {
       const dbId = process.env.NOTION_DB_ID;
       if (!dbId) return NextResponse.json({ error: "No db" }, { status: 500 });
@@ -393,12 +395,15 @@ export async function POST(request: Request) {
       const dbRes = await fetch(`https://api.notion.com/v1/databases/${dbId}`, { headers: H, cache: "no-store" });
       if (!dbRes.ok) return NextResponse.json({ error: await dbRes.json() }, { status: dbRes.status });
       const db = await dbRes.json();
-      if (db.properties?.Order) return NextResponse.json({ success: true, existed: true });
+      const missing: Record<string, unknown> = {};
+      if (!db.properties?.Order) missing.Order = { number: {} };
+      if (!db.properties?.Notes) missing.Notes = { rich_text: {} };
+      if (Object.keys(missing).length === 0) return NextResponse.json({ success: true, existed: true });
       const patch = await fetch(`https://api.notion.com/v1/databases/${dbId}`, {
-        method: "PATCH", headers: H, body: JSON.stringify({ properties: { Order: { number: {} } } }),
+        method: "PATCH", headers: H, body: JSON.stringify({ properties: missing }),
       });
       if (!patch.ok) return NextResponse.json({ error: await patch.json() }, { status: patch.status });
-      return NextResponse.json({ success: true, created: true });
+      return NextResponse.json({ success: true, created: Object.keys(missing) });
     }
 
     // Persist a manual reorder: write Order = index for each page id in `ids`.
@@ -457,6 +462,20 @@ export async function POST(request: Request) {
       const created = await createRes.json();
       await fetch(`https://api.notion.com/v1/blocks/${itemId}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28" } }).catch(() => {});
       return NextResponse.json({ success: true, id: created.id });
+    }
+
+    // Save a client's note into the "Notes" rich-text property (empty clears it).
+    if (action === "setClientNotes") {
+      if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+      if (typeof body.notes !== "string") return NextResponse.json({ error: "Invalid notes" }, { status: 400 });
+      const content = body.notes.slice(0, 2000);
+      const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" },
+        body: JSON.stringify({ properties: { Notes: { rich_text: content ? [{ text: { content } }] : [] } } }),
+      });
+      if (!notionRes.ok) return NextResponse.json({ error: await notionRes.json() }, { status: notionRes.status });
+      return NextResponse.json({ success: true });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });

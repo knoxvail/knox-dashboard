@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 // while still measuring/positioning before paint in the browser).
 const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
-type Task = { id: string; title: string; order?: number | null };
+type Task = { id: string; title: string; order?: number | null; notes?: string };
 type ChecklistItem = { id: string; text: string; checked: boolean }; // id = Notion BLOCK id
 type Project = { id: string; title: string; items: ChecklistItem[]; priority?: boolean; order?: number | null }; // id = Notion PAGE id
 type Verse = { ref: string; text: string };
@@ -387,9 +387,11 @@ function TaskItem({
   onLeave,
   listKey,
   onReorder,
+  hasNote = false,
 }: {
   task: Task;
   itemCount?: number; // how many checklist items this task/project holds (drives the hover preview)
+  hasNote?: boolean; // show a small dot when this row (a client) has a saved note
   isEditing: boolean;
   onEdit: (id: string, newTitle: string) => Promise<void>;
   onComplete: (id: string) => void;
@@ -551,6 +553,7 @@ function TaskItem({
             (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
           }}
         >
+          {hasNote && <span aria-label="has a note" title="Has a note" style={{ color: "#7fb0d8", marginRight: 6, fontSize: 9, verticalAlign: "middle" }}>●</span>}
           {task.title}
         </p>
       )}
@@ -573,6 +576,7 @@ function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave, listKey
           key={t.id}
           task={t}
           itemCount={(t as Project).items?.length ?? 0}
+          hasNote={!!t.notes?.trim()}
           isEditing={editingId === t.id}
           onEdit={onEdit}
           onComplete={onComplete}
@@ -1342,6 +1346,73 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
   );
 }
 
+// A little note box for a client — opened by clicking the client's name. The name
+// stays editable (click it), and the note autosaves when the box closes.
+function ClientNoteModal({ client, onClose, onSaveNotes, onEditTitle }: {
+  client: Task;
+  onClose: () => void;
+  onSaveNotes: (id: string, notes: string) => void;
+  onEditTitle: (id: string, title: string) => Promise<void>;
+}) {
+  const [notes, setNotes] = useState(client.notes || "");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleValue, setTitleValue] = useState(client.title);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
+  const isTemp = client.id.startsWith("temp-");
+
+  useEffect(() => { setNotes(client.notes || ""); }, [client.notes]);
+  useEffect(() => { setTitleValue(client.title); }, [client.title]);
+  useEffect(() => { if (!isTemp) setTimeout(() => taRef.current?.focus(), 60); }, [isTemp]);
+
+  // persist the note (if it changed) as the box closes
+  const close = useCallback(() => {
+    if (!isTemp && (client.notes || "") !== notesRef.current) onSaveNotes(client.id, notesRef.current);
+    onClose();
+  }, [isTemp, client.notes, client.id, onSaveNotes, onClose]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !editingTitle) close(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [close, editingTitle]);
+
+  const submitTitle = async () => {
+    const t = titleValue.trim();
+    if (t && t !== client.title) await onEditTitle(client.id, t);
+    setEditingTitle(false);
+  };
+
+  return createPortal(
+    <div onClick={(e) => { if (e.target === e.currentTarget) close(); }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", zIndex: 9000, display: "grid", placeItems: "center", fontFamily: "'DM Sans', sans-serif", animation: "fadeIn 0.18s ease-out" }}>
+      <div role="dialog" aria-modal="true" aria-label={`Notes for ${client.title}`}
+        style={{ width: "min(360px, 92vw)", background: "rgba(12,14,18,0.92)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", border: "1px solid #3a3a3a", borderRadius: 6, padding: "16px 18px", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.7)", position: "relative", animation: "modalIn 0.2s ease-out" }}>
+        <div style={{ position: "absolute", top: -1, left: 16, width: 32, height: 1, background: "#999" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
+          {editingTitle ? (
+            <input autoFocus value={titleValue} onChange={(e) => setTitleValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") submitTitle(); if (e.key === "Escape") { e.stopPropagation(); setTitleValue(client.title); setEditingTitle(false); } }}
+              onBlur={submitTitle}
+              style={{ flex: 1, background: "#1a1a1a", border: "1px solid #333", color: "#e8e8e8", fontSize: 15, padding: "4px 8px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 3, minWidth: 0 }} />
+          ) : (
+            <h2 onClick={() => !isTemp && setEditingTitle(true)} title={isTemp ? undefined : "Click to rename"}
+              style={{ margin: 0, fontSize: 15, color: "#e8e8e8", fontWeight: 500, cursor: isTemp ? "default" : "text", minWidth: 0, overflowWrap: "anywhere" }}>{client.title}</h2>
+          )}
+          <button onClick={close} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "#808080", fontSize: 18, lineHeight: 1, padding: 0, flexShrink: 0 }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#ccc")} onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}>✕</button>
+        </div>
+        <textarea ref={taRef} value={notes} onChange={(e) => setNotes(e.target.value)}
+          placeholder={isTemp ? "Saving client…" : "Write a note…"} rows={6} disabled={isTemp}
+          style={{ width: "100%", boxSizing: "border-box", background: "#1a1a1a", border: "1px solid #333", color: "#ddd", fontSize: 13, padding: "8px 10px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 4, resize: "vertical", lineHeight: 1.5, minHeight: 96 }} />
+        <div style={{ marginTop: 8, fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: "#6a6a6a", textTransform: "uppercase" }}>Saved automatically on close</div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function Dashboard() {
   const clock = useClock();
   const [shortTerm, setShortTerm] = useState<Project[]>([]);
@@ -1365,6 +1436,7 @@ function Dashboard() {
   const [dragOver, setDragOver] = useState<"Short Term" | "Long Term" | null>(null);
   const [priorityDrag, setPriorityDrag] = useState<"high" | "normal" | null>(null);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  const [openClientId, setOpenClientId] = useState<string | null>(null);
   const [openEmail, setOpenEmail] = useState<{ source: "gmail" | "zoho"; email: Email } | null>(null);
   const [hover, setHover] = useState<{ id: string; rect: DOMRect } | null>(null);
   const [toasts, setToasts] = useState<{ id: number; msg: string; undo?: () => void }[]>([]);
@@ -1549,6 +1621,22 @@ function Dashboard() {
   // open a project's modal, clearing any hover preview first so a popover can't
   // stay pinned on screen behind/after the modal
   const handleOpenProject = useCallback((id: string) => { setHover(null); setOpenProjectId(id); }, []);
+
+  // Save a client's note (optimistic; persisted to the Notion "Notes" property).
+  const saveClientNotes = async (id: string, notes: string) => {
+    if (id.startsWith("temp-")) return;
+    const prev = clients.find(c => c.id === id)?.notes ?? "";
+    if (prev === notes) return;
+    setClients(cs => cs.map(c => c.id === id ? { ...c, notes } : c));
+    try {
+      const res = await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setClientNotes", id, notes }) });
+      if (!res.ok) { setClients(cs => cs.map(c => c.id === id ? { ...c, notes: prev } : c)); toast("Couldn’t save note — reverted"); return; }
+      pushUndo("edit note", async () => {
+        setClients(cs => cs.map(c => c.id === id ? { ...c, notes: prev } : c));
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setClientNotes", id, notes: prev }) });
+      });
+    } catch { setClients(cs => cs.map(c => c.id === id ? { ...c, notes: prev } : c)); toast("Couldn’t save note — reverted"); }
+  };
 
   const completeTask = async (id: string) => {
     const done = shortTerm.find(t => t.id === id) || longTerm.find(t => t.id === id) || clients.find(t => t.id === id);
@@ -2119,6 +2207,7 @@ function Dashboard() {
 
   // modal + hover read live project state so optimistic item edits reflect instantly
   const openProject = openProjectId ? findProject(openProjectId) : null;
+  const openClient = openClientId ? clients.find(c => c.id === openClientId) : null;
   const hoverProject = hover && !openProjectId ? findProject(hover.id) : null;
   const shortHigh = shortTerm.filter(t => t.priority);
   const shortNormal = shortTerm.filter(t => !t.priority);
@@ -2230,7 +2319,7 @@ function Dashboard() {
                     <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 10}%` }} />
                   </div>
                 ))
-              ) : <TaskList tasks={clients} onComplete={completeTask} onEdit={editTask} listKey="clients" onReorder={reorderTask} />}
+              ) : <TaskList tasks={clients} onComplete={completeTask} onEdit={editTask} onOpen={setOpenClientId} listKey="clients" onReorder={reorderTask} />}
             </div>
             <AddTaskInput ref={clientsAddRef} onAdd={(title) => addTask(title, "Clients")} />
           </Panel>
@@ -2587,6 +2676,15 @@ function Dashboard() {
           onMove={moveTask}
           onReorderItems={reorderChecklistItems}
           onExtractItem={extractChecklistItem}
+        />
+      )}
+
+      {openClient && (
+        <ClientNoteModal
+          client={openClient}
+          onClose={() => setOpenClientId(null)}
+          onSaveNotes={saveClientNotes}
+          onEditTitle={editTask}
         />
       )}
 
