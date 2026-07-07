@@ -2315,7 +2315,10 @@ function Dashboard() {
   return (
     <div style={{
       background: "#0a0a0a",
-      minHeight: "100vh",
+      // definite viewport height (not minHeight) so the flex column is bounded:
+      // main gets the leftover space and its panels scroll internally, instead of
+      // the whole page growing past the (non-scrolling) viewport and clipping the footer
+      height: "100vh",
       width: "100vw",
       overflow: "hidden",
       display: "flex",
