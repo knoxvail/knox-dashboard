@@ -2382,7 +2382,7 @@ function Dashboard() {
       }}>
 
         {/* Left column: Soren Email (tall) + Clients */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
           <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
             <PanelHeader label="Soren Email" right={<Tag>ZOHO</Tag>} />
             {!sorenConnected ? (
@@ -2429,8 +2429,8 @@ function Dashboard() {
         </div>
 
         {/* Tasks — Short Term stays tall but skinny; the buckets get the width */}
-        <div style={{ display: "grid", gridTemplateColumns: "0.5fr 1fr", gap: 12, minHeight: 0 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "0.5fr 1fr", gap: 12, minHeight: 0, minWidth: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             {/* HIGH PRIORITY — same darkness as the other panels, framed in a
                 black/white hazard-tape border so it still reads as the focal point */}
             <div
@@ -2498,7 +2498,7 @@ function Dashboard() {
           </div>
 
           {/* right side of the middle column: Long Term (top) with Up Next stacked under it */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             <Panel style={{ flex: 1.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
               <PanelHeader label="Long Term" right={
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
@@ -2583,7 +2583,7 @@ function Dashboard() {
         </div>
 
         {/* Right column - Gmail + Spotify */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
           <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <PanelHeader label="Triad Email" right={<Tag>GMAIL</Tag>} />
             {!gmailConnected ? (
