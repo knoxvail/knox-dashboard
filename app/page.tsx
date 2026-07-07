@@ -1061,6 +1061,7 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [itemDraft, setItemDraft] = useState("");
   const [newItem, setNewItem] = useState("");
+  const [copied, setCopied] = useState(false);
   const [itemOver, setItemOver] = useState<{ id: string; side: "top" | "bottom" } | null>(null); // reorder drop indicator
   const addRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -1103,6 +1104,28 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
     onAddItem(project.id, t);
     setNewItem("");
     setTimeout(() => addRef.current?.focus(), 0);
+  };
+
+  // Copy the whole project — title + every checklist item (as a markdown task
+  // list, preserving checked state) — to the clipboard.
+  const copyAll = async () => {
+    const lines = [project.title];
+    if (project.items.length) {
+      lines.push("");
+      for (const it of project.items) lines.push(`- [${it.checked ? "x" : " "}] ${it.text || "Untitled"}`);
+    }
+    const text = lines.join("\n");
+    const ok = await navigator.clipboard?.writeText(text).then(() => true).catch(() => false);
+    if (!ok) {
+      // fallback for non-secure contexts / older browsers
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch {}
+      ta.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
   };
 
   return createPortal(
@@ -1281,18 +1304,29 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
           }}>ADD</button>
         </div>
 
-        {/* move (keyboard-accessible alternative to dragging) + archive */}
+        {/* copy + move (keyboard-accessible alternative to dragging) + archive */}
         <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          {list && !isTemp ? (
-            <button onClick={() => { onMove(project.id, list === "Short Term" ? "Long Term" : "Short Term"); onClose(); }} style={{
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={copyAll} aria-label="Copy project contents to clipboard" style={{
               background: "none", border: "1px solid #4a4a4a", cursor: "pointer",
               fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em",
-              color: "#9a9a9a", textTransform: "uppercase", padding: "4px 9px", borderRadius: 3, transition: "color 0.15s, border-color 0.15s",
+              color: copied ? "#7bd88f" : "#9a9a9a", textTransform: "uppercase", padding: "4px 9px", borderRadius: 3,
+              borderColor: copied ? "#3f6f4a" : "#4a4a4a", transition: "color 0.15s, border-color 0.15s",
             }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#4a4a4a"; }}
-            >Move to {list === "Short Term" ? "Long Term" : "Short Term"}</button>
-          ) : <span />}
+              onMouseEnter={(e) => { if (!copied) { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; } }}
+              onMouseLeave={(e) => { if (!copied) { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#4a4a4a"; } }}
+            >{copied ? "Copied ✓" : "Copy"}</button>
+            {list && !isTemp && (
+              <button onClick={() => { onMove(project.id, list === "Short Term" ? "Long Term" : "Short Term"); onClose(); }} style={{
+                background: "none", border: "1px solid #4a4a4a", cursor: "pointer",
+                fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em",
+                color: "#9a9a9a", textTransform: "uppercase", padding: "4px 9px", borderRadius: 3, transition: "color 0.15s, border-color 0.15s",
+              }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#4a4a4a"; }}
+              >Move to {list === "Short Term" ? "Long Term" : "Short Term"}</button>
+            )}
+          </div>
           <button onClick={() => onArchive(project.id)} style={{
             background: "none", border: "none", cursor: "pointer",
             fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.15em",
