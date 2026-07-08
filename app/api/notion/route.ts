@@ -71,7 +71,7 @@ export async function GET() {
 
     const shortTerm: { id: string; title: string; priority: boolean; order: number | null }[] = [];
     const longTerm: { id: string; title: string; priority: boolean; order: number | null }[] = [];
-    const clients: { id: string; title: string; order: number | null; notes: string }[] = [];
+    const clients: { id: string; title: string; order: number | null; notes: string; rating: number | null }[] = [];
 
     (data.results || []).forEach((page: any) => {
       const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
@@ -86,7 +86,8 @@ export async function GET() {
       const typeProp = (page.properties as any)["Type"];
       if (typeProp?.select?.name === "Client") {
         const notes = ((page.properties as any)["Notes"]?.rich_text || []).map((t: any) => t.plain_text).join("");
-        clients.push({ id: page.id, title, order, notes });
+        const rating = (page.properties as any)["Rating"]?.number ?? null;
+        clients.push({ id: page.id, title, order, notes, rating });
         return;
       }
 
@@ -386,8 +387,8 @@ export async function POST(request: Request) {
     }
 
     // Ensure the tasks DB has the "Order" number property (persists manual
-    // reordering) and the "Notes" rich-text property (per-client notes).
-    // Idempotent — safe to call on every load.
+    // reordering), the "Notes" rich-text property (per-client notes), and the
+    // "Rating" number property (client 1–5 priority). Idempotent.
     if (action === "ensureOrderField") {
       const dbId = process.env.NOTION_DB_ID;
       if (!dbId) return NextResponse.json({ error: "No db" }, { status: 500 });
@@ -398,6 +399,7 @@ export async function POST(request: Request) {
       const missing: Record<string, unknown> = {};
       if (!db.properties?.Order) missing.Order = { number: {} };
       if (!db.properties?.Notes) missing.Notes = { rich_text: {} };
+      if (!db.properties?.Rating) missing.Rating = { number: {} };
       if (Object.keys(missing).length === 0) return NextResponse.json({ success: true, existed: true });
       const patch = await fetch(`https://api.notion.com/v1/databases/${dbId}`, {
         method: "PATCH", headers: H, body: JSON.stringify({ properties: missing }),
@@ -462,6 +464,21 @@ export async function POST(request: Request) {
       const created = await createRes.json();
       await fetch(`https://api.notion.com/v1/blocks/${itemId}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28" } }).catch(() => {});
       return NextResponse.json({ success: true, id: created.id });
+    }
+
+    // Set a client's 1–5 priority into the "Notes"... err, "Rating" number
+    // property (0 clears it).
+    if (action === "setClientRating") {
+      if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+      const r = Number(body.rating);
+      if (!Number.isFinite(r) || r < 0 || r > 5) return NextResponse.json({ error: "Invalid rating" }, { status: 400 });
+      const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" },
+        body: JSON.stringify({ properties: { Rating: { number: r > 0 ? Math.round(r) : null } } }),
+      });
+      if (!notionRes.ok) return NextResponse.json({ error: await notionRes.json() }, { status: notionRes.status });
+      return NextResponse.json({ success: true });
     }
 
     // Save a client's note into the "Notes" rich-text property (empty clears it).

@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 // while still measuring/positioning before paint in the browser).
 const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
-type Task = { id: string; title: string; order?: number | null; notes?: string };
+type Task = { id: string; title: string; order?: number | null; notes?: string; rating?: number | null };
 type ChecklistItem = { id: string; text: string; checked: boolean }; // id = Notion BLOCK id
 type Project = { id: string; title: string; items: ChecklistItem[]; priority?: boolean; order?: number | null }; // id = Notion PAGE id
 type Verse = { ref: string; text: string };
@@ -374,6 +374,38 @@ function DoneButton({ onClick }: { onClick: () => void }) {
   );
 }
 
+// 1–5 priority stars. Click a star to set it; click the current top star again to
+// clear. stopPropagation everywhere so it never triggers the row's open/drag.
+function StarRating({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [hover, setHover] = useState(0);
+  return (
+    <div
+      role="radiogroup" aria-label={`Priority ${value} of 5`}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      draggable={false}
+      onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onMouseLeave={() => setHover(0)}
+      style={{ display: "flex", gap: 1, flexShrink: 0, alignItems: "center" }}
+    >
+      {[1, 2, 3, 4, 5].map((n) => {
+        const on = (hover || value) >= n;
+        return (
+          <button
+            key={n} type="button" aria-label={`${n} star${n > 1 ? "s" : ""}`} aria-checked={value === n} role="radio"
+            onMouseEnter={() => setHover(n)}
+            onClick={(e) => { e.stopPropagation(); onChange(value === n ? 0 : n); }}
+            style={{
+              background: "none", border: "none", padding: "0 0.5px", cursor: "pointer", lineHeight: 1,
+              fontSize: 11, color: on ? "#e8e8e8" : "#3a3a3a", transition: "color 0.12s",
+            }}
+          >★</button>
+        );
+      })}
+    </div>
+  );
+}
+
 function TaskItem({
   task,
   itemCount = 0,
@@ -388,6 +420,7 @@ function TaskItem({
   listKey,
   onReorder,
   hasNote = false,
+  onRate,
 }: {
   task: Task;
   itemCount?: number; // how many checklist items this task/project holds (drives the hover preview)
@@ -402,6 +435,7 @@ function TaskItem({
   onLeave?: () => void;
   listKey?: string; // which list this row belongs to (for same-list drag-reorder)
   onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => boolean;
+  onRate?: (id: string, rating: number) => void; // when set (clients), show 1–5 priority stars
 }) {
   const [inputValue, setInputValue] = useState(task.title);
   const [overSide, setOverSide] = useState<null | "top" | "bottom">(null); // reorder drop indicator
@@ -557,12 +591,13 @@ function TaskItem({
           {task.title}
         </p>
       )}
+      {onRate && !isEditing && <StarRating value={task.rating ?? 0} onChange={(v) => onRate(task.id, v)} />}
       <DoneButton onClick={() => onComplete(task.id)} />
     </div>
   );
 }
 
-function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave, listKey, onReorder }: { tasks: Task[]; onComplete: (id: string) => void; onEdit: (id: string, newTitle: string) => Promise<void>; onOpen?: (id: string) => void; onHover?: (id: string, rect: DOMRect) => void; onLeave?: () => void; listKey?: string; onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => boolean }) {
+function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave, listKey, onReorder, onRate }: { tasks: Task[]; onComplete: (id: string) => void; onEdit: (id: string, newTitle: string) => Promise<void>; onOpen?: (id: string) => void; onHover?: (id: string, rect: DOMRect) => void; onLeave?: () => void; listKey?: string; onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => boolean; onRate?: (id: string, rating: number) => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   if (tasks.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -587,6 +622,7 @@ function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave, listKey
           onLeave={onLeave}
           listKey={listKey}
           onReorder={onReorder}
+          onRate={onRate}
         />
       ))}
     </>
@@ -772,6 +808,9 @@ const taskHue = (count: number) => TASK_HUES[Math.min(Math.max(count, 0), TASK_H
 
 // stable sort by manual Order; unordered items (null) keep their fetch order (last)
 const byOrder = (a: { order?: number | null }, b: { order?: number | null }) => (a.order ?? Infinity) - (b.order ?? Infinity);
+
+// clients sort by priority rating (5 → 0, highest first), then by manual Order
+const byClient = (a: Task, b: Task) => (b.rating ?? 0) - (a.rating ?? 0) || byOrder(a, b);
 
 // A Long Term "project" bucket: a draggable box that opens a modal on click and
 // previews its checklist on hover. Drag (move to Short Term) and click (open) are
@@ -1570,7 +1609,7 @@ function Dashboard() {
       // Term is arranged by warmth in ProjectGrid so its order is left alone.
       setShortTerm((data.shortTerm || []).slice().sort(byOrder));
       setLongTerm(data.longTerm || []);
-      setClients((data.clients || []).slice().sort(byOrder));
+      setClients((data.clients || []).slice().sort(byClient));
     } catch {}
   }, []);
 
@@ -1707,6 +1746,25 @@ function Dashboard() {
         await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setClientNotes", id, notes: prev }) });
       });
     } catch { setClients(cs => cs.map(c => c.id === id ? { ...c, notes: prev } : c)); toast("Couldn’t save note — reverted"); }
+  };
+
+  // Set a client's 1–5 priority; re-sorts so higher priority floats to the top.
+  const setClientRating = async (id: string, rating: number) => {
+    if (id.startsWith("temp-")) return;
+    const cur = clients.find(c => c.id === id);
+    if (!cur) return;
+    const prev = cur.rating ?? 0;
+    if (prev === rating) return;
+    setClients(cs => cs.map(c => c.id === id ? { ...c, rating } : c).sort(byClient)); // optimistic + re-sort
+    const revert = () => setClients(cs => cs.map(c => c.id === id ? { ...c, rating: prev } : c).sort(byClient));
+    try {
+      const res = await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setClientRating", id, rating }) });
+      if (!res.ok) { revert(); toast("Couldn’t set priority — reverted"); return; }
+      pushUndo(`set ${cur.title.slice(0, 20)} priority`, async () => {
+        revert();
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setClientRating", id, rating: prev }) });
+      });
+    } catch { revert(); toast("Couldn’t set priority — reverted"); }
   };
 
   const completeTask = async (id: string) => {
@@ -2422,7 +2480,7 @@ function Dashboard() {
                     <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 10}%` }} />
                   </div>
                 ))
-              ) : <TaskList tasks={clients} onComplete={completeTask} onEdit={editTask} onOpen={setOpenClientId} listKey="clients" onReorder={reorderTask} />}
+              ) : <TaskList tasks={clients} onComplete={completeTask} onEdit={editTask} onOpen={setOpenClientId} onRate={setClientRating} />}
             </div>
             <AddTaskInput ref={clientsAddRef} onAdd={(title) => addTask(title, "Clients")} />
           </Panel>
