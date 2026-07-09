@@ -9,7 +9,7 @@ const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : use
 
 type Task = { id: string; title: string; order?: number | null; notes?: string; rating?: number | null };
 type ChecklistItem = { id: string; text: string; checked: boolean }; // id = Notion BLOCK id
-type Project = { id: string; title: string; items: ChecklistItem[]; priority?: boolean; order?: number | null }; // id = Notion PAGE id
+type Project = { id: string; title: string; items: ChecklistItem[]; priority?: boolean; order?: number | null; notes?: string }; // id = Notion PAGE id
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
 type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string; editDate?: string; editTime?: string };
@@ -1084,9 +1084,112 @@ function HoverPopover({ project, rect }: { project: Project; rect: DOMRect }) {
   );
 }
 
+// ---- Lightweight, safe Markdown → HTML for the project notes -------------
+// Escapes all user text first, then only ever inserts a known set of tags with
+// sanitized hrefs, so it's safe to dangerouslySetInnerHTML.
+const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function mdInline(escaped: string): string {
+  let o = escaped;
+  o = o.replace(/`([^`]+)`/g, (_m, c) => `<code class="md-code">${c}</code>`);
+  o = o.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_]+)__/g, "<strong>$1</strong>");
+  o = o.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>").replace(/(^|[^_\w])_([^_\n]+)_/g, "$1<em>$2</em>");
+  o = o.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+  o = o.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, text, url) =>
+    /^(https?:\/\/|mailto:)/i.test(url) ? `<a href="${url}" target="_blank" rel="noopener noreferrer" class="md-link">${text}</a>` : m);
+  return o;
+}
+function renderMarkdown(src: string): string {
+  const lines = (src || "").replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  let i = 0, inCode = false, code: string[] = [];
+  let list: "ul" | "ol" | null = null;
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  const isSpecial = (t: string) => /^(#{1,6}\s|>\s?|[-*]\s|\d+\.\s|```|(-{3,}|\*{3,}|_{3,})$)/.test(t);
+  while (i < lines.length) {
+    const line = lines[i], t = line.trim();
+    if (/^```/.test(t)) { if (!inCode) { closeList(); inCode = true; code = []; } else { out.push(`<pre class="md-pre"><code>${code.map(escHtml).join("\n")}</code></pre>`); inCode = false; } i++; continue; }
+    if (inCode) { code.push(line); i++; continue; }
+    if (t === "") { closeList(); i++; continue; }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) { closeList(); out.push('<hr class="md-hr" />'); i++; continue; }
+    const h = t.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { closeList(); const l = h[1].length; out.push(`<h${l} class="md-h md-h${l}">${mdInline(escHtml(h[2]))}</h${l}>`); i++; continue; }
+    if (/^>\s?/.test(t)) { closeList(); const q: string[] = []; while (i < lines.length && /^>\s?/.test(lines[i].trim())) { q.push(lines[i].trim().replace(/^>\s?/, "")); i++; } out.push(`<blockquote class="md-quote">${mdInline(escHtml(q.join(" ")))}</blockquote>`); continue; }
+    const task = t.match(/^[-*]\s+\[([ xX])\]\s+(.*)$/);
+    if (task) { if (list !== "ul") { closeList(); out.push('<ul class="md-ul md-tasklist">'); list = "ul"; } const on = task[1].toLowerCase() === "x"; out.push(`<li class="md-task"><span class="md-check${on ? " on" : ""}" aria-hidden>${on ? "▪" : "▫"}</span><span class="${on ? "md-done" : ""}">${mdInline(escHtml(task[2]))}</span></li>`); i++; continue; }
+    const ul = t.match(/^[-*]\s+(.*)$/);
+    if (ul) { if (list !== "ul") { closeList(); out.push('<ul class="md-ul">'); list = "ul"; } out.push(`<li>${mdInline(escHtml(ul[1]))}</li>`); i++; continue; }
+    const ol = t.match(/^\d+\.\s+(.*)$/);
+    if (ol) { if (list !== "ol") { closeList(); out.push('<ol class="md-ol">'); list = "ol"; } out.push(`<li>${mdInline(escHtml(ol[1]))}</li>`); i++; continue; }
+    closeList();
+    const para: string[] = [];
+    while (i < lines.length && lines[i].trim() !== "" && !isSpecial(lines[i].trim())) { para.push(lines[i]); i++; }
+    out.push(`<p class="md-p">${mdInline(escHtml(para.join("\n"))).replace(/\n/g, "<br/>")}</p>`);
+  }
+  if (inCode) out.push(`<pre class="md-pre"><code>${code.map(escHtml).join("\n")}</code></pre>`);
+  closeList();
+  return out.join("");
+}
+
+// The writing surface — iA-Writer-style Write/Read: a calm serif canvas you type
+// Markdown into, that renders beautifully when you're not editing. Autosaves.
+function NotesEditor({ value, onSave, wide }: { value: string; onSave: (v: string) => void; wide: boolean }) {
+  const [text, setText] = useState(value);
+  const [editing, setEditing] = useState(!value.trim());
+  const [flash, setFlash] = useState(false);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const savedRef = useRef(value);
+  const textRef = useRef(value);
+  textRef.current = text;
+
+  useEffect(() => { setText(value); savedRef.current = value; }, [value]);
+  const commit = useCallback(() => {
+    if (textRef.current !== savedRef.current) { savedRef.current = textRef.current; onSave(textRef.current); setFlash(true); setTimeout(() => setFlash(false), 1400); }
+  }, [onSave]);
+  // debounced autosave while typing + commit any unsaved text when unmounting (modal close)
+  useEffect(() => { if (!editing) return; const id = setTimeout(commit, 900); return () => clearTimeout(id); }, [text, editing, commit]);
+  useEffect(() => () => { if (textRef.current !== savedRef.current) onSave(textRef.current); }, [onSave]);
+
+  const enterWrite = () => { setEditing(true); setTimeout(() => taRef.current?.focus(), 0); };
+  const leaveWrite = () => { commit(); if (textRef.current.trim()) setEditing(false); };
+  const words = (text.trim().match(/\S+/g) || []).length;
+  const mins = Math.max(1, Math.round(words / 200));
+
+  const surface: React.CSSProperties = {
+    fontFamily: '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif',
+    fontSize: 17, lineHeight: 1.75, color: "#cfccc7",
+  };
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
+        <div style={{ maxWidth: wide ? 720 : 640, margin: "0 auto", padding: "6px 24px 48px" }}>
+          {editing ? (
+            <textarea
+              ref={taRef} value={text} onChange={(e) => setText(e.target.value)} onBlur={leaveWrite}
+              onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); leaveWrite(); } }}
+              placeholder="Write…  Markdown works: # heading, **bold**, - list, - [ ] task, > quote, `code`, [link](url)"
+              spellCheck
+              style={{ ...surface, width: "100%", minHeight: "58vh", background: "none", border: "none", outline: "none", resize: "none", display: "block", padding: 0, caretColor: "#e8c15a" }}
+            />
+          ) : (
+            <div className="notes-render" onClick={enterWrite} style={{ ...surface, cursor: "text", minHeight: "58vh" }}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
+          )}
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 20px", borderTop: "1px solid #1e1e1e", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: "#6a6a6a", textTransform: "uppercase" }}>
+        <span>{words} {words === 1 ? "word" : "words"} · {mins} min read</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <span style={{ color: flash ? "#7bd88f" : "#6a6a6a", transition: "color 0.2s" }}>{flash ? "Saved ✓" : editing ? "Editing" : "Reading"}</span>
+          <button onClick={() => (editing ? leaveWrite() : enterWrite())} style={{ background: "none", border: "1px solid #3a3a3a", color: "#9a9a9a", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", padding: "3px 9px", borderRadius: 3 }}>{editing ? "Read" : "Write"}</button>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // Click-to-open editor for a project's checklist. Portalled to document.body so
 // the panel's overflow/backdrop-filter stacking context can't clip it.
-function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditItem, onEditTitle, onArchive, onMove, onReorderItems, onExtractItem }: {
+function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditItem, onEditTitle, onArchive, onMove, onReorderItems, onExtractItem, onSaveNotes }: {
   project: Project;
   list: "Short Term" | "Long Term" | null; // which list the project is in (for the Move control)
   onClose: () => void;
@@ -1097,7 +1200,8 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
   onArchive: (id: string) => void;
   onMove: (id: string, target: "Short Term" | "Long Term") => void;
   onReorderItems: (projectId: string, items: ChecklistItem[]) => void; // drag-reorder the checklist
-  onExtractItem: (projectId: string, itemId: string) => void; // drag an item off the window → its own task
+  onExtractItem: (projectId: string, itemId: string) => void; // drag an item out of the checklist → its own task
+  onSaveNotes: (projectId: string, notes: string) => void; // autosave the project notes
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState(project.title);
@@ -1105,11 +1209,14 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
   const [itemDraft, setItemDraft] = useState("");
   const [newItem, setNewItem] = useState("");
   const [copied, setCopied] = useState(false);
+  const [focus, setFocus] = useState(false); // distraction-free: hide the checklist, widen the notes
   const [itemOver, setItemOver] = useState<{ id: string; side: "top" | "bottom" } | null>(null); // reorder drop indicator
   const addRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const asideRef = useRef<HTMLElement>(null);
   const isTemp = project.id.startsWith("temp-");
   const titleId = "proj-modal-title";
+  const accent = `hsl(${taskHue(project.items.length)}, 55%, 62%)`;
 
   useEffect(() => { setTitleValue(project.title); }, [project.title]);
   useEffect(() => {
@@ -1175,209 +1282,156 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
     <div
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
-        backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
-        zIndex: 9000, display: "grid", placeItems: "center",
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.62)",
+        backdropFilter: "blur(5px)", WebkitBackdropFilter: "blur(5px)",
+        zIndex: 9000, display: "grid", placeItems: "center", padding: 16,
         fontFamily: "'DM Sans', sans-serif", animation: "fadeIn 0.18s ease-out",
       }}
     >
       <div
         ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
+        role="dialog" aria-modal="true" aria-labelledby={titleId}
         onKeyDown={onDialogKeyDown}
         style={{
-          width: "min(440px, 92vw)", maxHeight: "78vh",
-          background: "rgba(12,14,18,0.92)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
-          border: "1px solid #3a3a3a", borderRadius: 6, padding: "20px 22px",
-          display: "flex", flexDirection: "column",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.7)", position: "relative",
+          width: "min(1180px, 96vw)", height: "min(90vh, 900px)",
+          background: "rgba(11,13,17,0.94)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
+          border: "1px solid #333", borderRadius: 8,
+          display: "flex", flexDirection: "column", overflow: "hidden",
+          boxShadow: "0 30px 80px rgba(0,0,0,0.75)", position: "relative",
           animation: "modalIn 0.2s ease-out",
         }}>
-        <div style={{ position: "absolute", top: -1, left: 16, width: 32, height: 1, background: "#999" }} />
-        <div style={{ position: "absolute", top: -1, left: -1, width: 10, height: 10, borderTop: "1px solid #999", borderLeft: "1px solid #999" }} />
-
-        {/* header: editable title + close */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+        {/* header: warmth dot · editable title · focus · close */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 18px 13px", borderBottom: "1px solid #202020", flexShrink: 0 }}>
+          <span aria-hidden style={{ width: 9, height: 9, borderRadius: "50%", background: accent, boxShadow: `0 0 10px ${accent}`, flexShrink: 0 }} />
           {editingTitle ? (
-            <input
-              autoFocus
-              value={titleValue}
-              onChange={(e) => setTitleValue(e.target.value)}
+            <input autoFocus value={titleValue} onChange={(e) => setTitleValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") submitTitle(); if (e.key === "Escape") { e.stopPropagation(); setTitleValue(project.title); setEditingTitle(false); } }}
               onBlur={submitTitle}
-              style={{
-                flex: 1, background: "#1a1a1a", border: "1px solid #333", color: "#e8e8e8",
-                fontSize: 18, padding: "4px 8px", fontFamily: "'DM Sans', sans-serif",
-                outline: "none", borderRadius: 3, minWidth: 0,
-              }}
-            />
+              style={{ flex: 1, background: "#1a1a1a", border: "1px solid #333", color: "#f0f0f0", fontSize: 20, padding: "3px 8px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 4, minWidth: 0 }} />
           ) : (
-            <h2
-              id={titleId}
-              onClick={() => !isTemp && setEditingTitle(true)}
-              title={isTemp ? undefined : "Click to rename"}
-              style={{ margin: 0, fontSize: 18, fontWeight: 500, color: "#e8e8e8", lineHeight: 1.3, cursor: isTemp ? "default" : "pointer", flex: 1, minWidth: 0, wordBreak: "break-word" }}
-            >{project.title}</h2>
+            <h2 id={titleId} onClick={() => !isTemp && setEditingTitle(true)} title={isTemp ? undefined : "Click to rename"}
+              style={{ margin: 0, fontSize: 20, fontWeight: 500, color: "#f0f0f0", lineHeight: 1.25, cursor: isTemp ? "default" : "pointer", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.title}</h2>
           )}
-          <button onClick={onClose} aria-label="Close" style={{
-            background: "none", border: "none", cursor: "pointer", color: "#808080",
-            fontSize: 18, lineHeight: 1, padding: 0, flexShrink: 0, transition: "color 0.15s",
-          }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#ccc")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}
-          >✕</button>
-        </div>
-
-        {/* checklist items */}
-        <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 40 }}>
-          {project.items.length === 0 ? (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 0" }}>
-              <p style={{ color: "#808080", fontSize: 12 }}>No items yet</p>
-            </div>
-          ) : project.items.map((it) => {
-            const temp = it.id.startsWith("temp-");
-            const draggableItem = !temp && editingItemId !== it.id;
-            return (
-              <div
-                key={it.id}
-                draggable={draggableItem}
-                onDragStart={(e) => {
-                  e.dataTransfer.setData("text/plain", it.id);
-                  e.dataTransfer.setData("x-checklist", "");
-                  e.dataTransfer.effectAllowed = "move";
-                  e.currentTarget.style.opacity = "0.4";
-                }}
-                onDragEnd={(e) => {
-                  e.currentTarget.style.opacity = "1";
-                  // released off the modal card → pull it out into its own task
-                  const r = dialogRef.current?.getBoundingClientRect();
-                  const outside = r ? (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) : false;
-                  if (outside && !temp) onExtractItem(project.id, it.id);
-                  setItemOver(null);
-                }}
-                onDragOver={(e) => {
-                  if (!e.dataTransfer.types.includes("x-checklist")) return;
-                  e.preventDefault();
-                  const b = e.currentTarget.getBoundingClientRect();
-                  setItemOver({ id: it.id, side: e.clientY - b.top < b.height / 2 ? "top" : "bottom" });
-                }}
-                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setItemOver(cur => (cur?.id === it.id ? null : cur)); }}
-                onDrop={(e) => {
-                  const draggedId = e.dataTransfer.getData("text/plain");
-                  const side = itemOver?.id === it.id ? itemOver.side : "top";
-                  setItemOver(null);
-                  if (!draggedId || draggedId === it.id || !e.dataTransfer.types.includes("x-checklist")) return;
-                  e.preventDefault(); e.stopPropagation();
-                  const dr = project.items.find(x => x.id === draggedId);
-                  if (!dr) return;
-                  const arr = project.items.filter(x => x.id !== draggedId);
-                  const ti = arr.findIndex(x => x.id === it.id);
-                  if (ti < 0) return;
-                  arr.splice(side === "top" ? ti : ti + 1, 0, dr);
-                  onReorderItems(project.id, arr);
-                }}
-                style={{
-                  display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", borderBottom: "1px solid #1e1e1e",
-                  cursor: draggableItem ? "grab" : "default",
-                  boxShadow: itemOver?.id === it.id ? (itemOver.side === "top" ? "inset 0 2px 0 #8a8a8a" : "inset 0 -2px 0 #8a8a8a") : "none",
-                }}
-              >
-                {/* click the check to remove the item */}
-                <button
-                  disabled={temp}
-                  title="Remove"
-                  aria-label="Remove item"
-                  onClick={() => onDeleteItem(project.id, it.id)}
-                  style={{
-                    width: 18, height: 18, flexShrink: 0, marginTop: 1,
-                    background: "#1e1e1e",
-                    border: "1px solid #505050", borderRadius: 3,
-                    color: "#aaa", fontSize: 11, lineHeight: 1, cursor: temp ? "default" : "pointer",
-                    opacity: temp ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center",
-                    transition: "color 0.15s, border-color 0.15s, background 0.15s",
-                  }}
-                  onMouseEnter={(e) => { if (temp) return; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; e.currentTarget.style.background = "#2a2a2a"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; e.currentTarget.style.background = "#1e1e1e"; }}
-                >✓</button>
-                {editingItemId === it.id ? (
-                  <input
-                    autoFocus
-                    value={itemDraft}
-                    onChange={(e) => setItemDraft(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") { onEditItem(project.id, it.id, itemDraft); setEditingItemId(null); } if (e.key === "Escape") setEditingItemId(null); }}
-                    onBlur={() => { onEditItem(project.id, it.id, itemDraft); setEditingItemId(null); }}
-                    style={{ flex: 1, minWidth: 0, background: "#1a1a1a", border: "1px solid #333", color: "#ddd", fontSize: 13, padding: "2px 6px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 3 }}
-                  />
-                ) : (
-                  <span
-                    onClick={() => { if (!temp) { setEditingItemId(it.id); setItemDraft(it.text); } }}
-                    title={temp ? undefined : "Click to edit"}
-                    style={{
-                      flex: 1, fontSize: 13, color: "#b0b0b0",
-                      lineHeight: 1.4, minWidth: 0, wordBreak: "break-word", cursor: temp ? "default" : "text",
-                    }}
-                  >{it.text || "Untitled"}</span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* add item */}
-        <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
-          <input
-            ref={addRef}
-            value={newItem}
-            onChange={(e) => setNewItem(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") submitItem(); }}
-            placeholder={isTemp ? "Saving project…" : "Add item..."}
-            disabled={isTemp}
-            style={{
-              flex: 1, background: "#1a1a1a", border: "1px solid #333", color: "#ccc",
-              fontSize: 12, padding: "6px 8px", fontFamily: "'DM Sans', sans-serif",
-              outline: "none", borderRadius: 2, opacity: isTemp ? 0.5 : 1,
-            }}
-          />
-          <button onClick={submitItem} disabled={isTemp} style={{
-            background: "#1e1e1e", border: "1px solid #505050", color: "#aaa",
-            fontSize: 11, padding: "4px 12px", cursor: isTemp ? "default" : "pointer", borderRadius: 2,
-            flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.1em", opacity: isTemp ? 0.5 : 1,
-          }}>ADD</button>
-        </div>
-
-        {/* copy + move (keyboard-accessible alternative to dragging) + archive */}
-        <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={copyAll} aria-label="Copy project contents to clipboard" style={{
-              background: "none", border: "1px solid #4a4a4a", cursor: "pointer",
-              fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em",
-              color: copied ? "#7bd88f" : "#9a9a9a", textTransform: "uppercase", padding: "4px 9px", borderRadius: 3,
-              borderColor: copied ? "#3f6f4a" : "#4a4a4a", transition: "color 0.15s, border-color 0.15s",
-            }}
-              onMouseEnter={(e) => { if (!copied) { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; } }}
-              onMouseLeave={(e) => { if (!copied) { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#4a4a4a"; } }}
-            >{copied ? "Copied ✓" : "Copy"}</button>
-            {list && !isTemp && (
-              <button onClick={() => { onMove(project.id, list === "Short Term" ? "Long Term" : "Short Term"); onClose(); }} style={{
-                background: "none", border: "1px solid #4a4a4a", cursor: "pointer",
-                fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em",
-                color: "#9a9a9a", textTransform: "uppercase", padding: "4px 9px", borderRadius: 3, transition: "color 0.15s, border-color 0.15s",
-              }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#4a4a4a"; }}
-              >Move to {list === "Short Term" ? "Long Term" : "Short Term"}</button>
-            )}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            <button onClick={() => setFocus(f => !f)} aria-pressed={focus} title="Focus — hide the checklist and widen the notes"
+              style={{ background: focus ? "rgba(255,255,255,0.09)" : "none", border: "1px solid #3a3a3a", cursor: "pointer", color: focus ? "#e8e8e8" : "#9a9a9a", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", padding: "4px 9px", borderRadius: 3, transition: "color 0.15s, background 0.15s" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "#e8e8e8")} onMouseLeave={(e) => (e.currentTarget.style.color = focus ? "#e8e8e8" : "#9a9a9a")}>Focus</button>
+            <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "#808080", fontSize: 20, lineHeight: 1, padding: "0 2px", transition: "color 0.15s" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "#ccc")} onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}>✕</button>
           </div>
-          <button onClick={() => onArchive(project.id)} style={{
-            background: "none", border: "none", cursor: "pointer",
-            fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.15em",
-            color: "#808080", textTransform: "uppercase", padding: 0, transition: "color 0.15s",
-          }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#c06464")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}
-          >Archive Project</button>
+        </div>
+
+        {/* body: notes (main canvas) + checklist (sidebar) */}
+        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, borderRight: focus ? "none" : "1px solid #1a1a1a" }}>
+            <NotesEditor value={project.notes || ""} onSave={(v) => onSaveNotes(project.id, v)} wide={focus} />
+          </div>
+
+          {!focus && (
+            <aside ref={asideRef} style={{ width: "clamp(280px, 34%, 400px)", display: "flex", flexDirection: "column", minHeight: 0, flexShrink: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px 8px" }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.16em", color: "#8a8a8a", textTransform: "uppercase" }}>Checklist</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>{project.items.length}</span>
+              </div>
+
+              <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 40, padding: "0 18px" }}>
+                {project.items.length === 0 ? (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 0" }}>
+                    <p style={{ color: "#808080", fontSize: 12, textAlign: "center" }}>No items yet.<br />Add one below, or drag one out to make it a task.</p>
+                  </div>
+                ) : project.items.map((it) => {
+                  const temp = it.id.startsWith("temp-");
+                  const draggableItem = !temp && editingItemId !== it.id;
+                  return (
+                    <div
+                      key={it.id}
+                      draggable={draggableItem}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/plain", it.id);
+                        e.dataTransfer.setData("x-checklist", "");
+                        e.dataTransfer.effectAllowed = "move";
+                        e.currentTarget.style.opacity = "0.4";
+                      }}
+                      onDragEnd={(e) => {
+                        e.currentTarget.style.opacity = "1";
+                        // released outside the checklist column → pull it out into its own task
+                        const r = asideRef.current?.getBoundingClientRect();
+                        const outside = r ? (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) : false;
+                        if (outside && !temp) onExtractItem(project.id, it.id);
+                        setItemOver(null);
+                      }}
+                      onDragOver={(e) => {
+                        if (!e.dataTransfer.types.includes("x-checklist")) return;
+                        e.preventDefault();
+                        const b = e.currentTarget.getBoundingClientRect();
+                        setItemOver({ id: it.id, side: e.clientY - b.top < b.height / 2 ? "top" : "bottom" });
+                      }}
+                      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setItemOver(cur => (cur?.id === it.id ? null : cur)); }}
+                      onDrop={(e) => {
+                        const draggedId = e.dataTransfer.getData("text/plain");
+                        const side = itemOver?.id === it.id ? itemOver.side : "top";
+                        setItemOver(null);
+                        if (!draggedId || draggedId === it.id || !e.dataTransfer.types.includes("x-checklist")) return;
+                        e.preventDefault(); e.stopPropagation();
+                        const dr = project.items.find(x => x.id === draggedId);
+                        if (!dr) return;
+                        const arr = project.items.filter(x => x.id !== draggedId);
+                        const ti = arr.findIndex(x => x.id === it.id);
+                        if (ti < 0) return;
+                        arr.splice(side === "top" ? ti : ti + 1, 0, dr);
+                        onReorderItems(project.id, arr);
+                      }}
+                      style={{
+                        display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", borderBottom: "1px solid #1a1a1a",
+                        cursor: draggableItem ? "grab" : "default",
+                        boxShadow: itemOver?.id === it.id ? (itemOver.side === "top" ? "inset 0 2px 0 #8a8a8a" : "inset 0 -2px 0 #8a8a8a") : "none",
+                      }}
+                    >
+                      <button
+                        disabled={temp} title="Remove" aria-label="Remove item"
+                        onClick={() => onDeleteItem(project.id, it.id)}
+                        style={{ width: 18, height: 18, flexShrink: 0, marginTop: 1, background: "#1e1e1e", border: "1px solid #505050", borderRadius: 3, color: "#aaa", fontSize: 11, lineHeight: 1, cursor: temp ? "default" : "pointer", opacity: temp ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center", transition: "color 0.15s, border-color 0.15s, background 0.15s" }}
+                        onMouseEnter={(e) => { if (temp) return; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; e.currentTarget.style.background = "#2a2a2a"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; e.currentTarget.style.background = "#1e1e1e"; }}
+                      >✓</button>
+                      {editingItemId === it.id ? (
+                        <input autoFocus value={itemDraft} onChange={(e) => setItemDraft(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") { onEditItem(project.id, it.id, itemDraft); setEditingItemId(null); } if (e.key === "Escape") setEditingItemId(null); }}
+                          onBlur={() => { onEditItem(project.id, it.id, itemDraft); setEditingItemId(null); }}
+                          style={{ flex: 1, minWidth: 0, background: "#1a1a1a", border: "1px solid #333", color: "#ddd", fontSize: 13, padding: "2px 6px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 3 }} />
+                      ) : (
+                        <span onClick={() => { if (!temp) { setEditingItemId(it.id); setItemDraft(it.text); } }} title={temp ? undefined : "Click to edit"}
+                          style={{ flex: 1, fontSize: 13, color: "#b0b0b0", lineHeight: 1.4, minWidth: 0, wordBreak: "break-word", cursor: temp ? "default" : "text" }}
+                        >{it.text || "Untitled"}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ display: "flex", gap: 6, padding: "10px 18px 6px" }}>
+                <input ref={addRef} value={newItem} onChange={(e) => setNewItem(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitItem(); }}
+                  placeholder={isTemp ? "Saving project…" : "Add item…"} disabled={isTemp}
+                  style={{ flex: 1, minWidth: 0, background: "#1a1a1a", border: "1px solid #333", color: "#ccc", fontSize: 12, padding: "6px 8px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 2, opacity: isTemp ? 0.5 : 1 }} />
+                <button onClick={submitItem} disabled={isTemp} style={{ background: "#1e1e1e", border: "1px solid #505050", color: "#aaa", fontSize: 11, padding: "4px 12px", cursor: isTemp ? "default" : "pointer", borderRadius: 2, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.1em", opacity: isTemp ? 0.5 : 1 }}>ADD</button>
+              </div>
+
+              <div style={{ padding: "8px 18px 14px", borderTop: "1px solid #1a1a1a", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button onClick={copyAll} aria-label="Copy project contents to clipboard" style={{ background: "none", border: "1px solid #4a4a4a", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: copied ? "#7bd88f" : "#9a9a9a", textTransform: "uppercase", padding: "4px 9px", borderRadius: 3, borderColor: copied ? "#3f6f4a" : "#4a4a4a", transition: "color 0.15s, border-color 0.15s" }}
+                    onMouseEnter={(e) => { if (!copied) { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; } }} onMouseLeave={(e) => { if (!copied) { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#4a4a4a"; } }}
+                  >{copied ? "Copied ✓" : "Copy"}</button>
+                  {list && !isTemp && (
+                    <button onClick={() => { onMove(project.id, list === "Short Term" ? "Long Term" : "Short Term"); onClose(); }} style={{ background: "none", border: "1px solid #4a4a4a", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: "#9a9a9a", textTransform: "uppercase", padding: "4px 9px", borderRadius: 3, transition: "color 0.15s, border-color 0.15s" }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; }} onMouseLeave={(e) => { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#4a4a4a"; }}
+                    >{list === "Short Term" ? "→ Long Term" : "→ Short Term"}</button>
+                  )}
+                </div>
+                <button onClick={() => onArchive(project.id)} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.15em", color: "#808080", textTransform: "uppercase", padding: 0, transition: "color 0.15s" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = "#c06464")} onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}>Archive</button>
+              </div>
+            </aside>
+          )}
         </div>
       </div>
     </div>,
@@ -1900,6 +1954,24 @@ function Dashboard() {
   };
   const findProject = (projectId: string): Project | null =>
     longTerm.find(p => p.id === projectId) || shortTerm.find(p => p.id === projectId) || null;
+
+  // Save a project's notes to its Notion page (reuses the generic Notes property
+  // writer). Optimistic with revert + undo.
+  const saveProjectNotes = async (projectId: string, notes: string) => {
+    if (projectId.startsWith("temp-")) return;
+    const prev = findProject(projectId)?.notes ?? "";
+    if (prev === notes) return;
+    patchProject(projectId, p => ({ ...p, notes }));
+    const revert = () => patchProject(projectId, p => ({ ...p, notes: prev }));
+    try {
+      const res = await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setClientNotes", id: projectId, notes }) });
+      if (!res.ok) { revert(); toast("Couldn’t save notes — reverted"); return; }
+      pushUndo("edit notes", async () => {
+        revert();
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setClientNotes", id: projectId, notes: prev }) });
+      });
+    } catch { revert(); toast("Couldn’t save notes — reverted"); }
+  };
 
   // ----- Checklist items within a project (optimistic) -----
   const addChecklistItem = async (projectId: string, text: string) => {
@@ -2845,6 +2917,7 @@ function Dashboard() {
           onMove={moveTask}
           onReorderItems={reorderChecklistItems}
           onExtractItem={extractChecklistItem}
+          onSaveNotes={saveProjectNotes}
         />
       )}
 
@@ -2915,6 +2988,30 @@ function Dashboard() {
         .reveal-row:focus-within .row-action { opacity: 1; }
         @media (hover: none) { .reveal-row .row-action { opacity: 1; } }
         .skeleton { animation: skpulse 1.4s ease-in-out infinite; }
+        /* rendered project notes (markdown) */
+        .notes-render { word-break: break-word; }
+        .notes-render > :first-child { margin-top: 0.1em; }
+        .notes-render .md-p { margin: 0 0 0.92em; }
+        .notes-render .md-h { color: #ececec; font-weight: 600; line-height: 1.25; margin: 1.35em 0 0.5em; }
+        .notes-render .md-h1 { font-size: 1.7em; }
+        .notes-render .md-h2 { font-size: 1.38em; }
+        .notes-render .md-h3 { font-size: 1.18em; }
+        .notes-render .md-h4, .notes-render .md-h5, .notes-render .md-h6 { font-size: 1.02em; color: #cfccc7; }
+        .notes-render .md-ul, .notes-render .md-ol { margin: 0 0 0.92em; padding-left: 1.4em; }
+        .notes-render li { margin: 0.28em 0; }
+        .notes-render .md-tasklist { list-style: none; padding-left: 0.15em; }
+        .notes-render .md-task { display: flex; gap: 0.55em; align-items: baseline; }
+        .notes-render .md-check { color: #666; font-size: 0.9em; flex-shrink: 0; }
+        .notes-render .md-check.on { color: #7bd88f; }
+        .notes-render .md-done { color: #7a7a7a; text-decoration: line-through; }
+        .notes-render .md-quote { margin: 0 0 0.92em; padding: 0.15em 0 0.15em 1em; border-left: 2px solid #3a3a3a; color: #a8a49e; font-style: italic; }
+        .notes-render .md-code { font-family: 'JetBrains Mono', monospace; font-size: 0.82em; background: rgba(255,255,255,0.07); padding: 0.1em 0.36em; border-radius: 3px; color: #d8cfa8; }
+        .notes-render .md-pre { background: rgba(255,255,255,0.035); border: 1px solid #262626; border-radius: 5px; padding: 12px 14px; overflow-x: auto; margin: 0 0 0.92em; }
+        .notes-render .md-pre code { font-family: 'JetBrains Mono', monospace; font-size: 0.82em; color: #c8c8c8; white-space: pre; }
+        .notes-render .md-link { color: #9fc0ff; text-decoration: none; border-bottom: 1px solid rgba(159,192,255,0.35); }
+        .notes-render .md-link:hover { border-bottom-color: #9fc0ff; }
+        .notes-render .md-hr { border: none; border-top: 1px solid #2a2a2a; margin: 1.4em 0; }
+        .notes-render strong { color: #ececec; font-weight: 600; }
         @media (prefers-reduced-motion: reduce) {
           .scan { animation: none !important; }
           .skeleton { animation: none !important; }

@@ -69,8 +69,8 @@ export async function GET() {
     });
     const data = await res.json();
 
-    const shortTerm: { id: string; title: string; priority: boolean; order: number | null }[] = [];
-    const longTerm: { id: string; title: string; priority: boolean; order: number | null }[] = [];
+    const shortTerm: { id: string; title: string; priority: boolean; order: number | null; notes: string }[] = [];
+    const longTerm: { id: string; title: string; priority: boolean; order: number | null; notes: string }[] = [];
     const clients: { id: string; title: string; order: number | null; notes: string; rating: number | null }[] = [];
 
     (data.results || []).forEach((page: any) => {
@@ -78,14 +78,14 @@ export async function GET() {
       const title = titleProp?.title?.map((t: any) => t.plain_text).join("") || "";
       if (!title) return;
 
-      // manual-reorder position (null until the user drags something)
+      // manual-reorder position (null until the user drags something) + notes
       const order = (page.properties as any)["Order"]?.number ?? null;
+      const notes = ((page.properties as any)["Notes"]?.rich_text || []).map((t: any) => t.plain_text).join("");
 
       // Clients are tagged with the Type select (status options can't be
       // created via the API, but select options can)
       const typeProp = (page.properties as any)["Type"];
       if (typeProp?.select?.name === "Client") {
-        const notes = ((page.properties as any)["Notes"]?.rich_text || []).map((t: any) => t.plain_text).join("");
         const rating = (page.properties as any)["Rating"]?.number ?? null;
         clients.push({ id: page.id, title, order, notes, rating });
         return;
@@ -95,8 +95,8 @@ export async function GET() {
       const status = statusProp?.status?.name || "";
       const priority = !!(page.properties as any)["Priority"]?.checkbox;
 
-      if (status === "Short Term") shortTerm.push({ id: page.id, title, priority, order });
-      else if (status === "Long Term") longTerm.push({ id: page.id, title, priority, order });
+      if (status === "Short Term") shortTerm.push({ id: page.id, title, priority, order, notes });
+      else if (status === "Long Term") longTerm.push({ id: page.id, title, priority, order, notes });
     });
 
     // enrich Short Term and Long Term with their checklists (child to_do blocks)
