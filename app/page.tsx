@@ -1092,10 +1092,12 @@ function mdInline(escaped: string): string {
   let o = escaped;
   o = o.replace(/`([^`]+)`/g, (_m, c) => `<code class="md-code">${c}</code>`);
   o = o.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_]+)__/g, "<strong>$1</strong>");
-  o = o.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>").replace(/(^|[^_\w])_([^_\n]+)_/g, "$1<em>$2</em>");
+  o = o.replace(/(^|[^_\w])_([^_\n]+)_/g, "$1<em>$2</em>"); // italic via _x_ (asterisks are reserved for bold)
   o = o.replace(/~~([^~]+)~~/g, "<del>$1</del>");
   o = o.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, text, url) =>
     /^(https?:\/\/|mailto:)/i.test(url) ? `<a href="${url}" target="_blank" rel="noopener noreferrer" class="md-link">${text}</a>` : m);
+  // trailing-* bold: a word directly followed by "*" becomes bold — e.g. bold*
+  o = o.replace(/([^\s*<>()\[\]`]+)\*(?!\*)/g, "<strong>$1</strong>");
   return o;
 }
 function renderMarkdown(src: string): string {
@@ -1166,7 +1168,7 @@ function NotesEditor({ value, onSave, wide }: { value: string; onSave: (v: strin
             <textarea
               ref={taRef} value={text} onChange={(e) => setText(e.target.value)} onBlur={leaveWrite}
               onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); leaveWrite(); } }}
-              placeholder="Write…  Markdown works: # heading, **bold**, - list, - [ ] task, > quote, `code`, [link](url)"
+              placeholder="Write…  # heading · bold* · * list · * [ ] task · > quote · `code` · [link](url)"
               spellCheck
               style={{ ...surface, width: "100%", minHeight: "58vh", background: "none", border: "none", outline: "none", resize: "none", display: "block", padding: 0, caretColor: "#e8c15a" }}
             />
