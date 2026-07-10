@@ -1115,7 +1115,7 @@ function renderMarkdown(src: string): string {
     if (h) { closeList(); const l = h[1].length; out.push(`<h${l} class="md-h md-h${l}">${mdInline(escHtml(h[2]))}</h${l}>`); i++; continue; }
     if (/^>\s?/.test(t)) { closeList(); const q: string[] = []; while (i < lines.length && /^>\s?/.test(lines[i].trim())) { q.push(lines[i].trim().replace(/^>\s?/, "")); i++; } out.push(`<blockquote class="md-quote">${mdInline(escHtml(q.join(" ")))}</blockquote>`); continue; }
     const task = t.match(/^[-*]\s+\[([ xX])\]\s+(.*)$/);
-    if (task) { if (list !== "ul") { closeList(); out.push('<ul class="md-ul md-tasklist">'); list = "ul"; } const on = task[1].toLowerCase() === "x"; out.push(`<li class="md-task"><span class="md-check${on ? " on" : ""}" aria-hidden>${on ? "▪" : "▫"}</span><span class="${on ? "md-done" : ""}">${mdInline(escHtml(task[2]))}</span></li>`); i++; continue; }
+    if (task) { if (list !== "ul") { closeList(); out.push('<ul class="md-ul md-tasklist">'); list = "ul"; } const on = task[1].toLowerCase() === "x"; out.push(`<li class="md-task"><span class="md-check${on ? " on" : ""}" aria-hidden>*</span><span class="${on ? "md-done" : ""}">${mdInline(escHtml(task[2]))}</span></li>`); i++; continue; }
     const ul = t.match(/^[-*]\s+(.*)$/);
     if (ul) { if (list !== "ul") { closeList(); out.push('<ul class="md-ul">'); list = "ul"; } out.push(`<li>${mdInline(escHtml(ul[1]))}</li>`); i++; continue; }
     const ol = t.match(/^\d+\.\s+(.*)$/);
@@ -2997,12 +2997,15 @@ function Dashboard() {
         .notes-render .md-h2 { font-size: 1.38em; }
         .notes-render .md-h3 { font-size: 1.18em; }
         .notes-render .md-h4, .notes-render .md-h5, .notes-render .md-h6 { font-size: 1.02em; color: #cfccc7; }
-        .notes-render .md-ul, .notes-render .md-ol { margin: 0 0 0.92em; padding-left: 1.4em; }
+        .notes-render .md-ol { margin: 0 0 0.92em; padding-left: 1.4em; }
         .notes-render li { margin: 0.28em 0; }
-        .notes-render .md-tasklist { list-style: none; padding-left: 0.15em; }
+        /* bullet + task lists both use a plain "* " marker */
+        .notes-render .md-ul { list-style: none; margin: 0 0 0.92em; padding-left: 0.2em; }
+        .notes-render .md-ul > li:not(.md-task)::before { content: "*"; color: #7a756c; margin-right: 0.55em; }
+        .notes-render .md-tasklist { padding-left: 0.2em; }
         .notes-render .md-task { display: flex; gap: 0.55em; align-items: baseline; }
-        .notes-render .md-check { color: #666; font-size: 0.9em; flex-shrink: 0; }
-        .notes-render .md-check.on { color: #7bd88f; }
+        .notes-render .md-check { color: #7a756c; flex-shrink: 0; }
+        .notes-render .md-check.on { color: #5f5b55; }
         .notes-render .md-done { color: #7a7a7a; text-decoration: line-through; }
         .notes-render .md-quote { margin: 0 0 0.92em; padding: 0.15em 0 0.15em 1em; border-left: 2px solid #3a3a3a; color: #a8a49e; font-style: italic; }
         .notes-render .md-code { font-family: 'JetBrains Mono', monospace; font-size: 0.82em; background: rgba(255,255,255,0.07); padding: 0.1em 0.36em; border-radius: 3px; color: #d8cfa8; }
