@@ -1151,6 +1151,16 @@ function NotesEditor({ value, onSave, wide }: { value: string; onSave: (v: strin
   // debounced autosave while typing + commit any unsaved text when unmounting (modal close)
   useEffect(() => { if (!editing) return; const id = setTimeout(commit, 900); return () => clearTimeout(id); }, [text, editing, commit]);
   useEffect(() => () => { if (textRef.current !== savedRef.current) onSave(textRef.current); }, [onSave]);
+  // On open, drop the cursor into the notes (the main canvas) so you can just
+  // start typing — previously focus landed in the checklist's add-item box, so
+  // typing "* thing" silently went to the sidebar instead of the notes.
+  useEffect(() => {
+    if (!editing) return;
+    const t = setTimeout(() => taRef.current?.focus(), 90);
+    return () => clearTimeout(t);
+    // mount only — we don't want to steal focus back on every re-render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const enterWrite = () => { setEditing(true); setTimeout(() => taRef.current?.focus(), 0); };
   const leaveWrite = useCallback(() => { commit(); if (textRef.current.trim()) setEditing(false); }, [commit]);
@@ -1255,7 +1265,9 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, editingTitle]);
-  useEffect(() => { if (!isTemp) setTimeout(() => addRef.current?.focus(), 60); }, [isTemp]);
+  // NOTE: deliberately do NOT autofocus the checklist's add-item box. The notes
+  // are the main canvas — NotesEditor puts the cursor there so that opening a
+  // project and just typing goes into the notes, not the sidebar's add field.
   // return focus to whatever opened the modal when it closes
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
