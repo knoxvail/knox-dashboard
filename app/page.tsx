@@ -1152,7 +1152,21 @@ function NotesEditor({ value, onSave, wide }: { value: string; onSave: (v: strin
   useEffect(() => () => { if (textRef.current !== savedRef.current) onSave(textRef.current); }, [onSave]);
 
   const enterWrite = () => { setEditing(true); setTimeout(() => taRef.current?.focus(), 0); };
-  const leaveWrite = () => { commit(); if (textRef.current.trim()) setEditing(false); };
+  const leaveWrite = useCallback(() => { commit(); if (textRef.current.trim()) setEditing(false); }, [commit]);
+
+  // Leaving the editor must ALWAYS render. onBlur alone doesn't reliably fire
+  // here (the add-input hit the same thing), so also watch for a pointer press
+  // anywhere outside the textarea — that's what makes "click away → it renders".
+  useEffect(() => {
+    if (!editing) return;
+    const onDown = (e: PointerEvent) => {
+      const ta = taRef.current;
+      if (ta && !ta.contains(e.target as Node)) leaveWrite();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [editing, leaveWrite]);
+
   const words = (text.trim().match(/\S+/g) || []).length;
   const mins = Math.max(1, Math.round(words / 200));
 
