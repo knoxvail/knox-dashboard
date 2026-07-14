@@ -1139,6 +1139,7 @@ function NotesEditor({ value, onSave, wide }: { value: string; onSave: (v: strin
   const [editing, setEditing] = useState(!value.trim());
   const [flash, setFlash] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const savedRef = useRef(value);
   const textRef = useRef(value);
   textRef.current = text;
@@ -1154,14 +1155,15 @@ function NotesEditor({ value, onSave, wide }: { value: string; onSave: (v: strin
   const enterWrite = () => { setEditing(true); setTimeout(() => taRef.current?.focus(), 0); };
   const leaveWrite = useCallback(() => { commit(); if (textRef.current.trim()) setEditing(false); }, [commit]);
 
-  // Leaving the editor must ALWAYS render. onBlur alone doesn't reliably fire
-  // here (the add-input hit the same thing), so also watch for a pointer press
-  // anywhere outside the textarea — that's what makes "click away → it renders".
+  // Leaving the editor must ALWAYS collapse back to the calm read view. onBlur
+  // doesn't reliably fire here (the add-input hit the same thing), so watch for a
+  // pointer press outside the whole notes pane. Clicking inside it (e.g. the live
+  // preview) keeps you writing.
   useEffect(() => {
     if (!editing) return;
     const onDown = (e: PointerEvent) => {
-      const ta = taRef.current;
-      if (ta && !ta.contains(e.target as Node)) leaveWrite();
+      const wrap = wrapRef.current;
+      if (wrap && !wrap.contains(e.target as Node)) leaveWrite();
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
@@ -1175,23 +1177,35 @@ function NotesEditor({ value, onSave, wide }: { value: string; onSave: (v: strin
     fontSize: 17, lineHeight: 1.75, color: "#cfccc7",
   };
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
-        <div style={{ maxWidth: wide ? 720 : 640, margin: "0 auto", padding: "6px 24px 48px" }}>
-          {editing ? (
-            <textarea
-              ref={taRef} value={text} onChange={(e) => setText(e.target.value)} onBlur={leaveWrite}
-              onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); leaveWrite(); } }}
-              placeholder="Write…  # heading · bold* · * list · * [ ] task · > quote · `code` · [link](url)"
-              spellCheck
-              style={{ ...surface, width: "100%", minHeight: "58vh", background: "none", border: "none", outline: "none", resize: "none", display: "block", padding: 0, caretColor: "#e8c15a" }}
-            />
-          ) : (
+    <div ref={wrapRef} style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      {editing ? (
+        // WRITING: your Markdown on the left, rendered LIVE on the right — type
+        // "* thing" and the bullet appears immediately, no clicking away needed.
+        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+          <div style={{ flex: 1, minWidth: 0, overflowY: "auto", scrollbarWidth: "none", borderRight: "1px solid #1c1c1c" }}>
+            <div style={{ padding: "8px 20px 40px" }}>
+              <textarea
+                ref={taRef} value={text} onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); leaveWrite(); } }}
+                placeholder="Write…  # heading · bold* · * list · * [ ] task · > quote · `code` · [link](url)"
+                spellCheck
+                style={{ ...surface, width: "100%", minHeight: "54vh", background: "none", border: "none", outline: "none", resize: "none", display: "block", padding: 0, caretColor: "#e8c15a" }}
+              />
+            </div>
+          </div>
+          <div style={{ flex: 1, minWidth: 0, overflowY: "auto", scrollbarWidth: "none" }}>
+            <div className="notes-render" style={{ ...surface, padding: "8px 20px 40px", minHeight: "54vh" }}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(text) || '<p class="md-p" style="color:#5f5b55">Live preview…</p>' }} />
+          </div>
+        </div>
+      ) : (
+        <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
+          <div style={{ maxWidth: wide ? 760 : 660, margin: "0 auto", padding: "6px 24px 48px" }}>
             <div className="notes-render" onClick={enterWrite} style={{ ...surface, cursor: "text", minHeight: "58vh" }}
               dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
-          )}
+          </div>
         </div>
-      </div>
+      )}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 20px", borderTop: "1px solid #1e1e1e", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: "#6a6a6a", textTransform: "uppercase" }}>
         <span>{words} {words === 1 ? "word" : "words"} · {mins} min read</span>
         <span style={{ display: "flex", alignItems: "center", gap: 14 }}>
