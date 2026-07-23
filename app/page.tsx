@@ -806,6 +806,15 @@ const AddEventInput = forwardRef<AddHandle, { onAdd: (title: string, date: strin
 const TASK_HUES = [140, 118, 96, 74, 54, 38, 22, 8, 352, 336, 320, 302, 285];
 const taskHue = (count: number) => TASK_HUES[Math.min(Math.max(count, 0), TASK_HUES.length - 1)];
 
+// How "heavy" a project is — drives its tint and its position in the warmth sort.
+// Counting items alone under-weights a project with two dense, detailed items, so
+// factor in how much is actually written: the item text AND the notes.
+const projectWeight = (p: Project) => {
+  const itemChars = p.items.reduce((n, it) => n + (it.text || "").length, 0);
+  const noteChars = (p.notes || "").length;
+  return p.items.length + Math.floor((itemChars + noteChars) / 150);
+};
+
 // stable sort by manual Order; unordered items (null) keep their fetch order (last)
 const byOrder = (a: { order?: number | null }, b: { order?: number | null }) => (a.order ?? Infinity) - (b.order ?? Infinity);
 
@@ -825,8 +834,9 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
   const dragging = useRef(false);
   const [dropTarget, setDropTarget] = useState(false); // another item is hovering over this box
   const count = project.items.length;
-  // faint pastel keyed to the workload (green -> purple, one tier per item)
-  const hue = taskHue(count);
+  // faint pastel keyed to the workload — weighted by how much is actually
+  // written in the project, not just how many lines it has
+  const hue = taskHue(projectWeight(project));
   const baseBg = `hsla(${hue}, 55%, 55%, 0.08)`;
   const hoverBg = `hsla(${hue}, 55%, 55%, 0.15)`;
   const badgeColor = `hsl(${hue}, 45%, 72%)`;
@@ -937,7 +947,7 @@ function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge, onAddNew }: 
   // coolest last. Warmth = cos(hue) on the same count→hue scale the tints use, so
   // red/orange (busiest) lead and green (empty) trails; ties keep their order.
   const ordered = useMemo(() => {
-    const warmth = (p: Project) => Math.cos((taskHue(p.items.length) * Math.PI) / 180);
+    const warmth = (p: Project) => Math.cos((taskHue(projectWeight(p)) * Math.PI) / 180);
     return projects
       .map((p, i) => ({ p, i }))
       .sort((a, b) => warmth(b.p) - warmth(a.p) || a.i - b.i)
@@ -1291,7 +1301,7 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
           if (root && last) { root.focus(); putCaret(last, (last.textContent || "").length); }
         }}
       >
-        <div style={{ maxWidth: 880, margin: "0 auto", padding: "34px 44px 96px" }}>
+        <div style={{ width: "100%", padding: "26px 26px 80px" }}>
           <div
             ref={ref}
             className="notes-edit"
@@ -1350,7 +1360,7 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
   const asideRef = useRef<HTMLElement>(null);
   const isTemp = project.id.startsWith("temp-");
   const titleId = "proj-modal-title";
-  const accent = `hsl(${taskHue(project.items.length)}, 55%, 62%)`;
+  const accent = `hsl(${taskHue(projectWeight(project))}, 55%, 62%)`;
 
   useEffect(() => { setTitleValue(project.title); }, [project.title]);
   useEffect(() => {
@@ -1429,7 +1439,7 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
         role="dialog" aria-modal="true" aria-labelledby={titleId}
         onKeyDown={onDialogKeyDown}
         style={{
-          width: "min(1700px, 95vw)", height: "93vh",
+          width: "min(2100px, 95vw)", height: "93vh",
           background: "rgba(11,13,17,0.94)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
           border: "1px solid #333", borderRadius: 8,
           display: "flex", flexDirection: "column", overflow: "hidden",
@@ -1465,8 +1475,8 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
 
           {!focus && (
             <aside ref={asideRef} style={{
-              width: 264, flexShrink: 0, alignSelf: "flex-start", maxHeight: "calc(100% - 28px)",
-              margin: "14px 16px 14px 0", padding: "12px 4px 8px",
+              width: 228, flexShrink: 0, alignSelf: "flex-start", maxHeight: "calc(100% - 28px)",
+              margin: "14px 12px 14px 0", padding: "12px 3px 8px",
               background: "rgba(255,255,255,0.022)", border: "1px solid #1c1c1c", borderRadius: 8,
               display: "flex", flexDirection: "column", minHeight: 0,
             }}>
