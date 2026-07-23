@@ -1084,144 +1084,238 @@ function HoverPopover({ project, rect }: { project: Project; rect: DOMRect }) {
   );
 }
 
-// ---- Lightweight, safe Markdown → HTML for the project notes -------------
-// Escapes all user text first, then only ever inserts a known set of tags with
-// sanitized hrefs, so it's safe to dangerouslySetInnerHTML.
-const escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-function mdInline(escaped: string): string {
-  let o = escaped;
-  o = o.replace(/`([^`]+)`/g, (_m, c) => `<code class="md-code">${c}</code>`);
-  o = o.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_]+)__/g, "<strong>$1</strong>");
-  o = o.replace(/(^|[^_\w])_([^_\n]+)_/g, "$1<em>$2</em>"); // italic via _x_ (asterisks are reserved for bold)
-  o = o.replace(/~~([^~]+)~~/g, "<del>$1</del>");
-  o = o.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, text, url) =>
-    /^(https?:\/\/|mailto:)/i.test(url) ? `<a href="${url}" target="_blank" rel="noopener noreferrer" class="md-link">${text}</a>` : m);
-  // trailing-* bold: a word directly followed by "*" becomes bold — e.g. bold*
-  o = o.replace(/([^\s*<>()\[\]`]+)\*(?!\*)/g, "<strong>$1</strong>");
-  return o;
-}
-function renderMarkdown(src: string): string {
+// ---- Project notes: a live, Google-Docs-style writing surface --------------
+// Exactly two commands: "# " makes a heading, "* " makes a circular bullet that
+// auto-continues on Enter. No other syntax, no read/preview mode — what you see
+// while typing IS the document. Stored as plain lines ("# x" / "* x" / "x").
+type NBlock = { cls: "nb-p" | "nb-h" | "nb-li"; text: string };
+
+function parseNotes(src: string): NBlock[] {
   const lines = (src || "").replace(/\r\n/g, "\n").split("\n");
-  const out: string[] = [];
-  let i = 0, inCode = false, code: string[] = [];
-  let list: "ul" | "ol" | null = null;
-  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
-  const isSpecial = (t: string) => /^(#{1,6}\s|>\s?|[-*]\s|\d+\.\s|```|(-{3,}|\*{3,}|_{3,})$)/.test(t);
-  while (i < lines.length) {
-    const line = lines[i], t = line.trim();
-    if (/^```/.test(t)) { if (!inCode) { closeList(); inCode = true; code = []; } else { out.push(`<pre class="md-pre"><code>${code.map(escHtml).join("\n")}</code></pre>`); inCode = false; } i++; continue; }
-    if (inCode) { code.push(line); i++; continue; }
-    if (t === "") { closeList(); i++; continue; }
-    if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) { closeList(); out.push('<hr class="md-hr" />'); i++; continue; }
-    const h = t.match(/^(#{1,6})\s+(.*)$/);
-    if (h) { closeList(); const l = h[1].length; out.push(`<h${l} class="md-h md-h${l}">${mdInline(escHtml(h[2]))}</h${l}>`); i++; continue; }
-    if (/^>\s?/.test(t)) { closeList(); const q: string[] = []; while (i < lines.length && /^>\s?/.test(lines[i].trim())) { q.push(lines[i].trim().replace(/^>\s?/, "")); i++; } out.push(`<blockquote class="md-quote">${mdInline(escHtml(q.join(" ")))}</blockquote>`); continue; }
-    const task = t.match(/^[-*]\s+\[([ xX])\]\s+(.*)$/);
-    if (task) { if (list !== "ul") { closeList(); out.push('<ul class="md-ul md-tasklist">'); list = "ul"; } const on = task[1].toLowerCase() === "x"; out.push(`<li class="md-task"><span class="md-check${on ? " on" : ""}" aria-hidden>*</span><span class="${on ? "md-done" : ""}">${mdInline(escHtml(task[2]))}</span></li>`); i++; continue; }
-    const ul = t.match(/^[-*]\s+(.*)$/);
-    if (ul) { if (list !== "ul") { closeList(); out.push('<ul class="md-ul">'); list = "ul"; } out.push(`<li>${mdInline(escHtml(ul[1]))}</li>`); i++; continue; }
-    const ol = t.match(/^\d+\.\s+(.*)$/);
-    if (ol) { if (list !== "ol") { closeList(); out.push('<ol class="md-ol">'); list = "ol"; } out.push(`<li>${mdInline(escHtml(ol[1]))}</li>`); i++; continue; }
-    closeList();
-    const para: string[] = [];
-    while (i < lines.length && lines[i].trim() !== "" && !isSpecial(lines[i].trim())) { para.push(lines[i]); i++; }
-    out.push(`<p class="md-p">${mdInline(escHtml(para.join("\n"))).replace(/\n/g, "<br/>")}</p>`);
-  }
-  if (inCode) out.push(`<pre class="md-pre"><code>${code.map(escHtml).join("\n")}</code></pre>`);
-  closeList();
-  return out.join("");
+  const blocks = lines.map((line): NBlock => {
+    if (/^#\s/.test(line)) return { cls: "nb-h", text: line.replace(/^#\s+/, "") };
+    if (/^\*\s/.test(line)) return { cls: "nb-li", text: line.replace(/^\*\s+/, "") };
+    return { cls: "nb-p", text: line };
+  });
+  return blocks.length ? blocks : [{ cls: "nb-p", text: "" }];
 }
+function serializeNotes(root: HTMLElement): string {
+  return Array.from(root.children).map((el) => {
+    const t = el.textContent || "";
+    if (el.classList.contains("nb-h")) return "# " + t;
+    if (el.classList.contains("nb-li")) return "* " + t;
+    return t;
+  }).join("\n");
+}
+// an empty block still needs a <br> to hold its line height / stay selectable
+function setBlockText(block: HTMLElement, text: string) {
+  if (text === "") block.innerHTML = "<br>";
+  else block.textContent = text;
+}
+function makeBlock(cls: NBlock["cls"], text: string) {
+  const d = document.createElement("div");
+  d.className = cls;
+  setBlockText(d, text);
+  return d;
+}
+function blockAtCaret(root: HTMLElement): HTMLElement | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  let node: Node | null = sel.getRangeAt(0).startContainer;
+  while (node && node.parentNode && node.parentNode !== root) node = node.parentNode;
+  return node && node.parentNode === root ? (node as HTMLElement) : null;
+}
+function putCaret(block: HTMLElement, offset: number) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  const first = block.firstChild;
+  if (!first || first.nodeName === "BR") range.setStart(block, 0);
+  else range.setStart(first, Math.max(0, Math.min(offset, first.textContent?.length ?? 0)));
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+const countWords = (s: string) => (s.trim().match(/\S+/g) || []).length;
 
-// The writing surface — iA-Writer-style Write/Read: a calm serif canvas you type
-// Markdown into, that renders beautifully when you're not editing. Autosaves.
-function NotesEditor({ value, onSave, wide }: { value: string; onSave: (v: string) => void; wide: boolean }) {
-  const [text, setText] = useState(value);
-  const [editing, setEditing] = useState(!value.trim());
-  const [flash, setFlash] = useState(false);
-  const taRef = useRef<HTMLTextAreaElement>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
+function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
   const savedRef = useRef(value);
-  const textRef = useRef(value);
-  textRef.current = text;
+  const latestRef = useRef(value);
+  const timerRef = useRef<number | undefined>(undefined);
+  const [flash, setFlash] = useState(false);
+  const [words, setWords] = useState(countWords(value));
 
-  useEffect(() => { setText(value); savedRef.current = value; }, [value]);
-  const commit = useCallback(() => {
-    if (textRef.current !== savedRef.current) { savedRef.current = textRef.current; onSave(textRef.current); setFlash(true); setTimeout(() => setFlash(false), 1400); }
-  }, [onSave]);
-  // debounced autosave while typing + commit any unsaved text when unmounting (modal close)
-  useEffect(() => { if (!editing) return; const id = setTimeout(commit, 900); return () => clearTimeout(id); }, [text, editing, commit]);
-  useEffect(() => () => { if (textRef.current !== savedRef.current) onSave(textRef.current); }, [onSave]);
-  // On open, drop the cursor into the notes (the main canvas) so you can just
-  // start typing — previously focus landed in the checklist's add-item box, so
-  // typing "* thing" silently went to the sidebar instead of the notes.
+  // Build the document. Skipped while the editor has focus so a background
+  // refetch can never yank the text out from under the cursor.
   useEffect(() => {
-    if (!editing) return;
-    const t = setTimeout(() => taRef.current?.focus(), 90);
+    const root = ref.current;
+    if (!root) return;
+    if (document.activeElement === root) return;
+    root.innerHTML = "";
+    for (const b of parseNotes(value)) root.appendChild(makeBlock(b.cls, b.text));
+    root.dataset.empty = value.trim() === "" ? "1" : "0";
+    savedRef.current = value;
+    latestRef.current = value;
+    setWords(countWords(value));
+  }, [value]);
+
+  // focus the notes on open so you can just start typing
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const root = ref.current;
+      if (!root) return;
+      root.focus();
+      const last = root.lastElementChild as HTMLElement | null;
+      if (last) putCaret(last, (last.textContent || "").length);
+    }, 90);
     return () => clearTimeout(t);
-    // mount only — we don't want to steal focus back on every re-render
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const enterWrite = () => { setEditing(true); setTimeout(() => taRef.current?.focus(), 0); };
-  const leaveWrite = useCallback(() => { commit(); if (textRef.current.trim()) setEditing(false); }, [commit]);
+  const commit = useCallback(() => {
+    if (latestRef.current !== savedRef.current) {
+      savedRef.current = latestRef.current;
+      onSave(latestRef.current);
+      setFlash(true);
+      setTimeout(() => setFlash(false), 1400);
+    }
+  }, [onSave]);
+  const sync = useCallback(() => {
+    const root = ref.current;
+    if (!root) return;
+    const s = serializeNotes(root);
+    latestRef.current = s;
+    root.dataset.empty = s.trim() === "" ? "1" : "0";
+    setWords(countWords(s));
+    window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(commit, 700);
+  }, [commit]);
+  // save anything unsaved when the window closes
+  useEffect(() => () => {
+    window.clearTimeout(timerRef.current);
+    if (latestRef.current !== savedRef.current) onSave(latestRef.current);
+  }, [onSave]);
 
-  // Leaving the editor must ALWAYS collapse back to the calm read view. onBlur
-  // doesn't reliably fire here (the add-input hit the same thing), so watch for a
-  // pointer press outside the whole notes pane. Clicking inside it (e.g. the live
-  // preview) keeps you writing.
-  useEffect(() => {
-    if (!editing) return;
-    const onDown = (e: PointerEvent) => {
-      const wrap = wrapRef.current;
-      if (wrap && !wrap.contains(e.target as Node)) leaveWrite();
-    };
-    document.addEventListener("pointerdown", onDown, true);
-    return () => document.removeEventListener("pointerdown", onDown, true);
-  }, [editing, leaveWrite]);
-
-  const words = (text.trim().match(/\S+/g) || []).length;
-  const mins = Math.max(1, Math.round(words / 200));
-
-  const surface: React.CSSProperties = {
-    fontFamily: '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif',
-    fontSize: 17, lineHeight: 1.75, color: "#cfccc7",
+  const normalize = (root: HTMLElement) => {
+    if (root.children.length === 0) { root.appendChild(makeBlock("nb-p", "")); return; }
+    Array.from(root.childNodes).forEach((n) => {
+      if (n.nodeType === 3) { // stray text node (paste / select-all delete)
+        const d = makeBlock("nb-p", n.textContent || "");
+        root.replaceChild(d, n);
+      }
+    });
   };
+
+  const onInput = () => {
+    const root = ref.current;
+    if (!root) return;
+    normalize(root);
+    const block = blockAtCaret(root);
+    if (block) {
+      const text = block.textContent || "";
+      const sel = window.getSelection();
+      const caret = sel && sel.rangeCount ? sel.getRangeAt(0).startOffset : text.length;
+      // "# " → heading, "* " → bullet (consumed, like Google Docs)
+      if (!block.classList.contains("nb-h") && /^#\s/.test(text)) {
+        block.className = "nb-h";
+        setBlockText(block, text.replace(/^#\s/, ""));
+        putCaret(block, Math.max(0, caret - 2));
+      } else if (!block.classList.contains("nb-li") && /^\*\s/.test(text)) {
+        block.className = "nb-li";
+        setBlockText(block, text.replace(/^\*\s/, ""));
+        putCaret(block, Math.max(0, caret - 2));
+      }
+    }
+    sync();
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const root = ref.current;
+    if (!root) return;
+    if (e.key === "Escape") { e.stopPropagation(); (e.target as HTMLElement).blur(); return; }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      normalize(root);
+      const block = blockAtCaret(root);
+      if (!block) return;
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const text = block.textContent || "";
+      const r = sel.getRangeAt(0);
+      const caret = r.startContainer.nodeType === 3 ? r.startOffset : (r.startOffset === 0 ? 0 : text.length);
+      // Enter on an empty bullet exits the list (Google Docs behaviour)
+      if (block.classList.contains("nb-li") && text.trim() === "") {
+        block.className = "nb-p";
+        setBlockText(block, "");
+        putCaret(block, 0);
+        sync();
+        return;
+      }
+      setBlockText(block, text.slice(0, caret));
+      // bullets continue; a heading drops back to body text on the next line
+      const next = makeBlock(block.classList.contains("nb-li") ? "nb-li" : "nb-p", text.slice(caret));
+      block.after(next);
+      putCaret(next, 0);
+      sync();
+      return;
+    }
+    if (e.key === "Backspace") {
+      const sel = window.getSelection();
+      const block = blockAtCaret(root);
+      if (block && sel && sel.isCollapsed && sel.getRangeAt(0).startOffset === 0 &&
+          (block.classList.contains("nb-li") || block.classList.contains("nb-h"))) {
+        e.preventDefault(); // first backspace just removes the block style
+        block.className = "nb-p";
+        sync();
+      }
+    }
+  };
+
+  // paste as plain text so the document can't get polluted with foreign markup
+  const onPaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData("text/plain");
+    document.execCommand("insertText", false, text);
+    sync();
+  };
+
   return (
-    <div ref={wrapRef} style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      {editing ? (
-        // WRITING: your Markdown on the left, rendered LIVE on the right — type
-        // "* thing" and the bullet appears immediately, no clicking away needed.
-        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-          <div style={{ flex: 1, minWidth: 0, overflowY: "auto", scrollbarWidth: "none", borderRight: "1px solid #1c1c1c" }}>
-            <div style={{ padding: "8px 20px 40px" }}>
-              <textarea
-                ref={taRef} value={text} onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); leaveWrite(); } }}
-                placeholder="Write…  # heading · bold* · * list · * [ ] task · > quote · `code` · [link](url)"
-                spellCheck
-                style={{ ...surface, width: "100%", minHeight: "54vh", background: "none", border: "none", outline: "none", resize: "none", display: "block", padding: 0, caretColor: "#e8c15a" }}
-              />
-            </div>
-          </div>
-          <div style={{ flex: 1, minWidth: 0, overflowY: "auto", scrollbarWidth: "none" }}>
-            <div className="notes-render" style={{ ...surface, padding: "8px 20px 40px", minHeight: "54vh" }}
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(text) || '<p class="md-p" style="color:#5f5b55">Live preview…</p>' }} />
-          </div>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <div
+        style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}
+        onClick={(e) => {
+          // clicking the empty space below the text keeps writing at the end
+          if (e.target !== e.currentTarget) return;
+          const root = ref.current;
+          const last = root?.lastElementChild as HTMLElement | null;
+          if (root && last) { root.focus(); putCaret(last, (last.textContent || "").length); }
+        }}
+      >
+        <div style={{ maxWidth: 880, margin: "0 auto", padding: "34px 44px 96px" }}>
+          <div
+            ref={ref}
+            className="notes-edit"
+            contentEditable
+            suppressContentEditableWarning
+            spellCheck
+            role="textbox"
+            aria-multiline="true"
+            aria-label="Project notes"
+            onInput={onInput}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            onBlur={commit}
+            style={{
+              fontFamily: '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif',
+              fontSize: 18, lineHeight: 1.8, color: "#d4d1cb",
+              outline: "none", minHeight: "64vh", caretColor: "#e8c15a",
+            }}
+          />
         </div>
-      ) : (
-        <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
-          <div style={{ maxWidth: wide ? 760 : 660, margin: "0 auto", padding: "6px 24px 48px" }}>
-            <div className="notes-render" onClick={enterWrite} style={{ ...surface, cursor: "text", minHeight: "58vh" }}
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />
-          </div>
-        </div>
-      )}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 20px", borderTop: "1px solid #1e1e1e", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: "#6a6a6a", textTransform: "uppercase" }}>
-        <span>{words} {words === 1 ? "word" : "words"} · {mins} min read</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <span style={{ color: flash ? "#7bd88f" : "#6a6a6a", transition: "color 0.2s" }}>{flash ? "Saved ✓" : editing ? "Editing" : "Reading"}</span>
-          <button onClick={() => (editing ? leaveWrite() : enterWrite())} style={{ background: "none", border: "1px solid #3a3a3a", color: "#9a9a9a", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", padding: "3px 9px", borderRadius: 3 }}>{editing ? "Read" : "Write"}</button>
-        </span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 22px", borderTop: "1px solid #1a1a1a", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: "#5a5a5a", textTransform: "uppercase", flexShrink: 0 }}>
+        <span>{words} {words === 1 ? "word" : "words"}</span>
+        <span style={{ color: flash ? "#7bd88f" : "#5a5a5a", transition: "color 0.2s" }}>{flash ? "Saved ✓" : "# heading · * bullet"}</span>
       </div>
     </div>
   );
@@ -1335,7 +1429,7 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
         role="dialog" aria-modal="true" aria-labelledby={titleId}
         onKeyDown={onDialogKeyDown}
         style={{
-          width: "min(1180px, 96vw)", height: "min(90vh, 900px)",
+          width: "min(1700px, 95vw)", height: "93vh",
           background: "rgba(11,13,17,0.94)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
           border: "1px solid #333", borderRadius: 8,
           display: "flex", flexDirection: "column", overflow: "hidden",
@@ -1363,20 +1457,25 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
           </div>
         </div>
 
-        {/* body: notes (main canvas) + checklist (sidebar) */}
+        {/* body: notes ARE the page; the checklist is a small floating card far right */}
         <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, borderRight: focus ? "none" : "1px solid #1a1a1a" }}>
-            <NotesEditor value={project.notes || ""} onSave={(v) => onSaveNotes(project.id, v)} wide={focus} />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+            <NotesEditor value={project.notes || ""} onSave={(v) => onSaveNotes(project.id, v)} />
           </div>
 
           {!focus && (
-            <aside ref={asideRef} style={{ width: "clamp(280px, 34%, 400px)", display: "flex", flexDirection: "column", minHeight: 0, flexShrink: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px 8px" }}>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.16em", color: "#8a8a8a", textTransform: "uppercase" }}>Checklist</span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>{project.items.length}</span>
+            <aside ref={asideRef} style={{
+              width: 264, flexShrink: 0, alignSelf: "flex-start", maxHeight: "calc(100% - 28px)",
+              margin: "14px 16px 14px 0", padding: "12px 4px 8px",
+              background: "rgba(255,255,255,0.022)", border: "1px solid #1c1c1c", borderRadius: 8,
+              display: "flex", flexDirection: "column", minHeight: 0,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 14px 9px" }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.16em", color: "#6a6a6a", textTransform: "uppercase" }}>Checklist</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#5a5a5a" }}>{project.items.length}</span>
               </div>
 
-              <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 40, padding: "0 18px" }}>
+              <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 40, padding: "0 14px" }}>
                 {project.items.length === 0 ? (
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 0" }}>
                     <p style={{ color: "#808080", fontSize: 12, textAlign: "center" }}>No items yet.<br />Add one below, or drag one out to make it a task.</p>
@@ -1443,7 +1542,7 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
                           style={{ flex: 1, minWidth: 0, background: "#1a1a1a", border: "1px solid #333", color: "#ddd", fontSize: 13, padding: "2px 6px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 3 }} />
                       ) : (
                         <span onClick={() => { if (!temp) { setEditingItemId(it.id); setItemDraft(it.text); } }} title={temp ? undefined : "Click to edit"}
-                          style={{ flex: 1, fontSize: 13, color: "#b0b0b0", lineHeight: 1.4, minWidth: 0, wordBreak: "break-word", cursor: temp ? "default" : "text" }}
+                          style={{ flex: 1, fontSize: 12, color: "#9a9a9a", lineHeight: 1.4, minWidth: 0, wordBreak: "break-word", cursor: temp ? "default" : "text" }}
                         >{it.text || "Untitled"}</span>
                       )}
                     </div>
@@ -1451,14 +1550,14 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
                 })}
               </div>
 
-              <div style={{ display: "flex", gap: 6, padding: "10px 18px 6px" }}>
+              <div style={{ display: "flex", gap: 5, padding: "9px 14px 4px" }}>
                 <input ref={addRef} value={newItem} onChange={(e) => setNewItem(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitItem(); }}
                   placeholder={isTemp ? "Saving project…" : "Add item…"} disabled={isTemp}
-                  style={{ flex: 1, minWidth: 0, background: "#1a1a1a", border: "1px solid #333", color: "#ccc", fontSize: 12, padding: "6px 8px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 2, opacity: isTemp ? 0.5 : 1 }} />
-                <button onClick={submitItem} disabled={isTemp} style={{ background: "#1e1e1e", border: "1px solid #505050", color: "#aaa", fontSize: 11, padding: "4px 12px", cursor: isTemp ? "default" : "pointer", borderRadius: 2, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.1em", opacity: isTemp ? 0.5 : 1 }}>ADD</button>
+                  style={{ flex: 1, minWidth: 0, background: "rgba(255,255,255,0.03)", border: "1px solid #262626", color: "#bbb", fontSize: 11, padding: "5px 7px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 3, opacity: isTemp ? 0.5 : 1 }} />
+                <button onClick={submitItem} disabled={isTemp} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid #3a3a3a", color: "#9a9a9a", fontSize: 10, padding: "4px 9px", cursor: isTemp ? "default" : "pointer", borderRadius: 3, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.1em", opacity: isTemp ? 0.5 : 1 }}>ADD</button>
               </div>
 
-              <div style={{ padding: "8px 18px 14px", borderTop: "1px solid #1a1a1a", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+              <div style={{ padding: "7px 14px 4px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <button onClick={copyAll} aria-label="Copy project contents to clipboard" style={{ background: "none", border: "1px solid #4a4a4a", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: copied ? "#7bd88f" : "#9a9a9a", textTransform: "uppercase", padding: "4px 9px", borderRadius: 3, borderColor: copied ? "#3f6f4a" : "#4a4a4a", transition: "color 0.15s, border-color 0.15s" }}
                     onMouseEnter={(e) => { if (!copied) { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; } }} onMouseLeave={(e) => { if (!copied) { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#4a4a4a"; } }}
@@ -3030,33 +3129,17 @@ function Dashboard() {
         .reveal-row:focus-within .row-action { opacity: 1; }
         @media (hover: none) { .reveal-row .row-action { opacity: 1; } }
         .skeleton { animation: skpulse 1.4s ease-in-out infinite; }
-        /* rendered project notes (markdown) */
-        .notes-render { word-break: break-word; }
-        .notes-render > :first-child { margin-top: 0.1em; }
-        .notes-render .md-p { margin: 0 0 0.92em; }
-        .notes-render .md-h { color: #ececec; font-weight: 600; line-height: 1.25; margin: 1.35em 0 0.5em; }
-        .notes-render .md-h1 { font-size: 1.7em; }
-        .notes-render .md-h2 { font-size: 1.38em; }
-        .notes-render .md-h3 { font-size: 1.18em; }
-        .notes-render .md-h4, .notes-render .md-h5, .notes-render .md-h6 { font-size: 1.02em; color: #cfccc7; }
-        .notes-render .md-ol { margin: 0 0 0.92em; padding-left: 1.4em; }
-        .notes-render li { margin: 0.28em 0; }
-        /* bullet + task lists both use a plain "* " marker */
-        .notes-render .md-ul { list-style: none; margin: 0 0 0.92em; padding-left: 0.2em; }
-        .notes-render .md-ul > li:not(.md-task)::before { content: "*"; color: #7a756c; margin-right: 0.55em; }
-        .notes-render .md-tasklist { padding-left: 0.2em; }
-        .notes-render .md-task { display: flex; gap: 0.55em; align-items: baseline; }
-        .notes-render .md-check { color: #7a756c; flex-shrink: 0; }
-        .notes-render .md-check.on { color: #5f5b55; }
-        .notes-render .md-done { color: #7a7a7a; text-decoration: line-through; }
-        .notes-render .md-quote { margin: 0 0 0.92em; padding: 0.15em 0 0.15em 1em; border-left: 2px solid #3a3a3a; color: #a8a49e; font-style: italic; }
-        .notes-render .md-code { font-family: 'JetBrains Mono', monospace; font-size: 0.82em; background: rgba(255,255,255,0.07); padding: 0.1em 0.36em; border-radius: 3px; color: #d8cfa8; }
-        .notes-render .md-pre { background: rgba(255,255,255,0.035); border: 1px solid #262626; border-radius: 5px; padding: 12px 14px; overflow-x: auto; margin: 0 0 0.92em; }
-        .notes-render .md-pre code { font-family: 'JetBrains Mono', monospace; font-size: 0.82em; color: #c8c8c8; white-space: pre; }
-        .notes-render .md-link { color: #9fc0ff; text-decoration: none; border-bottom: 1px solid rgba(159,192,255,0.35); }
-        .notes-render .md-link:hover { border-bottom-color: #9fc0ff; }
-        .notes-render .md-hr { border: none; border-top: 1px solid #2a2a2a; margin: 1.4em 0; }
-        .notes-render strong { color: #ececec; font-weight: 600; }
+        /* project notes editor — two block types only: heading and bullet */
+        .notes-edit { word-break: break-word; }
+        .notes-edit .nb-p { margin: 0 0 0.55em; min-height: 1.8em; }
+        .notes-edit .nb-h { font-size: 1.55em; font-weight: 600; color: #f0ede8; line-height: 1.3; margin: 1.15em 0 0.4em; letter-spacing: -0.01em; }
+        .notes-edit .nb-h:first-child { margin-top: 0; }
+        .notes-edit .nb-li { position: relative; padding-left: 1.55em; margin: 0 0 0.3em; min-height: 1.8em; }
+        .notes-edit .nb-li::before { content: "\\25CF"; position: absolute; left: 0.42em; top: 0; font-size: 0.55em; line-height: 3.2; color: #8f8a80; }
+        .notes-edit[data-empty="1"] .nb-p:first-child::before {
+          content: "Write\\2026"; color: #55514b; pointer-events: none; position: absolute;
+        }
+        .notes-edit[data-empty="1"] .nb-p:first-child { position: relative; }
         @media (prefers-reduced-motion: reduce) {
           .scan { animation: none !important; }
           .skeleton { animation: none !important; }
