@@ -69,8 +69,8 @@ export async function GET() {
     });
     const data = await res.json();
 
-    const shortTerm: { id: string; title: string; priority: boolean; order: number | null; notes: string }[] = [];
-    const longTerm: { id: string; title: string; priority: boolean; order: number | null; notes: string }[] = [];
+    const shortTerm: { id: string; title: string; priority: boolean; order: number | null; notes: string; links: string }[] = [];
+    const longTerm: { id: string; title: string; priority: boolean; order: number | null; notes: string; links: string }[] = [];
     const clients: { id: string; title: string; order: number | null; notes: string; rating: number | null }[] = [];
 
     (data.results || []).forEach((page: any) => {
@@ -81,6 +81,8 @@ export async function GET() {
       // manual-reorder position (null until the user drags something) + notes
       const order = (page.properties as any)["Order"]?.number ?? null;
       const notes = ((page.properties as any)["Notes"]?.rich_text || []).map((t: any) => t.plain_text).join("");
+      // saved reference links, one per line as "label|url"
+      const links = ((page.properties as any)["Links"]?.rich_text || []).map((t: any) => t.plain_text).join("");
 
       // Clients are tagged with the Type select (status options can't be
       // created via the API, but select options can)
@@ -95,8 +97,8 @@ export async function GET() {
       const status = statusProp?.status?.name || "";
       const priority = !!(page.properties as any)["Priority"]?.checkbox;
 
-      if (status === "Short Term") shortTerm.push({ id: page.id, title, priority, order, notes });
-      else if (status === "Long Term") longTerm.push({ id: page.id, title, priority, order, notes });
+      if (status === "Short Term") shortTerm.push({ id: page.id, title, priority, order, notes, links });
+      else if (status === "Long Term") longTerm.push({ id: page.id, title, priority, order, notes, links });
     });
 
     // enrich Short Term and Long Term with their checklists (child to_do blocks)
@@ -400,6 +402,7 @@ export async function POST(request: Request) {
       if (!db.properties?.Order) missing.Order = { number: {} };
       if (!db.properties?.Notes) missing.Notes = { rich_text: {} };
       if (!db.properties?.Rating) missing.Rating = { number: {} };
+      if (!db.properties?.Links) missing.Links = { rich_text: {} };
       if (Object.keys(missing).length === 0) return NextResponse.json({ success: true, existed: true });
       const patch = await fetch(`https://api.notion.com/v1/databases/${dbId}`, {
         method: "PATCH", headers: H, body: JSON.stringify({ properties: missing }),
@@ -482,6 +485,21 @@ export async function POST(request: Request) {
     }
 
     // Save a client's note into the "Notes" rich-text property (empty clears it).
+    // Save a project's reference links into the "Links" rich-text property
+    // (one per line as "label|url"; empty clears it).
+    if (action === "setLinks") {
+      if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+      if (typeof body.links !== "string") return NextResponse.json({ error: "Invalid links" }, { status: 400 });
+      const content = body.links.slice(0, 2000);
+      const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" },
+        body: JSON.stringify({ properties: { Links: { rich_text: content ? [{ text: { content } }] : [] } } }),
+      });
+      if (!notionRes.ok) return NextResponse.json({ error: await notionRes.json() }, { status: notionRes.status });
+      return NextResponse.json({ success: true });
+    }
+
     if (action === "setClientNotes") {
       if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
       if (typeof body.notes !== "string") return NextResponse.json({ error: "Invalid notes" }, { status: 400 });

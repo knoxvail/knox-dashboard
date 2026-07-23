@@ -9,7 +9,8 @@ const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : use
 
 type Task = { id: string; title: string; order?: number | null; notes?: string; rating?: number | null };
 type ChecklistItem = { id: string; text: string; checked: boolean }; // id = Notion BLOCK id
-type Project = { id: string; title: string; items: ChecklistItem[]; priority?: boolean; order?: number | null; notes?: string }; // id = Notion PAGE id
+type Project = { id: string; title: string; items: ChecklistItem[]; priority?: boolean; order?: number | null; notes?: string; links?: string }; // id = Notion PAGE id
+type SavedLink = { label: string; url: string };
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
 type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string; editDate?: string; editTime?: string };
@@ -806,6 +807,26 @@ const AddEventInput = forwardRef<AddHandle, { onAdd: (title: string, date: strin
 const TASK_HUES = [140, 118, 96, 74, 54, 38, 22, 8, 352, 336, 320, 302, 285];
 const taskHue = (count: number) => TASK_HUES[Math.min(Math.max(count, 0), TASK_HUES.length - 1)];
 
+// ---- Saved reference links ("label|url" per line) -------------------------
+// Only http(s) is ever turned into a real link, so a stored value can't smuggle
+// in a javascript: URL.
+const safeUrl = (raw: string) => {
+  const u = raw.trim();
+  if (!u) return "";
+  const withProto = /^https?:\/\//i.test(u) ? u : `https://${u}`;
+  try { const p = new URL(withProto); return p.protocol === "http:" || p.protocol === "https:" ? p.href : ""; }
+  catch { return ""; }
+};
+const hostLabel = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; } };
+const parseLinks = (src: string): SavedLink[] =>
+  (src || "").split("\n").map(line => line.trim()).filter(Boolean).map(line => {
+    const i = line.indexOf("|");
+    const label = i >= 0 ? line.slice(0, i).trim() : "";
+    const url = safeUrl(i >= 0 ? line.slice(i + 1) : line);
+    return { label: label || hostLabel(url), url };
+  }).filter(l => !!l.url);
+const serializeLinks = (links: SavedLink[]) => links.map(l => `${l.label}|${l.url}`).join("\n");
+
 // How "heavy" a project is — drives its tint and its position in the warmth sort.
 // Counting items alone under-weights a project with two dense, detailed items, so
 // factor in how much is actually written: the item text AND the notes.
@@ -1360,9 +1381,62 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
   );
 }
 
+// A small "memory" shelf for a project: paste a URL and it's saved as a
+// clickable link you can come back to. Accepts "Label | url" or a bare url
+// (which is labelled by its hostname).
+function LinksCard({ links, onChange }: { links: SavedLink[]; onChange: (next: SavedLink[]) => void }) {
+  const [draft, setDraft] = useState("");
+  const [bad, setBad] = useState(false);
+  const add = () => {
+    const raw = draft.trim();
+    if (!raw) return;
+    const i = raw.indexOf("|");
+    const label = i >= 0 ? raw.slice(0, i).trim() : "";
+    const url = safeUrl(i >= 0 ? raw.slice(i + 1) : raw);
+    if (!url) { setBad(true); setTimeout(() => setBad(false), 1200); return; } // keep the text so it can be fixed
+    onChange([...links, { label: label || hostLabel(url), url }]);
+    setDraft("");
+  };
+  return (
+    <section style={{
+      background: "rgba(255,255,255,0.022)", border: "1px solid #1c1c1c", borderRadius: 8,
+      padding: "12px 3px 8px", display: "flex", flexDirection: "column", minHeight: 0, flexShrink: 0, maxHeight: "42%",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 14px 9px" }}>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.16em", color: "#6a6a6a", textTransform: "uppercase" }}>Links</span>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#5a5a5a" }}>{links.length}</span>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0, padding: "0 14px" }}>
+        {links.length === 0 ? (
+          <p style={{ margin: "2px 0 8px", color: "#5f5f5f", fontSize: 11, lineHeight: 1.5 }}>Paste a link below to keep it here.</p>
+        ) : links.map((l, i) => (
+          <div key={`${l.url}-${i}`} className="reveal-row" style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 0", borderBottom: "1px solid #1a1a1a" }}>
+            <a href={l.url} target="_blank" rel="noopener noreferrer" title={l.url}
+              style={{ flex: 1, minWidth: 0, fontSize: 12, color: "#8ea9cc", textDecoration: "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transition: "color 0.15s" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "#b9d0ef")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "#8ea9cc")}
+            >{l.label}</a>
+            <button className="row-action" aria-label={`Remove ${l.label}`} onClick={() => onChange(links.filter((_, n) => n !== i))}
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#707070", fontSize: 11, lineHeight: 1, padding: "0 2px", flexShrink: 0, transition: "color 0.15s" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "#c06464")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "#707070")}
+            >✕</button>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 5, padding: "9px 14px 2px" }}>
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+          placeholder={bad ? "Not a valid link…" : "Paste a link…"} aria-label="Add a link"
+          style={{ flex: 1, minWidth: 0, background: "rgba(255,255,255,0.03)", border: `1px solid ${bad ? "#6f3f3f" : "#262626"}`, color: "#bbb", fontSize: 11, padding: "5px 7px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 3, transition: "border-color 0.15s" }} />
+        <button onClick={add} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid #3a3a3a", color: "#9a9a9a", fontSize: 10, padding: "4px 9px", cursor: "pointer", borderRadius: 3, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.1em" }}>ADD</button>
+      </div>
+    </section>
+  );
+}
+
 // Click-to-open editor for a project's checklist. Portalled to document.body so
 // the panel's overflow/backdrop-filter stacking context can't clip it.
-function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditItem, onEditTitle, onArchive, onMove, onReorderItems, onExtractItem, onSaveNotes }: {
+function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditItem, onEditTitle, onArchive, onMove, onReorderItems, onExtractItem, onSaveNotes, onSaveLinks }: {
   project: Project;
   list: "Short Term" | "Long Term" | null; // which list the project is in (for the Move control)
   onClose: () => void;
@@ -1375,6 +1449,7 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
   onReorderItems: (projectId: string, items: ChecklistItem[]) => void; // drag-reorder the checklist
   onExtractItem: (projectId: string, itemId: string) => void; // drag an item out of the checklist → its own task
   onSaveNotes: (projectId: string, notes: string) => void; // autosave the project notes
+  onSaveLinks: (projectId: string, links: SavedLink[]) => void; // the project's saved reference links
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState(project.title);
@@ -1503,9 +1578,9 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
           </div>
 
           {!focus && (
+          <div style={{ width: 228, flexShrink: 0, display: "flex", flexDirection: "column", gap: 10, margin: "14px 12px 14px 0", minHeight: 0 }}>
             <aside ref={asideRef} style={{
-              width: 228, flexShrink: 0, alignSelf: "flex-start", maxHeight: "calc(100% - 28px)",
-              margin: "14px 12px 14px 0", padding: "12px 3px 8px",
+              flex: "1 1 auto", padding: "12px 3px 8px",
               background: "rgba(255,255,255,0.022)", border: "1px solid #1c1c1c", borderRadius: 8,
               display: "flex", flexDirection: "column", minHeight: 0,
             }}>
@@ -1611,6 +1686,9 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
                   onMouseEnter={(e) => (e.currentTarget.style.color = "#c06464")} onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}>Archive</button>
               </div>
             </aside>
+
+            <LinksCard links={parseLinks(project.links || "")} onChange={(next) => onSaveLinks(project.id, next)} />
+          </div>
           )}
         </div>
       </div>
@@ -2151,6 +2229,24 @@ function Dashboard() {
         await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setClientNotes", id: projectId, notes: prev }) });
       });
     } catch { revert(); toast("Couldn’t save notes — reverted"); }
+  };
+
+  // Save a project's reference links (optimistic, with revert + undo).
+  const saveProjectLinks = async (projectId: string, links: SavedLink[]) => {
+    if (projectId.startsWith("temp-")) return;
+    const prev = findProject(projectId)?.links ?? "";
+    const next = serializeLinks(links);
+    if (prev === next) return;
+    patchProject(projectId, p => ({ ...p, links: next }));
+    const revert = () => patchProject(projectId, p => ({ ...p, links: prev }));
+    try {
+      const res = await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setLinks", id: projectId, links: next }) });
+      if (!res.ok) { revert(); toast("Couldn’t save link — reverted"); return; }
+      pushUndo("edit links", async () => {
+        revert();
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setLinks", id: projectId, links: prev }) });
+      });
+    } catch { revert(); toast("Couldn’t save link — reverted"); }
   };
 
   // ----- Checklist items within a project (optimistic) -----
@@ -3098,6 +3194,7 @@ function Dashboard() {
           onReorderItems={reorderChecklistItems}
           onExtractItem={extractChecklistItem}
           onSaveNotes={saveProjectNotes}
+          onSaveLinks={saveProjectLinks}
         />
       )}
 
