@@ -576,10 +576,10 @@ function TaskItem({
           onKeyDown={onOpen ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(task.id); } } : undefined}
           style={{
             margin: 0,
-            fontSize: emphasis ? 15 : 13,
+            fontSize: emphasis ? 30 : 13,
             fontWeight: emphasis ? 500 : 400,
             color: textRest,
-            lineHeight: emphasis ? 1.42 : 1.5,
+            lineHeight: emphasis ? 1.2 : 1.5,
             minWidth: 0,
             cursor: "pointer",
             flex: 1,
