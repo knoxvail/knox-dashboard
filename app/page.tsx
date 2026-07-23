@@ -1154,6 +1154,7 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
   const latestRef = useRef(value);
   const timerRef = useRef<number | undefined>(undefined);
   const [flash, setFlash] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [words, setWords] = useState(countWords(value));
 
   // Build the document. Skipped while the editor has focus so a background
@@ -1190,6 +1191,23 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
       setTimeout(() => setFlash(false), 1400);
     }
   }, [onSave]);
+
+  // Copy the notes to the clipboard, keeping the "# " / "* " marks so headings
+  // and bullets survive the paste.
+  const copyNotes = async () => {
+    const root = ref.current;
+    const text = root ? serializeNotes(root) : latestRef.current;
+    const ok = await navigator.clipboard?.writeText(text).then(() => true).catch(() => false);
+    if (!ok) {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch {}
+      ta.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
   const sync = useCallback(() => {
     const root = ref.current;
     if (!root) return;
@@ -1325,7 +1343,18 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 22px", borderTop: "1px solid #1a1a1a", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: "#5a5a5a", textTransform: "uppercase", flexShrink: 0 }}>
         <span>{words} {words === 1 ? "word" : "words"}</span>
-        <span style={{ color: flash ? "#7bd88f" : "#5a5a5a", transition: "color 0.2s" }}>{flash ? "Saved ✓" : "# heading · * bullet"}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <span style={{ color: flash ? "#7bd88f" : "#5a5a5a", transition: "color 0.2s" }}>{flash ? "Saved ✓" : "# heading · * bullet"}</span>
+          <button onClick={copyNotes} aria-label="Copy notes to clipboard" style={{
+            background: "none", border: "1px solid #3a3a3a", cursor: "pointer",
+            fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase",
+            padding: "3px 9px", borderRadius: 3, transition: "color 0.15s, border-color 0.15s",
+            color: copied ? "#7bd88f" : "#9a9a9a", borderColor: copied ? "#3f6f4a" : "#3a3a3a",
+          }}
+            onMouseEnter={(e) => { if (!copied) { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; } }}
+            onMouseLeave={(e) => { if (!copied) { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#3a3a3a"; } }}
+          >{copied ? "Copied ✓" : "Copy Text"}</button>
+        </span>
       </div>
     </div>
   );
