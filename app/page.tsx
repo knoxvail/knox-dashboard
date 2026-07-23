@@ -422,6 +422,7 @@ function TaskItem({
   onReorder,
   hasNote = false,
   onRate,
+  emphasis = false,
 }: {
   task: Task;
   itemCount?: number; // how many checklist items this task/project holds (drives the hover preview)
@@ -437,11 +438,17 @@ function TaskItem({
   listKey?: string; // which list this row belongs to (for same-list drag-reorder)
   onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => boolean;
   onRate?: (id: string, rating: number) => void; // when set (clients), show 1–5 priority stars
+  emphasis?: boolean; // High Priority rows: bigger, brighter, stronger left rule
 }) {
   const [inputValue, setInputValue] = useState(task.title);
   const [overSide, setOverSide] = useState<null | "top" | "bottom">(null); // reorder drop indicator
   const inputRef = useRef<HTMLInputElement>(null);
   const reorderType = `x-list/${listKey}`; // custom drag type, readable during dragover to detect same-list drags
+  // High Priority rows carry more visual weight so they can't blend into the board
+  const ruleRest = emphasis ? "#7a7a7a" : "#2a2a2a";
+  const ruleHover = emphasis ? "#f0f0f0" : "#777";
+  const textRest = emphasis ? "#f2f2f2" : "#b0b0b0";
+  const textHover = emphasis ? "#ffffff" : "#e8e8e8";
 
   useEffect(() => {
     if (isEditing) {
@@ -504,29 +511,29 @@ function TaskItem({
         }
       } : undefined}
       style={{
-        borderLeft: "1px solid #2a2a2a",
-        paddingLeft: 10,
+        borderLeft: `${emphasis ? 2 : 1}px solid ${ruleRest}`,
+        paddingLeft: emphasis ? 12 : 10,
         transition: "border-color 0.2s, padding-left 0.2s",
         display: "flex",
         alignItems: "flex-start",
         justifyContent: "space-between",
         gap: 8,
-        marginBottom: 10,
+        marginBottom: emphasis ? 13 : 10,
         cursor: isEditing ? "auto" : "grab",
         boxShadow: overSide === "top" ? "inset 0 2px 0 #8a8a8a" : overSide === "bottom" ? "inset 0 -2px 0 #8a8a8a" : "none",
       }}
       onMouseEnter={e => {
         if (!isEditing) {
-          (e.currentTarget as HTMLElement).style.borderLeftColor = "#777";
-          (e.currentTarget as HTMLElement).style.paddingLeft = "12px";
+          (e.currentTarget as HTMLElement).style.borderLeftColor = ruleHover;
+          (e.currentTarget as HTMLElement).style.paddingLeft = emphasis ? "14px" : "12px";
           // preview the checklist only when there's actually content to show
           if (onHover && itemCount > 0) onHover(task.id, (e.currentTarget as HTMLElement).getBoundingClientRect());
         }
       }}
       onMouseLeave={e => {
         if (!isEditing) {
-          (e.currentTarget as HTMLElement).style.borderLeftColor = "#2a2a2a";
-          (e.currentTarget as HTMLElement).style.paddingLeft = "10px";
+          (e.currentTarget as HTMLElement).style.borderLeftColor = ruleRest;
+          (e.currentTarget as HTMLElement).style.paddingLeft = emphasis ? "12px" : "10px";
         }
         onLeave?.();
       }}
@@ -569,9 +576,10 @@ function TaskItem({
           onKeyDown={onOpen ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(task.id); } } : undefined}
           style={{
             margin: 0,
-            fontSize: 13,
-            color: "#b0b0b0",
-            lineHeight: 1.5,
+            fontSize: emphasis ? 15 : 13,
+            fontWeight: emphasis ? 500 : 400,
+            color: textRest,
+            lineHeight: emphasis ? 1.42 : 1.5,
             minWidth: 0,
             cursor: "pointer",
             flex: 1,
@@ -580,11 +588,11 @@ function TaskItem({
             borderRadius: 2,
           }}
           onMouseEnter={e => {
-            (e.currentTarget as HTMLElement).style.color = "#e8e8e8";
+            (e.currentTarget as HTMLElement).style.color = textHover;
             (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255, 255, 255, 0.05)";
           }}
           onMouseLeave={e => {
-            (e.currentTarget as HTMLElement).style.color = "#b0b0b0";
+            (e.currentTarget as HTMLElement).style.color = textRest;
             (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
           }}
         >
@@ -598,7 +606,7 @@ function TaskItem({
   );
 }
 
-function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave, listKey, onReorder, onRate }: { tasks: Task[]; onComplete: (id: string) => void; onEdit: (id: string, newTitle: string) => Promise<void>; onOpen?: (id: string) => void; onHover?: (id: string, rect: DOMRect) => void; onLeave?: () => void; listKey?: string; onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => boolean; onRate?: (id: string, rating: number) => void }) {
+function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave, listKey, onReorder, onRate, emphasis }: { tasks: Task[]; onComplete: (id: string) => void; onEdit: (id: string, newTitle: string) => Promise<void>; onOpen?: (id: string) => void; onHover?: (id: string, rect: DOMRect) => void; onLeave?: () => void; listKey?: string; onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => boolean; onRate?: (id: string, rating: number) => void; emphasis?: boolean }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   if (tasks.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -624,6 +632,7 @@ function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave, listKey
           listKey={listKey}
           onReorder={onReorder}
           onRate={onRate}
+          emphasis={emphasis}
         />
       ))}
     </>
@@ -2854,10 +2863,10 @@ function Dashboard() {
               }}
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <h2 style={{ margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 400, letterSpacing: "0.16em", textTransform: "uppercase" as const, color: "#f0f0f0", display: "flex", alignItems: "center", gap: 7 }}>
-                  <span aria-hidden style={{ fontSize: 9 }}>▲</span> High Priority
+                <h2 style={{ margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 500, letterSpacing: "0.2em", textTransform: "uppercase" as const, color: "#ffffff", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span aria-hidden style={{ fontSize: 10 }}>▲</span> High Priority
                 </h2>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>{shortHigh.length}</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 500, color: "#d0d0d0" }}>{shortHigh.length}</span>
               </div>
               <div
                 onClick={(e) => { if (e.target === e.currentTarget) highAddRef.current?.open(); }}
@@ -2867,7 +2876,7 @@ function Dashboard() {
                   <div style={{ borderLeft: "1px dashed #4a4a4a", padding: "2px 0 2px 10px" }}>
                     <p style={{ margin: 0, color: "#808080", fontSize: 11, fontStyle: "italic" }}>Drag tasks here, or use + to add</p>
                   </div>
-                ) : <TaskList tasks={shortHigh} onComplete={completeTask} onEdit={editTask} onOpen={handleOpenProject} onHover={(id, rect) => setHover({ id, rect })} onLeave={() => setHover(null)} listKey="short" onReorder={reorderTask} />}
+                ) : <TaskList tasks={shortHigh} onComplete={completeTask} onEdit={editTask} onOpen={handleOpenProject} onHover={(id, rect) => setHover({ id, rect })} onLeave={() => setHover(null)} listKey="short" onReorder={reorderTask} emphasis />}
               </div>
               <AddTaskInput ref={highAddRef} onAdd={(title) => addTask(title, "Short Term", true)} placeholder="New priority task..." />
             </div>
