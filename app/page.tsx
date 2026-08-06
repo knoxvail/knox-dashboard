@@ -13,7 +13,7 @@ type Project = { id: string; title: string; items: ChecklistItem[]; priority?: b
 type SavedLink = { label: string; url: string };
 // An action item written by the Cowork routine: a headline, a one-line why, and
 // a full plan (its Notion page body) rendered in the same notes format.
-type ActionItem = { id: string; title: string; notes?: string; plan?: string; order?: number | null };
+type ActionItem = { id: string; title: string; notes?: string; plan?: string; order?: number | null; done?: boolean; status?: string };
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
 type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string; editDate?: string; editTime?: string };
@@ -1402,10 +1402,14 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
 }
 
 // One of today's action items: headline + the one-line why, click for the plan.
-function ActionCard({ action, index, onOpen, onComplete }: {
-  action: ActionItem; index: number; onOpen: () => void; onComplete: () => void;
+// One of the three fixed Today slots. Finishing an item does NOT remove it: it
+// crosses out in place and stays clickable so the plan is still readable, and the
+// check toggles back off.
+function ActionCard({ action, index, onOpen, onToggleDone }: {
+  action: ActionItem; index: number; onOpen: () => void; onToggleDone: (done: boolean) => void;
 }) {
   const [hover, setHover] = useState(false);
+  const done = !!action.done;
   return (
     <div
       role="button" tabIndex={0}
@@ -1414,42 +1418,61 @@ function ActionCard({ action, index, onOpen, onComplete }: {
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       className="reveal-row"
       style={{
-        display: "flex", flexDirection: "column", gap: 4, minWidth: 0, cursor: "pointer",
-        background: hover ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.022)",
-        border: `1px solid ${hover ? "#6a6a6a" : "#2a2a2a"}`,
-        borderRadius: 5, padding: "7px 10px 6px",
+        display: "flex", flexDirection: "column", gap: 6, minWidth: 0, cursor: "pointer",
+        // bounded by the grid row; the note is the part that gives when it's tight
+        minHeight: 0, overflow: "hidden",
+        background: done
+          ? (hover ? "rgba(255,255,255,0.035)" : "rgba(255,255,255,0.012)")
+          : (hover ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.022)"),
+        border: `1px solid ${hover ? (done ? "#4a4a4a" : "#6a6a6a") : (done ? "#242424" : "#2a2a2a")}`,
+        borderRadius: 5, padding: "9px 12px 8px",
+        opacity: done ? 0.72 : 1,
         // transform (not margin/height) so the lift never reflows the grid
         transform: hover ? "translateY(-1px)" : "none",
-        transition: "background 0.15s, border-color 0.15s, transform 0.15s",
+        transition: "background 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.16em", color: "#7a7a7a" }}>
-          {String(index + 1).padStart(2, "0")}
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.16em", color: done ? "#7bd88f" : "#7a7a7a", transition: "color 0.15s" }}>
+          {done ? "DONE" : String(index + 1).padStart(2, "0")}
         </span>
         <button
-          className="row-action"
-          aria-label="Mark done"
-          onClick={(e) => { e.stopPropagation(); onComplete(); }}
+          // once finished the check stays visible (not hover-gated) so it's
+          // obvious what happened and the item can be reopened with one click
+          className={done ? undefined : "row-action"}
+          aria-label={done ? "Reopen this item" : "Mark done"}
+          aria-pressed={done}
+          onClick={(e) => { e.stopPropagation(); onToggleDone(!done); }}
           style={{
-            background: "#1e1e1e", border: "1px solid #505050", borderRadius: 3, cursor: "pointer",
-            color: "#aaa", lineHeight: 1, padding: "3px 7px", flexShrink: 0,
+            background: done ? "#20301f" : "#1e1e1e",
+            border: `1px solid ${done ? "#3f6f4a" : "#505050"}`,
+            borderRadius: 3, cursor: "pointer",
+            color: done ? "#7bd88f" : "#aaa", lineHeight: 1, padding: "3px 7px", flexShrink: 0,
             display: "flex", alignItems: "center", justifyContent: "center",
-            transition: "color 0.15s, border-color 0.15s",
+            transition: "color 0.15s, border-color 0.15s, background 0.15s",
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; }}
+          onMouseEnter={(e) => { if (!done) { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; } }}
+          onMouseLeave={(e) => { if (!done) { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; } }}
         ><CheckIcon /></button>
       </div>
-      <span style={{ fontSize: 12.5, color: hover ? "#ffffff" : "#e8e8e8", lineHeight: 1.3, overflowWrap: "break-word", transition: "color 0.15s", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{action.title}</span>
+      <span style={{
+        fontSize: 13, lineHeight: 1.35, overflowWrap: "break-word", transition: "color 0.15s", flexShrink: 0,
+        color: done ? "#6f6f6f" : (hover ? "#ffffff" : "#e8e8e8"),
+        textDecoration: done ? "line-through" : "none",
+        textDecorationColor: done ? "#5a5a5a" : undefined,
+        display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
+      }}>{action.title}</span>
       {action.notes?.trim() && (
-        <span style={{ fontSize: 10.5, color: "#8a8a8a", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-          {action.notes}
-        </span>
+        <span style={{
+          fontSize: 11, lineHeight: 1.4, color: done ? "#5a5a5a" : "#8a8a8a", transition: "color 0.15s",
+          // flexes into whatever room is left, so the card never outgrows its slot
+          flex: "1 1 auto", minHeight: 0,
+          display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden",
+        }}>{action.notes}</span>
       )}
       {/* marginTop:auto pins the footer to the bottom so all three line up even
           when their titles wrap to different depths */}
-      <span style={{ marginTop: "auto", paddingTop: 2, fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.14em", color: hover ? "#cfcfcf" : "#6a6a6a", transition: "color 0.15s" }}>
+      <span style={{ marginTop: "auto", paddingTop: 4, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.14em", color: hover ? "#cfcfcf" : "#6a6a6a", transition: "color 0.15s" }}>
         {action.plan?.trim() ? "OPEN PLAN →" : "NO PLAN YET"}
       </span>
     </div>
@@ -1495,7 +1518,13 @@ function ActionPlanModal({ action, onClose, onComplete }: {
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 20px 14px", borderTop: "1px solid #1a1a1a", flexShrink: 0 }}>
-          <button onClick={() => { onComplete(); onClose(); }} style={{ background: "#1e1e1e", border: "1px solid #505050", color: "#ddd", fontSize: 11, padding: "5px 14px", borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.12em", textTransform: "uppercase" }}>Mark Done</button>
+          <button onClick={() => { onComplete(); onClose(); }} style={{
+            background: action.done ? "#20301f" : "#1e1e1e",
+            border: `1px solid ${action.done ? "#3f6f4a" : "#505050"}`,
+            color: action.done ? "#7bd88f" : "#ddd",
+            fontSize: 11, padding: "5px 14px", borderRadius: 3, cursor: "pointer",
+            fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.12em", textTransform: "uppercase",
+          }}>{action.done ? "Reopen" : "Mark Done"}</button>
         </div>
       </div>
     </div>,
@@ -2836,6 +2865,36 @@ function Dashboard() {
     setTimeout(fetchSpotify, 800);
   };
 
+  // Finish / un-finish a Today item. It stays on the board either way: crossed
+  // off rather than removed, still clickable to read its plan. Optimistic, with
+  // a rollback if Notion rejects it, and Ctrl+Z flips it back.
+  const toggleActionDone = useCallback(async (id: string, done: boolean) => {
+    const prev = actions.find(a => a.id === id);
+    if (!prev || !!prev.done === done) return;
+    const priorStatus = prev.status || "Short Term";
+    const patch = (v: boolean) => setActions(cur => cur.map(a => (a.id === id ? { ...a, done: v } : a)));
+    patch(done);
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setActionDone", id, done, status: priorStatus }),
+      });
+      if (!res.ok) { patch(!done); toast(done ? "Couldn’t finish that — reverted" : "Couldn’t reopen that — reverted"); return; }
+      const data = await res.json().catch(() => ({}));
+      if (data.status) setActions(cur => cur.map(a => (a.id === id ? { ...a, status: data.status } : a)));
+      pushUndo(`${done ? "finish" : "reopen"} “${undoClip(prev.title)}”`, async () => {
+        patch(!done);
+        await fetch("/api/notion", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "setActionDone", id, done: !done, status: priorStatus }),
+        }).catch(() => {});
+      });
+    } catch {
+      patch(!done); toast("Couldn’t update that — reverted");
+    }
+  }, [actions, pushUndo, toast]);
+
   // Copy the whole Today list — each item's headline plus its one-line why — as
   // a numbered plain-text list, so it can be pasted straight into a message.
   const copyToday = useCallback(async () => {
@@ -3082,7 +3141,7 @@ function Dashboard() {
             </Panel>
 
             {/* TODAY — actionable items from Cowork, stacked under Projects */}
-            <Panel style={{ flex: 0.72, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, padding: "14px 16px 10px" }}>
+            <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, padding: "14px 16px 10px" }}>
           <PanelHeader label="Today" right={
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
               {actions.length > 0 && (
@@ -3121,11 +3180,14 @@ function Dashboard() {
                 </p>
               </div>
             ) : (
-              // three across; a fourth item (rare) wraps to a second row and the
-              // container scrolls. alignItems:stretch keeps the cards equal height.
-              <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(Math.max(actions.length, 1), 3)}, 1fr)`, gap: 10, alignItems: "stretch" }}>
+              // three fixed slots. The routine always writes three, so the columns
+              // are pinned rather than derived — a finished item keeps its slot
+              // instead of the row resizing under the remaining ones.
+              // minmax(0,1fr) bounds the row to the panel's height, so the cards
+              // size themselves to the space available instead of overflowing it
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gridTemplateRows: "minmax(0, 1fr)", gap: 10, alignItems: "stretch", height: "100%" }}>
                 {actions.map((a, i) => (
-                  <ActionCard key={a.id} action={a} index={i} onOpen={() => setOpenActionId(a.id)} onComplete={() => completeTask(a.id)} />
+                  <ActionCard key={a.id} action={a} index={i} onOpen={() => setOpenActionId(a.id)} onToggleDone={(d) => toggleActionDone(a.id, d)} />
                 ))}
               </div>
             )}
@@ -3392,7 +3454,7 @@ function Dashboard() {
         <ActionPlanModal
           action={openAction}
           onClose={() => setOpenActionId(null)}
-          onComplete={() => completeTask(openAction.id)}
+          onComplete={() => toggleActionDone(openAction.id, !openAction.done)}
         />
       )}
 

@@ -102,8 +102,10 @@ export async function GET() {
     const shortTerm: { id: string; title: string; priority: boolean; order: number | null; notes: string; links: string }[] = [];
     const longTerm: { id: string; title: string; priority: boolean; order: number | null; notes: string; links: string }[] = [];
     const clients: { id: string; title: string; order: number | null; notes: string; rating: number | null }[] = [];
-    // today's action items, written by the Cowork routine (Type = "Action")
-    const actionPages: { id: string; title: string; order: number | null; notes: string }[] = [];
+    // today's action items, written by the Cowork routine (Type = "Action").
+    // `status` is carried so a finished item can be un-finished back to where it
+    // was, and `done` is what makes it render crossed off instead of disappearing.
+    const actionPages: { id: string; title: string; order: number | null; notes: string; status: string; done: boolean }[] = [];
 
     (data.results || []).forEach((page: any) => {
       const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
@@ -125,7 +127,11 @@ export async function GET() {
         return;
       }
       if (typeProp?.select?.name === "Action") {
-        actionPages.push({ id: page.id, title, order, notes });
+        // Action rows are selected by Type alone, so a Complete one still comes
+        // back here — that's what lets a finished item stay on the board.
+        const actionStatus =
+          (Object.values(page.properties).find((p: any) => p.type === "status") as any)?.status?.name || "";
+        actionPages.push({ id: page.id, title, order, notes, status: actionStatus, done: actionStatus === "Complete" });
         return;
       }
 
@@ -186,6 +192,29 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({ success: true });
+    }
+
+    // Finish (or un-finish) a Today action item. Deliberately NOT an archive:
+    // archiving drops the row out of the GET, and these have to stay on the board
+    // crossed off but still readable. Type stays "Action" so it keeps rendering;
+    // the morning routine is what clears Type and rotates the list.
+    if (action === "setActionDone") {
+      if (!id) return NextResponse.json({ error: "Missing task id" }, { status: 400 });
+      // undo restores whatever status the row had before it was finished
+      const next = body.done ? "Complete" : (status === "Long Term" ? "Long Term" : "Short Term");
+      const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ properties: { Status: { status: { name: next } } } }),
+      });
+      if (!notionRes.ok) {
+        return NextResponse.json({ error: await notionRes.json() }, { status: notionRes.status });
+      }
+      return NextResponse.json({ success: true, status: next });
     }
 
     // Handle task completion (archive)
