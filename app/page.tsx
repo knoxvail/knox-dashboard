@@ -1485,6 +1485,7 @@ function ActionCard({ action, index, onOpen, onToggleDone }: {
 function ActionPlanModal({ action, onClose, onComplete }: {
   action: ActionItem; onClose: () => void; onComplete: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -1492,6 +1493,32 @@ function ActionPlanModal({ action, onClose, onComplete }: {
   }, [onClose]);
   const blocks = parseNotes(action.plan || "");
   const hasPlan = !!action.plan?.trim();
+
+  // Copy this one item: its headline, the why-line, and the whole plan body.
+  // Bullets normalise to "- " so it pastes as clean markdown; headings already
+  // carry their "# " from the stored format.
+  const copyPlan = async () => {
+    const parts = [action.title];
+    if (action.notes?.trim()) parts.push("", action.notes.trim());
+    if (hasPlan) {
+      parts.push("");
+      for (const line of (action.plan || "").replace(/\r\n/g, "\n").split("\n")) {
+        parts.push(/^\*\s/.test(line) ? line.replace(/^\*\s+/, "- ") : line);
+      }
+    }
+    const text = parts.join("\n");
+    const ok = await navigator.clipboard?.writeText(text).then(() => true).catch(() => false);
+    if (!ok) {
+      // fallback for non-secure contexts / older browsers
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch {}
+      ta.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
   return createPortal(
     <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.62)", backdropFilter: "blur(5px)", WebkitBackdropFilter: "blur(5px)", zIndex: 9000, display: "grid", placeItems: "center", padding: 16, animation: "fadeIn 0.18s ease-out" }}>
@@ -1519,7 +1546,19 @@ function ActionPlanModal({ action, onClose, onComplete }: {
             )}
           </div>
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 20px 14px", borderTop: "1px solid #1a1a1a", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 20px 14px", borderTop: "1px solid #1a1a1a", flexShrink: 0 }}>
+          <button onClick={copyPlan} aria-label="Copy this item and its plan to clipboard" style={{
+            background: "none", cursor: "pointer",
+            border: `1px solid ${copied ? "#3f6f4a" : "#4a4a4a"}`,
+            color: copied ? "#7bd88f" : "#9a9a9a",
+            fontSize: 11, padding: "5px 14px", borderRadius: 3,
+            fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.12em", textTransform: "uppercase",
+            display: "inline-flex", alignItems: "center", gap: 6,
+            transition: "color 0.15s, border-color 0.15s",
+          }}
+            onMouseEnter={(e) => { if (!copied) { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; } }}
+            onMouseLeave={(e) => { if (!copied) { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#4a4a4a"; } }}
+          >{copied ? <>Copied <CheckIcon size={10} /></> : "Copy"}</button>
           <button onClick={() => { onComplete(); onClose(); }} style={{
             background: action.done ? "#20301f" : "#1e1e1e",
             border: `1px solid ${action.done ? "#3f6f4a" : "#505050"}`,
@@ -1994,7 +2033,6 @@ function Dashboard() {
   const [clients, setClients] = useState<Task[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
-  const [todayCopied, setTodayCopied] = useState(false);
   const [verse, setVerse] = useState<Verse | null>(null);
   const [allVerses, setAllVerses] = useState<Verse[]>([]);
   const [verseIndex, setVerseIndex] = useState(0);
@@ -2897,30 +2935,6 @@ function Dashboard() {
     }
   }, [actions, pushUndo, toast]);
 
-  // Copy the whole Today list — each item's headline plus its one-line why — as
-  // a numbered plain-text list, so it can be pasted straight into a message.
-  const copyToday = useCallback(async () => {
-    if (!actions.length) return;
-    const text = actions
-      .map((a, i) => {
-        const lines = [`${i + 1}. ${a.title}`];
-        if (a.notes?.trim()) lines.push(`   ${a.notes.trim()}`);
-        return lines.join("\n");
-      })
-      .join("\n\n");
-    const ok = await navigator.clipboard?.writeText(text).then(() => true).catch(() => false);
-    if (!ok) {
-      // fallback for non-secure contexts / older browsers
-      const ta = document.createElement("textarea");
-      ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px";
-      document.body.appendChild(ta); ta.select();
-      try { document.execCommand("copy"); } catch {}
-      ta.remove();
-    }
-    setTodayCopied(true);
-    setTimeout(() => setTodayCopied(false), 1500);
-  }, [actions]);
-
   const progressPct = nowPlaying.duration ? (nowPlaying.progress || 0) / nowPlaying.duration * 100 : 0;
 
   // modal + hover read live project state so optimistic item edits reflect instantly
@@ -3144,29 +3158,7 @@ function Dashboard() {
 
             {/* TODAY — actionable items from Cowork, stacked under Projects */}
             <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, padding: "14px 16px 10px" }}>
-          <PanelHeader label="Today" right={
-            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              {actions.length > 0 && (
-                <button
-                  onClick={copyToday}
-                  aria-label="Copy today's list to clipboard"
-                  style={{
-                    background: "none", cursor: "pointer",
-                    border: `1px solid ${todayCopied ? "#3f6f4a" : "#3a3a3a"}`,
-                    fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
-                    letterSpacing: "0.12em", textTransform: "uppercase",
-                    color: todayCopied ? "#7bd88f" : "#9a9a9a",
-                    padding: "3px 8px", borderRadius: 3,
-                    display: "inline-flex", alignItems: "center", gap: 5,
-                    transition: "color 0.15s, border-color 0.15s",
-                  }}
-                  onMouseEnter={(e) => { if (!todayCopied) { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; } }}
-                  onMouseLeave={(e) => { if (!todayCopied) { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#3a3a3a"; } }}
-                >{todayCopied ? <>Copied <CheckIcon size={9} /></> : "Copy"}</button>
-              )}
-              <Tag>COWORK</Tag>
-            </div>
-          } />
+          <PanelHeader label="Today" right={<Tag>COWORK</Tag>} />
           <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0 }}>
             {loading ? (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
