@@ -1427,9 +1427,11 @@ function ActionCard({ action, index, onOpen, onToggleDone }: {
         border: `1px solid ${hover ? (done ? "#4a4a4a" : "#6a6a6a") : (done ? "#242424" : "#2a2a2a")}`,
         borderRadius: 5, padding: "9px 12px 8px",
         opacity: done ? 0.72 : 1,
-        // transform (not margin/height) so the lift never reflows the grid
-        transform: hover ? "translateY(-1px)" : "none",
-        transition: "background 0.15s, border-color 0.15s, transform 0.15s, opacity 0.15s",
+        // No hover lift here. The card is sized to fill its grid row exactly, so
+        // any translateY pushes its top edge past the scroll container's clip box
+        // and shaves the top border off. Background + border + title color carry
+        // the hover state instead.
+        transition: "background 0.15s, border-color 0.15s, opacity 0.15s",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
