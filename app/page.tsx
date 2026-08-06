@@ -254,7 +254,7 @@ img{max-width:100%;height:auto;}table{max-width:100%!important;}blockquote{borde
                 <button onClick={sendReply} disabled={sending || !replyText.trim()} style={{ ...btnSolid, opacity: (sending || !replyText.trim()) ? 0.5 : 1, cursor: (sending || !replyText.trim()) ? "default" : "pointer" }}>{sending ? "Sending…" : "Send"}</button>
               </div>
             ) : sent ? (
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: "#7bd88f", textTransform: "uppercase", flexShrink: 0 }}>Sent ✓</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.12em", color: "#7bd88f", textTransform: "uppercase", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 5 }}>Sent <CheckIcon size={9} /></span>
             ) : (
               <button onClick={() => setReplying(true)} style={btnSolid}>Reply</button>
             )}
@@ -349,6 +349,19 @@ function ConnectButton({ href, label }: { href: string; label: string }) {
   );
 }
 
+// A hairline check drawn as SVG rather than typed as a character. The ✓ glyph
+// (U+2713) isn't in DM Sans, so Windows falls back to Segoe UI Emoji and it
+// renders fat and colored, which reads as an emoji next to the hairline borders.
+// Drawing it keeps the stroke thin at any size, and currentColor means it still
+// inherits each button's existing hover color transition for free.
+function CheckIcon({ size = 11 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden focusable="false" style={{ display: "block" }}>
+      <path d="M4 12.5 9.5 18 20 6.5" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function DoneButton({ onClick }: { onClick: () => void }) {
   return (
     <button
@@ -363,18 +376,19 @@ function DoneButton({ onClick }: { onClick: () => void }) {
         border: "1px solid #505050",
         cursor: "pointer",
         color: "#aaa",
-        fontSize: 13,
-        fontWeight: 600,
-        padding: "3px 8px",
+        padding: "4px 8px",
         flexShrink: 0,
         borderRadius: 3,
         transition: "color 0.2s, border-color 0.2s, background 0.2s, opacity 0.15s",
         lineHeight: 1,
         pointerEvents: "auto",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       }}
       onMouseEnter={e => { (e.currentTarget.style.color = "#fff"); (e.currentTarget.style.borderColor = "#aaa"); (e.currentTarget.style.background = "#2a2a2a"); }}
       onMouseLeave={e => { (e.currentTarget.style.color = "#aaa"); (e.currentTarget.style.borderColor = "#505050"); (e.currentTarget.style.background = "#1e1e1e"); }}
-    >✓</button>
+    ><CheckIcon /></button>
   );
 }
 
@@ -1370,16 +1384,17 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 22px", borderTop: "1px solid #1a1a1a", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: "#5a5a5a", textTransform: "uppercase", flexShrink: 0 }}>
         <span>{words} {words === 1 ? "word" : "words"}</span>
         <span style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <span style={{ color: flash ? "#7bd88f" : "#5a5a5a", transition: "color 0.2s" }}>{flash ? "Saved ✓" : "# heading · * bullet"}</span>
+          <span style={{ color: flash ? "#7bd88f" : "#5a5a5a", transition: "color 0.2s", display: "inline-flex", alignItems: "center", gap: 5 }}>{flash ? <>Saved <CheckIcon size={9} /></> : "# heading · * bullet"}</span>
           <button onClick={copyNotes} aria-label="Copy notes to clipboard" style={{
             background: "none", border: "1px solid #3a3a3a", cursor: "pointer",
             fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase",
             padding: "3px 9px", borderRadius: 3, transition: "color 0.15s, border-color 0.15s",
             color: copied ? "#7bd88f" : "#9a9a9a", borderColor: copied ? "#3f6f4a" : "#3a3a3a",
+            display: "inline-flex", alignItems: "center", gap: 5,
           }}
             onMouseEnter={(e) => { if (!copied) { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; } }}
             onMouseLeave={(e) => { if (!copied) { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#3a3a3a"; } }}
-          >{copied ? "Copied ✓" : "Copy Text"}</button>
+          >{copied ? <>Copied <CheckIcon size={9} /></> : "Copy Text"}</button>
         </span>
       </div>
     </div>
@@ -1422,12 +1437,13 @@ function ActionCard({ action, index, onOpen, onComplete }: {
         onClick={(e) => { e.stopPropagation(); onComplete(); }}
         style={{
           background: "#1e1e1e", border: "1px solid #505050", borderRadius: 3, cursor: "pointer",
-          color: "#aaa", fontSize: 11, lineHeight: 1, padding: "2px 7px", flexShrink: 0, marginTop: 2,
+          color: "#aaa", lineHeight: 1, padding: "3px 7px", flexShrink: 0, marginTop: 2,
+          display: "flex", alignItems: "center", justifyContent: "center",
           transition: "color 0.15s, border-color 0.15s",
         }}
         onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; }}
         onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; }}
-      >✓</button>
+      ><CheckIcon /></button>
     </div>
   );
 }
@@ -1743,10 +1759,10 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
                       <button
                         disabled={temp} title="Remove" aria-label="Remove item"
                         onClick={() => onDeleteItem(project.id, it.id)}
-                        style={{ width: 18, height: 18, flexShrink: 0, marginTop: 1, background: "#1e1e1e", border: "1px solid #505050", borderRadius: 3, color: "#aaa", fontSize: 11, lineHeight: 1, cursor: temp ? "default" : "pointer", opacity: temp ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center", transition: "color 0.15s, border-color 0.15s, background 0.15s" }}
+                        style={{ width: 18, height: 18, flexShrink: 0, marginTop: 1, background: "#1e1e1e", border: "1px solid #505050", borderRadius: 3, color: "#aaa", lineHeight: 1, cursor: temp ? "default" : "pointer", opacity: temp ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center", transition: "color 0.15s, border-color 0.15s, background 0.15s" }}
                         onMouseEnter={(e) => { if (temp) return; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; e.currentTarget.style.background = "#2a2a2a"; }}
                         onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; e.currentTarget.style.background = "#1e1e1e"; }}
-                      >✓</button>
+                      ><CheckIcon size={10} /></button>
                       {editingItemId === it.id ? (
                         <input autoFocus value={itemDraft} onChange={(e) => setItemDraft(e.target.value)}
                           onKeyDown={(e) => { if (e.key === "Enter") { onEditItem(project.id, it.id, itemDraft); setEditingItemId(null); } if (e.key === "Escape") setEditingItemId(null); }}
@@ -1771,9 +1787,9 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
 
               <div style={{ padding: "7px 14px 4px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <button onClick={copyAll} aria-label="Copy project contents to clipboard" style={{ background: "none", border: "1px solid #4a4a4a", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: copied ? "#7bd88f" : "#9a9a9a", textTransform: "uppercase", padding: "4px 9px", borderRadius: 3, borderColor: copied ? "#3f6f4a" : "#4a4a4a", transition: "color 0.15s, border-color 0.15s" }}
+                  <button onClick={copyAll} aria-label="Copy project contents to clipboard" style={{ background: "none", border: "1px solid #4a4a4a", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: copied ? "#7bd88f" : "#9a9a9a", textTransform: "uppercase", padding: "4px 9px", borderRadius: 3, borderColor: copied ? "#3f6f4a" : "#4a4a4a", transition: "color 0.15s, border-color 0.15s", display: "inline-flex", alignItems: "center", gap: 5 }}
                     onMouseEnter={(e) => { if (!copied) { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; } }} onMouseLeave={(e) => { if (!copied) { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#4a4a4a"; } }}
-                  >{copied ? "Copied ✓" : "Copy"}</button>
+                  >{copied ? <>Copied <CheckIcon size={9} /></> : "Copy"}</button>
                   {list && !isTemp && (
                     <button onClick={() => { onMove(project.id, list === "Short Term" ? "Long Term" : "Short Term"); onClose(); }} style={{ background: "none", border: "1px solid #4a4a4a", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.12em", color: "#9a9a9a", textTransform: "uppercase", padding: "4px 9px", borderRadius: 3, transition: "color 0.15s, border-color 0.15s" }}
                       onMouseEnter={(e) => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; }} onMouseLeave={(e) => { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#4a4a4a"; }}
