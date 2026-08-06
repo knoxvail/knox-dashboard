@@ -1035,14 +1035,16 @@ function ProjectGrid({ projects, onOpen, onHover, onLeave, onMerge, onAddNew }: 
     </div>
   );
 
-  // relative + explicit height so the absolutely-placed cards have a container;
-  // minHeight fills the panel so the whole empty area stays clickable-to-add,
-  // and clicks that land on a card bubble open that project instead.
+  // relative + measured height so the absolutely-placed cards have a container
+  // sized to exactly what it holds. Clicks in the GAPS between bubbles land on
+  // this div (the cards are absolutely positioned, so gaps aren't covered) and
+  // clicks BELOW the last card fall through to the scroll container, which runs
+  // the same add-new handler. Both paths reach "click black space → new project".
   return (
     <div
       ref={wrapRef}
       onClick={(e) => { if (e.target === e.currentTarget) onAddNew?.(); }}
-      style={{ position: "relative", height: wrapH || undefined, minHeight: "100%", cursor: "pointer" }}
+      style={{ position: "relative", height: wrapH || undefined, cursor: "pointer" }}
     >
       {ordered.map((p, i) => (
         <div
@@ -1395,40 +1397,37 @@ function ActionCard({ action, index, onOpen, onComplete }: {
       onClick={onOpen}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      className="reveal-row"
       style={{
-        display: "flex", flexDirection: "column", gap: 7, minWidth: 0, cursor: "pointer",
-        background: hover ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.022)",
-        border: `1px solid ${hover ? "#6a6a6a" : "#2a2a2a"}`,
-        borderRadius: 5, padding: "10px 12px 9px",
-        transition: "background 0.15s, border-color 0.15s, transform 0.15s",
-        transform: hover ? "translateY(-1px)" : "none",
+        display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0, cursor: "pointer",
+        borderLeft: `2px solid ${hover ? "#9a9a9a" : "#333"}`,
+        paddingLeft: hover ? 12 : 10, paddingRight: 4, paddingTop: 4, paddingBottom: 4,
+        transition: "border-color 0.15s, padding-left 0.15s",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.16em", color: "#7a7a7a" }}>
-          {String(index + 1).padStart(2, "0")}
-        </span>
-        <button
-          aria-label="Mark done"
-          onClick={(e) => { e.stopPropagation(); onComplete(); }}
-          style={{
-            background: "#1e1e1e", border: "1px solid #505050", borderRadius: 3, cursor: "pointer",
-            color: "#aaa", fontSize: 11, lineHeight: 1, padding: "2px 7px", flexShrink: 0,
-            opacity: hover ? 1 : 0, transition: "opacity 0.15s, color 0.15s, border-color 0.15s",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; }}
-        >✓</button>
-      </div>
-      <span style={{ fontSize: 14, color: "#ededed", lineHeight: 1.35, overflowWrap: "break-word" }}>{action.title}</span>
-      {action.notes?.trim() && (
-        <span style={{ fontSize: 11.5, color: "#8f8f8f", lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-          {action.notes}
-        </span>
-      )}
-      <span style={{ marginTop: "auto", paddingTop: 4, fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.14em", color: hover ? "#cfcfcf" : "#6a6a6a", transition: "color 0.15s" }}>
-        {action.plan?.trim() ? "OPEN PLAN →" : "NO PLAN YET"}
+      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.14em", color: "#6a6a6a", flexShrink: 0, paddingTop: 3 }}>
+        {String(index + 1).padStart(2, "0")}
       </span>
+      <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+        <span style={{ fontSize: 13, color: hover ? "#ffffff" : "#e8e8e8", lineHeight: 1.35, overflowWrap: "break-word", transition: "color 0.15s", display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{action.title}</span>
+        {action.notes?.trim() && (
+          <span style={{ fontSize: 10.5, color: "#8a8a8a", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            {action.notes}
+          </span>
+        )}
+      </div>
+      <button
+        className="row-action"
+        aria-label="Mark done"
+        onClick={(e) => { e.stopPropagation(); onComplete(); }}
+        style={{
+          background: "#1e1e1e", border: "1px solid #505050", borderRadius: 3, cursor: "pointer",
+          color: "#aaa", fontSize: 11, lineHeight: 1, padding: "2px 7px", flexShrink: 0, marginTop: 2,
+          transition: "color 0.15s, border-color 0.15s",
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; }}
+      >✓</button>
     </div>
   );
 }
@@ -3033,48 +3032,34 @@ function Dashboard() {
               <AddTaskInput ref={longAddRef} onAdd={addProject} placeholder="New project..." />
             </Panel>
 
-            <Panel style={{ flex: 0.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-              <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
-              <div
-                onClick={(e) => { if (e.target === e.currentTarget) scheduleAddRef.current?.open(); }}
-                style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", cursor: "pointer" }}
-              >
-                {events.length === 0 ? (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", paddingTop: 20 }}>
-                    <p style={{ color: "#808080", fontSize: 12 }}>Nothing scheduled</p>
+            {/* TODAY — actionable items from Cowork, stacked under Projects */}
+            <Panel style={{ flex: 0.72, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, padding: "14px 16px 10px" }}>
+          <PanelHeader label="Today" right={<Tag>COWORK</Tag>} />
+          <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0 }}>
+            {loading ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="skeleton" style={{ borderLeft: "2px solid #2a2a2a", paddingLeft: 10 }}>
+                    <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${80 - i * 12}%` }} />
                   </div>
-                ) : (
-                  // grid stretches the events across the panel's full width; each
-                  // event still reads top-to-bottom (title, date, time, type)
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: "14px 18px", paddingBottom: 2 }}>
-                    {events.map((event) => (
-                      <div key={event.id} className="reveal-row" style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6, minWidth: 0 }}>
-                        <div
-                          role="button" tabIndex={0}
-                          onClick={() => { if (!event.id.startsWith("temp-")) setEditingEvent(event); }}
-                          onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !event.id.startsWith("temp-")) { e.preventDefault(); setEditingEvent(event); } }}
-                          title="Click to edit"
-                          style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0, cursor: "pointer", flex: 1 }}
-                        >
-                          <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{event.title}</p>
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", letterSpacing: "0.05em" }}>{event.displayDate}</span>
-                          {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", letterSpacing: "0.05em" }}>{event.displayTime}</span>}
-                          {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#808080", letterSpacing: "0.12em" }}>{event.type.toUpperCase()}</span>}
-                        </div>
-                        <button className="row-action" aria-label="Delete appointment" onClick={() => deleteEvent(event.id)} style={{
-                          background: "none", border: "none", cursor: "pointer", color: "#808080",
-                          fontSize: 12, lineHeight: 1, padding: "0 2px", flexShrink: 0, transition: "color 0.15s, opacity 0.15s",
-                        }}
-                          onMouseEnter={e => (e.currentTarget.style.color = "#c06464")}
-                          onMouseLeave={e => (e.currentTarget.style.color = "#808080")}
-                        >✕</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                ))}
               </div>
-              <AddEventInput ref={scheduleAddRef} onAdd={addEvent} />
-            </Panel>
+            ) : actions.length === 0 ? (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "18px 0" }}>
+                <p style={{ color: "#808080", fontSize: 12, textAlign: "center", lineHeight: 1.6 }}>
+                  No action items yet.<br />
+                  <span style={{ color: "#5f5f5f" }}>Your Cowork routine drops three here each morning.</span>
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {actions.map((a, i) => (
+                  <ActionCard key={a.id} action={a} index={i} onOpen={() => setOpenActionId(a.id)} onComplete={() => completeTask(a.id)} />
+                ))}
+              </div>
+            )}
+          </div>
+        </Panel>
           </div>
         </div>
 
@@ -3172,32 +3157,49 @@ function Dashboard() {
           </Panel>
         </div>
 
-        {/* TODAY — actionable items from Cowork; wide box across the bottom-left */}
+        {/* Schedule — wide box across the bottom-left */}
         <Panel style={{ gridColumn: "1 / span 2", gridRow: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
-          <PanelHeader label="Today" right={<Tag>COWORK</Tag>} />
-          <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0 }}>
-            {loading ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="skeleton" style={{ height: 96, background: "rgba(255,255,255,0.02)", border: "1px solid #2a2a2a", borderRadius: 5 }} />
-                ))}
+              <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
+              <div
+                onClick={(e) => { if (e.target === e.currentTarget) scheduleAddRef.current?.open(); }}
+                style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", cursor: "pointer" }}
+              >
+                {events.length === 0 ? (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", paddingTop: 20 }}>
+                    <p style={{ color: "#808080", fontSize: 12 }}>Nothing scheduled</p>
+                  </div>
+                ) : (
+                  // grid stretches the events across the panel's full width; each
+                  // event still reads top-to-bottom (title, date, time, type)
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: "14px 18px", paddingBottom: 2 }}>
+                    {events.map((event) => (
+                      <div key={event.id} className="reveal-row" style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6, minWidth: 0 }}>
+                        <div
+                          role="button" tabIndex={0}
+                          onClick={() => { if (!event.id.startsWith("temp-")) setEditingEvent(event); }}
+                          onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !event.id.startsWith("temp-")) { e.preventDefault(); setEditingEvent(event); } }}
+                          title="Click to edit"
+                          style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0, cursor: "pointer", flex: 1 }}
+                        >
+                          <p style={{ margin: 0, fontSize: 13, color: "#b0b0b0", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{event.title}</p>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", letterSpacing: "0.05em" }}>{event.displayDate}</span>
+                          {event.displayTime && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", letterSpacing: "0.05em" }}>{event.displayTime}</span>}
+                          {event.type && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#808080", letterSpacing: "0.12em" }}>{event.type.toUpperCase()}</span>}
+                        </div>
+                        <button className="row-action" aria-label="Delete appointment" onClick={() => deleteEvent(event.id)} style={{
+                          background: "none", border: "none", cursor: "pointer", color: "#808080",
+                          fontSize: 12, lineHeight: 1, padding: "0 2px", flexShrink: 0, transition: "color 0.15s, opacity 0.15s",
+                        }}
+                          onMouseEnter={e => (e.currentTarget.style.color = "#c06464")}
+                          onMouseLeave={e => (e.currentTarget.style.color = "#808080")}
+                        >✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            ) : actions.length === 0 ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "18px 0" }}>
-                <p style={{ color: "#808080", fontSize: 12, textAlign: "center", lineHeight: 1.6 }}>
-                  No action items yet.<br />
-                  <span style={{ color: "#5f5f5f" }}>Your Cowork routine drops three here each morning.</span>
-                </p>
-              </div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(Math.max(actions.length, 1), 3)}, 1fr)`, gap: 12, alignItems: "stretch" }}>
-                {actions.map((a, i) => (
-                  <ActionCard key={a.id} action={a} index={i} onOpen={() => setOpenActionId(a.id)} onComplete={() => completeTask(a.id)} />
-                ))}
-              </div>
-            )}
-          </div>
-        </Panel>
+              <AddEventInput ref={scheduleAddRef} onAdd={addEvent} />
+            </Panel>
       </main>
 
       <footer style={{
@@ -3295,7 +3297,7 @@ function Dashboard() {
         </div>
       </footer>
 
-      {hoverProject && <HoverPopover project={hoverProject} rect={hover!.rect} />}
+      {hoverProject && createPortal(<HoverPopover project={hoverProject} rect={hover!.rect} />, document.body)}
 
       {openProject && (
         <ProjectModal
