@@ -1414,36 +1414,44 @@ function ActionCard({ action, index, onOpen, onComplete }: {
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       className="reveal-row"
       style={{
-        display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0, cursor: "pointer",
-        borderLeft: `2px solid ${hover ? "#9a9a9a" : "#333"}`,
-        paddingLeft: hover ? 12 : 10, paddingRight: 4, paddingTop: 4, paddingBottom: 4,
-        transition: "border-color 0.15s, padding-left 0.15s",
+        display: "flex", flexDirection: "column", gap: 4, minWidth: 0, cursor: "pointer",
+        background: hover ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.022)",
+        border: `1px solid ${hover ? "#6a6a6a" : "#2a2a2a"}`,
+        borderRadius: 5, padding: "7px 10px 6px",
+        // transform (not margin/height) so the lift never reflows the grid
+        transform: hover ? "translateY(-1px)" : "none",
+        transition: "background 0.15s, border-color 0.15s, transform 0.15s",
       }}
     >
-      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.14em", color: "#6a6a6a", flexShrink: 0, paddingTop: 3 }}>
-        {String(index + 1).padStart(2, "0")}
-      </span>
-      <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-        <span style={{ fontSize: 13, color: hover ? "#ffffff" : "#e8e8e8", lineHeight: 1.35, overflowWrap: "break-word", transition: "color 0.15s", display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{action.title}</span>
-        {action.notes?.trim() && (
-          <span style={{ fontSize: 10.5, color: "#8a8a8a", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-            {action.notes}
-          </span>
-        )}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.16em", color: "#7a7a7a" }}>
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        <button
+          className="row-action"
+          aria-label="Mark done"
+          onClick={(e) => { e.stopPropagation(); onComplete(); }}
+          style={{
+            background: "#1e1e1e", border: "1px solid #505050", borderRadius: 3, cursor: "pointer",
+            color: "#aaa", lineHeight: 1, padding: "3px 7px", flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "color 0.15s, border-color 0.15s",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; }}
+        ><CheckIcon /></button>
       </div>
-      <button
-        className="row-action"
-        aria-label="Mark done"
-        onClick={(e) => { e.stopPropagation(); onComplete(); }}
-        style={{
-          background: "#1e1e1e", border: "1px solid #505050", borderRadius: 3, cursor: "pointer",
-          color: "#aaa", lineHeight: 1, padding: "3px 7px", flexShrink: 0, marginTop: 2,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          transition: "color 0.15s, border-color 0.15s",
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; }}
-      ><CheckIcon /></button>
+      <span style={{ fontSize: 12.5, color: hover ? "#ffffff" : "#e8e8e8", lineHeight: 1.3, overflowWrap: "break-word", transition: "color 0.15s", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{action.title}</span>
+      {action.notes?.trim() && (
+        <span style={{ fontSize: 10.5, color: "#8a8a8a", lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+          {action.notes}
+        </span>
+      )}
+      {/* marginTop:auto pins the footer to the bottom so all three line up even
+          when their titles wrap to different depths */}
+      <span style={{ marginTop: "auto", paddingTop: 2, fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.14em", color: hover ? "#cfcfcf" : "#6a6a6a", transition: "color 0.15s" }}>
+        {action.plan?.trim() ? "OPEN PLAN →" : "NO PLAN YET"}
+      </span>
     </div>
   );
 }
@@ -1955,6 +1963,7 @@ function Dashboard() {
   const [clients, setClients] = useState<Task[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
+  const [todayCopied, setTodayCopied] = useState(false);
   const [verse, setVerse] = useState<Verse | null>(null);
   const [allVerses, setAllVerses] = useState<Verse[]>([]);
   const [verseIndex, setVerseIndex] = useState(0);
@@ -2827,6 +2836,30 @@ function Dashboard() {
     setTimeout(fetchSpotify, 800);
   };
 
+  // Copy the whole Today list — each item's headline plus its one-line why — as
+  // a numbered plain-text list, so it can be pasted straight into a message.
+  const copyToday = useCallback(async () => {
+    if (!actions.length) return;
+    const text = actions
+      .map((a, i) => {
+        const lines = [`${i + 1}. ${a.title}`];
+        if (a.notes?.trim()) lines.push(`   ${a.notes.trim()}`);
+        return lines.join("\n");
+      })
+      .join("\n\n");
+    const ok = await navigator.clipboard?.writeText(text).then(() => true).catch(() => false);
+    if (!ok) {
+      // fallback for non-secure contexts / older browsers
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.left = "-9999px";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch {}
+      ta.remove();
+    }
+    setTodayCopied(true);
+    setTimeout(() => setTodayCopied(false), 1500);
+  }, [actions]);
+
   const progressPct = nowPlaying.duration ? (nowPlaying.progress || 0) / nowPlaying.duration * 100 : 0;
 
   // modal + hover read live project state so optimistic item edits reflect instantly
@@ -3050,14 +3083,34 @@ function Dashboard() {
 
             {/* TODAY — actionable items from Cowork, stacked under Projects */}
             <Panel style={{ flex: 0.72, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, padding: "14px 16px 10px" }}>
-          <PanelHeader label="Today" right={<Tag>COWORK</Tag>} />
+          <PanelHeader label="Today" right={
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              {actions.length > 0 && (
+                <button
+                  onClick={copyToday}
+                  aria-label="Copy today's list to clipboard"
+                  style={{
+                    background: "none", cursor: "pointer",
+                    border: `1px solid ${todayCopied ? "#3f6f4a" : "#3a3a3a"}`,
+                    fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
+                    letterSpacing: "0.12em", textTransform: "uppercase",
+                    color: todayCopied ? "#7bd88f" : "#9a9a9a",
+                    padding: "3px 8px", borderRadius: 3,
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    transition: "color 0.15s, border-color 0.15s",
+                  }}
+                  onMouseEnter={(e) => { if (!todayCopied) { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; } }}
+                  onMouseLeave={(e) => { if (!todayCopied) { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#3a3a3a"; } }}
+                >{todayCopied ? <>Copied <CheckIcon size={9} /></> : "Copy"}</button>
+              )}
+              <Tag>COWORK</Tag>
+            </div>
+          } />
           <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0 }}>
             {loading ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
                 {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="skeleton" style={{ borderLeft: "2px solid #2a2a2a", paddingLeft: 10 }}>
-                    <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${80 - i * 12}%` }} />
-                  </div>
+                  <div key={i} className="skeleton" style={{ height: 84, background: "rgba(255,255,255,0.02)", border: "1px solid #2a2a2a", borderRadius: 5 }} />
                 ))}
               </div>
             ) : actions.length === 0 ? (
@@ -3068,7 +3121,9 @@ function Dashboard() {
                 </p>
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              // three across; a fourth item (rare) wraps to a second row and the
+              // container scrolls. alignItems:stretch keeps the cards equal height.
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(Math.max(actions.length, 1), 3)}, 1fr)`, gap: 10, alignItems: "stretch" }}>
                 {actions.map((a, i) => (
                   <ActionCard key={a.id} action={a} index={i} onOpen={() => setOpenActionId(a.id)} onComplete={() => completeTask(a.id)} />
                 ))}
