@@ -11,6 +11,9 @@ type Task = { id: string; title: string; order?: number | null; notes?: string; 
 type ChecklistItem = { id: string; text: string; checked: boolean }; // id = Notion BLOCK id
 type Project = { id: string; title: string; items: ChecklistItem[]; priority?: boolean; order?: number | null; notes?: string; links?: string }; // id = Notion PAGE id
 type SavedLink = { label: string; url: string };
+// An action item written by the Cowork routine: a headline, a one-line why, and
+// a full plan (its Notion page body) rendered in the same notes format.
+type ActionItem = { id: string; title: string; notes?: string; plan?: string; order?: number | null };
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
 type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string; editDate?: string; editTime?: string };
@@ -1381,6 +1384,102 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
   );
 }
 
+// One of today's action items: headline + the one-line why, click for the plan.
+function ActionCard({ action, index, onOpen, onComplete }: {
+  action: ActionItem; index: number; onOpen: () => void; onComplete: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      role="button" tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{
+        display: "flex", flexDirection: "column", gap: 7, minWidth: 0, cursor: "pointer",
+        background: hover ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.022)",
+        border: `1px solid ${hover ? "#6a6a6a" : "#2a2a2a"}`,
+        borderRadius: 5, padding: "12px 14px 11px",
+        transition: "background 0.15s, border-color 0.15s, transform 0.15s",
+        transform: hover ? "translateY(-1px)" : "none",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.16em", color: "#7a7a7a" }}>
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        <button
+          aria-label="Mark done"
+          onClick={(e) => { e.stopPropagation(); onComplete(); }}
+          style={{
+            background: "#1e1e1e", border: "1px solid #505050", borderRadius: 3, cursor: "pointer",
+            color: "#aaa", fontSize: 11, lineHeight: 1, padding: "2px 7px", flexShrink: 0,
+            opacity: hover ? 1 : 0, transition: "opacity 0.15s, color 0.15s, border-color 0.15s",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; }}
+        >✓</button>
+      </div>
+      <span style={{ fontSize: 14, color: "#ededed", lineHeight: 1.35, overflowWrap: "break-word" }}>{action.title}</span>
+      {action.notes?.trim() && (
+        <span style={{ fontSize: 12, color: "#8f8f8f", lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+          {action.notes}
+        </span>
+      )}
+      <span style={{ marginTop: "auto", paddingTop: 4, fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.14em", color: hover ? "#cfcfcf" : "#6a6a6a", transition: "color 0.15s" }}>
+        {action.plan?.trim() ? "OPEN PLAN →" : "NO PLAN YET"}
+      </span>
+    </div>
+  );
+}
+
+// The full plan for an action item, rendered read-only from its Notion page body.
+function ActionPlanModal({ action, onClose, onComplete }: {
+  action: ActionItem; onClose: () => void; onComplete: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const blocks = parseNotes(action.plan || "");
+  const hasPlan = !!action.plan?.trim();
+  return createPortal(
+    <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.62)", backdropFilter: "blur(5px)", WebkitBackdropFilter: "blur(5px)", zIndex: 9000, display: "grid", placeItems: "center", padding: 16, animation: "fadeIn 0.18s ease-out" }}>
+      <div role="dialog" aria-modal="true" aria-label={`Plan: ${action.title}`}
+        style={{ width: "min(900px, 94vw)", maxHeight: "88vh", background: "rgba(11,13,17,0.94)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)", border: "1px solid #333", borderRadius: 8, display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 30px 80px rgba(0,0,0,0.75)", animation: "modalIn 0.2s ease-out" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "16px 20px 14px", borderBottom: "1px solid #202020", flexShrink: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.16em", color: "#7a7a7a", textTransform: "uppercase", marginBottom: 5 }}>Today · Action</div>
+            <h2 style={{ margin: 0, fontSize: 19, fontWeight: 500, color: "#f2f2f2", lineHeight: 1.3, overflowWrap: "break-word" }}>{action.title}</h2>
+            {action.notes?.trim() && <p style={{ margin: "6px 0 0", fontSize: 13, color: "#9a9a9a", lineHeight: 1.5 }}>{action.notes}</p>}
+          </div>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "#808080", fontSize: 20, lineHeight: 1, padding: "0 2px", flexShrink: 0 }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#ccc")} onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}>✕</button>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0 }}>
+          <div style={{ maxWidth: 760, margin: "0 auto", padding: "22px 30px 40px" }}>
+            {hasPlan ? (
+              <div className="notes-edit" style={{ fontFamily: '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif', fontSize: 16, lineHeight: 1.75, color: "#d4d1cb" }}>
+                {blocks.map((b, i) => <div key={i} className={b.cls}>{b.text || " "}</div>)}
+              </div>
+            ) : (
+              <p style={{ color: "#808080", fontSize: 13, lineHeight: 1.7 }}>
+                No plan written for this one yet. The Cowork routine writes the full plan into this item&rsquo;s Notion page body: where to start, the steps, and what a finished version looks like.
+              </p>
+            )}
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 20px 14px", borderTop: "1px solid #1a1a1a", flexShrink: 0 }}>
+          <button onClick={() => { onComplete(); onClose(); }} style={{ background: "#1e1e1e", border: "1px solid #505050", color: "#ddd", fontSize: 11, padding: "5px 14px", borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.12em", textTransform: "uppercase" }}>Mark Done</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // A small "memory" shelf for a project: paste a URL and it's saved as a
 // clickable link you can come back to. Accepts "Label | url" or a bare url
 // (which is labelled by its hostname).
@@ -1839,6 +1938,8 @@ function Dashboard() {
   const [shortTerm, setShortTerm] = useState<Project[]>([]);
   const [longTerm, setLongTerm] = useState<Project[]>([]);
   const [clients, setClients] = useState<Task[]>([]);
+  const [actions, setActions] = useState<ActionItem[]>([]);
+  const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [verse, setVerse] = useState<Verse | null>(null);
   const [allVerses, setAllVerses] = useState<Verse[]>([]);
   const [verseIndex, setVerseIndex] = useState(0);
@@ -1922,6 +2023,7 @@ function Dashboard() {
       setShortTerm((data.shortTerm || []).slice().sort(byOrder));
       setLongTerm(data.longTerm || []);
       setClients((data.clients || []).slice().sort(byClient));
+      setActions((data.actions || []).slice().sort(byOrder));
     } catch {}
   }, []);
 
@@ -2080,11 +2182,12 @@ function Dashboard() {
   };
 
   const completeTask = async (id: string) => {
-    const done = shortTerm.find(t => t.id === id) || longTerm.find(t => t.id === id) || clients.find(t => t.id === id);
+    const done = shortTerm.find(t => t.id === id) || longTerm.find(t => t.id === id) || clients.find(t => t.id === id) || actions.find(a => a.id === id);
     // optimistic: drop it from the UI immediately
     setShortTerm(prev => prev.filter(t => t.id !== id));
     setLongTerm(prev => prev.filter(t => t.id !== id));
     setClients(prev => prev.filter(t => t.id !== id));
+    setActions(prev => prev.filter(a => a.id !== id));
     try {
       const res = await fetch("/api/notion", {
         method: "POST",
@@ -2714,6 +2817,7 @@ function Dashboard() {
   // modal + hover read live project state so optimistic item edits reflect instantly
   const openProject = openProjectId ? findProject(openProjectId) : null;
   const openClient = openClientId ? clients.find(c => c.id === openClientId) : null;
+  const openAction = openActionId ? actions.find(a => a.id === openActionId) : null;
   const hoverProject = hover && !openProjectId ? findProject(hover.id) : null;
   const shortHigh = shortTerm.filter(t => t.priority);
   const shortNormal = shortTerm.filter(t => !t.priority);
@@ -2779,7 +2883,10 @@ function Dashboard() {
       <main style={{
         flex: 1,
         display: "grid",
+        // row 1 = the working board, row 2 = today's action items (wide, bottom-left
+        // spanning right); the board row shrinks to make room for it
         gridTemplateColumns: "1fr 3fr 1fr",
+        gridTemplateRows: "1.5fr 1fr",
         gap: 12,
         padding: "0 24px",
         minHeight: 0,
@@ -2787,8 +2894,8 @@ function Dashboard() {
         zIndex: 1,
       }}>
 
-        {/* Left column: Soren Email (tall) + Clients */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
+        {/* Left column: Soren Email */}
+        <div style={{ gridColumn: 1, gridRow: 1, display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
           <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
             <PanelHeader label="Soren Email" right={<Tag>ZOHO</Tag>} />
             {!sorenConnected ? (
@@ -2812,30 +2919,10 @@ function Dashboard() {
             )}
           </Panel>
 
-          <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-            <PanelHeader label="Clients" right={
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
-                {clients.length}
-              </span>
-            } />
-            <div
-              onClick={(e) => { if (e.target === e.currentTarget) clientsAddRef.current?.open(); }}
-              style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}
-            >
-              {loading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="skeleton" style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 10, marginBottom: 8 }}>
-                    <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 10}%` }} />
-                  </div>
-                ))
-              ) : <TaskList tasks={clients} onComplete={completeTask} onEdit={editTask} onOpen={setOpenClientId} onRate={setClientRating} />}
-            </div>
-            <AddTaskInput ref={clientsAddRef} onAdd={(title) => addTask(title, "Clients")} />
-          </Panel>
         </div>
 
         {/* Tasks — Short Term stays tall but skinny; the buckets get the width */}
-        <div style={{ display: "grid", gridTemplateColumns: "0.5fr 1fr", gap: 12, minHeight: 0, minWidth: 0 }}>
+        <div style={{ gridColumn: 2, gridRow: 1, display: "grid", gridTemplateColumns: "0.5fr 1fr", gap: 12, minHeight: 0, minWidth: 0 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             {/* HIGH PRIORITY — same darkness as the other panels, framed in a
                 black/white hazard-tape border so it still reads as the focal point */}
@@ -2988,8 +3075,8 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Right column - Gmail + Spotify */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
+        {/* Right column - Gmail + Spotify (full height, both rows) */}
+        <div style={{ gridColumn: 3, gridRow: "1 / span 2", display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
           <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <PanelHeader label="Triad Email" right={<Tag>GMAIL</Tag>} />
             {!gmailConnected ? (
@@ -3081,6 +3168,33 @@ function Dashboard() {
             )}
           </Panel>
         </div>
+
+        {/* TODAY — actionable items from Cowork; wide box across the bottom-left */}
+        <Panel style={{ gridColumn: "1 / span 2", gridRow: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
+          <PanelHeader label="Today" right={<Tag>COWORK</Tag>} />
+          <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0 }}>
+            {loading ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="skeleton" style={{ height: 96, background: "rgba(255,255,255,0.02)", border: "1px solid #2a2a2a", borderRadius: 5 }} />
+                ))}
+              </div>
+            ) : actions.length === 0 ? (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "18px 0" }}>
+                <p style={{ color: "#808080", fontSize: 12, textAlign: "center", lineHeight: 1.6 }}>
+                  No action items yet.<br />
+                  <span style={{ color: "#5f5f5f" }}>Your Cowork routine drops three here each morning.</span>
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(Math.max(actions.length, 1), 3)}, 1fr)`, gap: 12, alignItems: "stretch" }}>
+                {actions.map((a, i) => (
+                  <ActionCard key={a.id} action={a} index={i} onOpen={() => setOpenActionId(a.id)} onComplete={() => completeTask(a.id)} />
+                ))}
+              </div>
+            )}
+          </div>
+        </Panel>
       </main>
 
       <footer style={{
@@ -3195,6 +3309,14 @@ function Dashboard() {
           onExtractItem={extractChecklistItem}
           onSaveNotes={saveProjectNotes}
           onSaveLinks={saveProjectLinks}
+        />
+      )}
+
+      {openAction && (
+        <ActionPlanModal
+          action={openAction}
+          onClose={() => setOpenActionId(null)}
+          onComplete={() => completeTask(openAction.id)}
         />
       )}
 

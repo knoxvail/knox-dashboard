@@ -48,6 +48,36 @@ async function fetchChecklist(token: string, pageId: string): Promise<{ id: stri
   }
 }
 
+// Read an action item's page BODY as its plan. Cowork writes a normal Notion
+// page (headings, paragraphs, bullets, to-dos) and we flatten it to the same
+// "# heading / * bullet / text" shape the dashboard's notes renderer speaks, so
+// the plan reads well both here and in Notion.
+async function fetchPlan(token: string, pageId: string): Promise<string> {
+  const headers = { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28" };
+  const lines: string[] = [];
+  try {
+    let cursor: string | undefined;
+    do {
+      const url = new URL(`https://api.notion.com/v1/blocks/${pageId}/children`);
+      url.searchParams.set("page_size", "100");
+      if (cursor) url.searchParams.set("start_cursor", cursor);
+      const r = await fetch(url, { headers, cache: "no-store" });
+      if (!r.ok) return lines.join("\n");
+      const d = await r.json();
+      for (const b of (d.results || [])) {
+        const rich = b[b.type]?.rich_text;
+        const text = Array.isArray(rich) ? rich.map((t: any) => t.plain_text).join("") : "";
+        if (!text.trim()) continue;
+        if (b.type.startsWith("heading_")) lines.push(`# ${text}`);
+        else if (b.type === "bulleted_list_item" || b.type === "numbered_list_item" || b.type === "to_do") lines.push(`* ${text}`);
+        else if (b.type === "paragraph" || b.type === "quote" || b.type === "callout") lines.push(text);
+      }
+      cursor = d.has_more ? d.next_cursor : undefined;
+    } while (cursor);
+  } catch {}
+  return lines.join("\n");
+}
+
 export async function GET() {
   const token = process.env.NOTION_TOKEN;
   const dbId = process.env.NOTION_DB_ID;
@@ -72,6 +102,8 @@ export async function GET() {
     const shortTerm: { id: string; title: string; priority: boolean; order: number | null; notes: string; links: string }[] = [];
     const longTerm: { id: string; title: string; priority: boolean; order: number | null; notes: string; links: string }[] = [];
     const clients: { id: string; title: string; order: number | null; notes: string; rating: number | null }[] = [];
+    // today's action items, written by the Cowork routine (Type = "Action")
+    const actionPages: { id: string; title: string; order: number | null; notes: string }[] = [];
 
     (data.results || []).forEach((page: any) => {
       const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
@@ -92,6 +124,10 @@ export async function GET() {
         clients.push({ id: page.id, title, order, notes, rating });
         return;
       }
+      if (typeProp?.select?.name === "Action") {
+        actionPages.push({ id: page.id, title, order, notes });
+        return;
+      }
 
       const statusProp = Object.values(page.properties).find((p: any) => p.type === "status") as any;
       const status = statusProp?.status?.name || "";
@@ -104,12 +140,14 @@ export async function GET() {
     // enrich Short Term and Long Term with their checklists (child to_do blocks)
     // so items persist when a task moves between the two lists. Promise.all keeps
     // wall-time to ~one round trip for a handful of tasks.
-    const [longTermFull, shortTermFull] = await Promise.all([
+    const [longTermFull, shortTermFull, actions] = await Promise.all([
       Promise.all(longTerm.map(async (p) => ({ ...p, items: await fetchChecklist(token, p.id) }))),
       Promise.all(shortTerm.map(async (t) => ({ ...t, items: await fetchChecklist(token, t.id) }))),
+      // the plan lives in each action's page body (written by the Cowork routine)
+      Promise.all(actionPages.map(async (a) => ({ ...a, plan: await fetchPlan(token, a.id) }))),
     ]);
 
-    return NextResponse.json({ shortTerm: shortTermFull, longTerm: longTermFull, clients });
+    return NextResponse.json({ shortTerm: shortTermFull, longTerm: longTermFull, clients, actions });
   } catch {
     return NextResponse.json({ shortTerm: [], longTerm: [], clients: [] });
   }
