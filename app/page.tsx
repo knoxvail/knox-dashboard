@@ -1399,7 +1399,7 @@ function ActionCard({ action, index, onOpen, onComplete }: {
         display: "flex", flexDirection: "column", gap: 7, minWidth: 0, cursor: "pointer",
         background: hover ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.022)",
         border: `1px solid ${hover ? "#6a6a6a" : "#2a2a2a"}`,
-        borderRadius: 5, padding: "12px 14px 11px",
+        borderRadius: 5, padding: "10px 12px 9px",
         transition: "background 0.15s, border-color 0.15s, transform 0.15s",
         transform: hover ? "translateY(-1px)" : "none",
       }}
@@ -1422,7 +1422,7 @@ function ActionCard({ action, index, onOpen, onComplete }: {
       </div>
       <span style={{ fontSize: 14, color: "#ededed", lineHeight: 1.35, overflowWrap: "break-word" }}>{action.title}</span>
       {action.notes?.trim() && (
-        <span style={{ fontSize: 12, color: "#8f8f8f", lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+        <span style={{ fontSize: 11.5, color: "#8f8f8f", lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
           {action.notes}
         </span>
       )}
@@ -2883,10 +2883,11 @@ function Dashboard() {
       <main style={{
         flex: 1,
         display: "grid",
-        // row 1 = the working board, row 2 = today's action items (wide, bottom-left
-        // spanning right); the board row shrinks to make room for it
-        gridTemplateColumns: "1fr 3fr 1fr",
-        gridTemplateRows: "1.5fr 1fr",
+        // flat 4-col board (same proportions as the old 1fr/3fr[0.5fr 1fr]/1fr).
+        // Only cols 1-2 split into rows, so Today takes space from Soren + Short
+        // Term while Projects and email keep their full height.
+        gridTemplateColumns: "1fr 1fr 2fr 1fr",
+        gridTemplateRows: "2.1fr 1fr",
         gap: 12,
         padding: "0 24px",
         minHeight: 0,
@@ -2922,8 +2923,10 @@ function Dashboard() {
         </div>
 
         {/* Tasks — Short Term stays tall but skinny; the buckets get the width */}
-        <div style={{ gridColumn: 2, gridRow: 1, display: "grid", gridTemplateColumns: "0.5fr 1fr", gap: 12, minHeight: 0, minWidth: 0 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
+        {/* display:contents so both halves sit directly on the main grid — that
+            lets Projects keep full height while Short Term shortens for Today */}
+        <div style={{ display: "contents" }}>
+          <div style={{ gridColumn: 2, gridRow: 1, display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             {/* HIGH PRIORITY — same darkness as the other panels, framed in a
                 black/white hazard-tape border so it still reads as the focal point */}
             <div
@@ -2990,10 +2993,10 @@ function Dashboard() {
             </Panel>
           </div>
 
-          {/* right side of the middle column: Long Term (top) with Up Next stacked under it */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
+          {/* Projects (top) with Up Next stacked under it — full height, both rows */}
+          <div style={{ gridColumn: 3, gridRow: "1 / span 2", display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             <Panel style={{ flex: 1.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-              <PanelHeader label="Long Term" right={
+              <PanelHeader label="Projects" right={
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
                   {longTerm.length}
                 </span>
@@ -3076,7 +3079,7 @@ function Dashboard() {
         </div>
 
         {/* Right column - Gmail + Spotify (full height, both rows) */}
-        <div style={{ gridColumn: 3, gridRow: "1 / span 2", display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
+        <div style={{ gridColumn: 4, gridRow: "1 / span 2", display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
           <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <PanelHeader label="Triad Email" right={<Tag>GMAIL</Tag>} />
             {!gmailConnected ? (
