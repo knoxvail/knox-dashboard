@@ -2843,11 +2843,12 @@ function Dashboard() {
               onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (priorityDrag !== "high") setPriorityDrag("high"); }}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setPriorityDrag(null); }}
               onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData("text/plain"); setPriorityDrag(null); if (id) dropToPriority(id, true); }}
+              className="hp-box"
               style={{
                 flexShrink: 0, maxHeight: "42%", display: "flex", flexDirection: "column", overflow: "hidden",
-                // a light-grey box — its lift off the near-black panels is what makes it pop
-                background: "rgba(255,255,255,0.15)", backdropFilter: "blur(7px)", WebkitBackdropFilter: "blur(7px)",
-                border: priorityDrag === "high" ? "1px solid #cfcfcf" : "1px solid #565656",
+                // a light-grey box (with dark text) — its lift off the near-black panels is what makes it pop
+                background: "rgba(255,255,255,0.62)", backdropFilter: "blur(7px)", WebkitBackdropFilter: "blur(7px)",
+                border: priorityDrag === "high" ? "1px solid #ffffff" : "1px solid #9a9a9a",
                 borderRadius: 6, padding: "13px 15px 11px",
                 transition: "background 0.2s, border-color 0.2s",
               }}
@@ -3266,6 +3267,12 @@ function Dashboard() {
         .reveal-row:focus-within .row-action { opacity: 1; }
         @media (hover: none) { .reveal-row .row-action { opacity: 1; } }
         .skeleton { animation: skpulse 1.4s ease-in-out infinite; }
+        /* High Priority is a light box, so its text goes dark (overrides the inline
+           light colors the shared rows use elsewhere) */
+        .hp-box h2, .hp-box p { color: #141414 !important; }
+        .hp-box > div:first-child > span { color: #3a3a3a !important; }
+        .hp-box .reveal-row { border-left-color: #707070 !important; }
+        .hp-box .reveal-row p:hover { background-color: rgba(0,0,0,0.06) !important; }
         /* project notes editor — two block types only: heading and bullet */
         .notes-edit { word-break: break-word; }
         .notes-edit .nb-p { margin: 0 0 0.55em; min-height: 1.8em; }
