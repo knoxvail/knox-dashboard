@@ -2026,6 +2026,122 @@ function EventEditModal({ event, onClose, onSave, onDelete }: {
   );
 }
 
+// ---- Quick capture ("make task") -------------------------------------------
+// One input that routes by what you typed: anything with a recognisable date or
+// time ("lunch fri 12pm", "dentist 8/21", "call bob tomorrow") becomes a
+// Schedule entry; everything else becomes a Short Term task. The matched date
+// words are stripped so the title stays clean.
+const QC_WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const QC_MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+
+function parseQuickCapture(raw: string):
+  | { kind: "task"; title: string }
+  | { kind: "event"; title: string; date: string; time: string } {
+  let s = ` ${raw.trim()} `;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let date: Date | null = null;
+  let time = "";
+
+  const take = (m: RegExpMatchArray | null) => { if (m) s = s.replace(m[0], " "); return m; };
+
+  // time — "3pm", "3:30pm", "at 3pm", "15:00"
+  let m = take(s.match(/ (?:at )?(\d{1,2})(?::(\d{2}))? ?(am|pm) /i));
+  if (m) {
+    let h = parseInt(m[1], 10) % 12;
+    if (m[3].toLowerCase() === "pm") h += 12;
+    time = `${String(h).padStart(2, "0")}:${m[2] || "00"}`;
+  } else if ((m = take(s.match(/ (?:at )?(\d{1,2}):(\d{2}) /)))) {
+    time = `${String(parseInt(m[1], 10)).padStart(2, "0")}:${m[2]}`;
+  }
+
+  // date — relative words, weekday names, month-day, numeric m/d
+  if (take(s.match(/ (today|tonight) /i))) date = today;
+  else if (take(s.match(/ (tomorrow|tmrw|tmr) /i))) date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  else if ((m = take(s.match(new RegExp(` (?:this |next |on )?(${QC_WEEKDAYS.join("|")}|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun) `, "i"))))) {
+    const target = QC_WEEKDAYS.findIndex(d => d.startsWith(m![1].toLowerCase().slice(0, 3)));
+    const ahead = ((target - now.getDay() + 7) % 7) || 7; // bare weekday = its next occurrence
+    date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + ahead);
+  } else if ((m = take(s.match(new RegExp(` (?:on )?(${QC_MONTHS.join("|")}|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\\.? (\\d{1,2})(?:st|nd|rd|th)? `, "i"))))) {
+    const mo = QC_MONTHS.findIndex(x => x.startsWith(m![1].toLowerCase().slice(0, 3)));
+    date = new Date(now.getFullYear(), mo, parseInt(m![2], 10));
+    if (date < today) date = new Date(now.getFullYear() + 1, mo, parseInt(m![2], 10));
+  } else if ((m = take(s.match(/ (?:on )?(\d{1,2})[\/\-](\d{1,2}) /)))) {
+    const mo = parseInt(m[1], 10) - 1, d = parseInt(m[2], 10);
+    date = new Date(now.getFullYear(), mo, d);
+    if (date < today) date = new Date(now.getFullYear() + 1, mo, d);
+  }
+
+  // a bare time means today
+  if (time && !date) date = today;
+
+  const title = s.replace(/\s+/g, " ").trim().replace(/^(on|at|this|next)\s+/i, "").trim();
+  if (!date) return { kind: "task", title: title || raw.trim() };
+  const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return { kind: "event", title: title || raw.trim(), date: iso, time };
+}
+
+function QuickAdd({ onTask, onEvent, notify }: {
+  onTask: (title: string) => void;
+  onEvent: (title: string, date: string, time: string, type: string) => void;
+  notify: (msg: string) => void;
+}) {
+  const [v, setV] = useState("");
+  const ref = useRef<HTMLInputElement>(null);
+
+  // "/" anywhere (outside a text field) jumps to this box
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = (el?.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || el?.isContentEditable) return;
+      e.preventDefault();
+      ref.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const submit = () => {
+    const raw = v.trim();
+    if (!raw) return;
+    const p = parseQuickCapture(raw);
+    if (p.kind === "event") {
+      onEvent(p.title, p.date, p.time, "");
+      const d = new Date(`${p.date}T${p.time || "00:00"}`);
+      const day = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      const at = p.time ? ` ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}` : "";
+      notify(`→ Schedule: ${day}${at}`);
+    } else {
+      onTask(p.title);
+      notify("→ Short Term");
+    }
+    setV("");
+  };
+
+  return (
+    <input
+      ref={ref}
+      value={v}
+      onChange={(e) => setV(e.target.value)}
+      onKeyDown={(e) => { if (e.key === "Enter") submit(); if (e.key === "Escape") { setV(""); e.currentTarget.blur(); } }}
+      placeholder={'make task…   ( "email jim"  ·  "lunch fri 12pm" )'}
+      aria-label="Make a task or schedule entry — anything with a date or time goes to the schedule"
+      title='Press "/" to jump here. A date or time routes it to Schedule; otherwise it lands in Short Term.'
+      style={{
+        flex: "0 1 380px", minWidth: 160,
+        background: "rgba(255,255,255,0.03)", border: "1px solid #262626",
+        color: "#bbb", fontSize: 11, padding: "6px 10px", borderRadius: 3,
+        fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.04em",
+        outline: "none", transition: "border-color 0.15s",
+      }}
+      onFocus={(e) => (e.currentTarget.style.borderColor = "#4a4a4a")}
+      onBlur={(e) => (e.currentTarget.style.borderColor = "#262626")}
+    />
+  );
+}
+
 function Dashboard() {
   const clock = useClock();
   const [shortTerm, setShortTerm] = useState<Project[]>([]);
@@ -2038,6 +2154,8 @@ function Dashboard() {
   const [verseIndex, setVerseIndex] = useState(0);
   const [aphorismo, setAphorismo] = useState<string | null>(null);
   const [aphorismoLoading, setAphorismoLoading] = useState(false);
+  const [aphAdding, setAphAdding] = useState(false);
+  const [aphDraft, setAphDraft] = useState("");
   const [emails, setEmails] = useState<Email[]>([]);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [sorenEmails, setSorenEmails] = useState<Email[]>([]);
@@ -2204,6 +2322,34 @@ function Dashboard() {
     } catch {}
     setAphorismoLoading(false);
   }, []);
+
+  // Add a quote to the rotation straight from the footer — no Notion trip. The
+  // new quote shows immediately; undo archives the page it created.
+  const addAphorism = useCallback(async (text: string) => {
+    const t = text.trim();
+    if (!t) return;
+    const prev = aphorismo;
+    setAphorismo(t);
+    try {
+      const res = await fetch("/api/aphorismo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: t }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.id) { setAphorismo(prev); toast("Couldn’t save the quote — try again"); return; }
+      toast("Added to Aphorismo");
+      pushUndo(`add quote “${undoClip(t)}”`, async () => {
+        await fetch("/api/aphorismo", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "archive", id: data.id }),
+        }).catch(() => {});
+        fetchAphorismo();
+      });
+    } catch {
+      setAphorismo(prev); toast("Couldn’t save the quote — try again");
+    }
+  }, [aphorismo, toast, pushUndo, fetchAphorismo]);
 
   useEffect(() => {
     fetchStatic();
@@ -2974,6 +3120,11 @@ function Dashboard() {
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#999", boxShadow: "0 0 8px #999" }} />
           <Tag accent>KNOX // COMMAND CENTER</Tag>
         </div>
+        <QuickAdd
+          onTask={(title) => addTask(title, "Short Term")}
+          onEvent={addEvent}
+          notify={toast}
+        />
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
           <Tag>{clock.day}</Tag>
           <Tag>{clock.date}</Tag>
@@ -3361,11 +3512,43 @@ function Dashboard() {
                 onMouseEnter={e => !aphorismoLoading && (e.currentTarget.style.borderColor = "#999", e.currentTarget.style.color = "#aaa")}
                 onMouseLeave={e => !aphorismoLoading && (e.currentTarget.style.borderColor = "#444", e.currentTarget.style.color = "#9a9a9a")}
               >⟳</button>
+              <button
+                onClick={() => { setAphAdding(a => !a); setAphDraft(""); }}
+                aria-label={aphAdding ? "Cancel adding a quote" : "Add a quote"}
+                aria-expanded={aphAdding}
+                style={{
+                  background: "none", border: "1px solid #444", cursor: "pointer",
+                  color: "#9a9a9a", fontSize: 11, padding: "4px 8px",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  transition: "all 0.15s", flexShrink: 0,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "#999"; e.currentTarget.style.color = "#aaa"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "#444"; e.currentTarget.style.color = "#9a9a9a"; }}
+              >{aphAdding ? "✕" : "+"}</button>
               <Tag>APHORISMO</Tag>
               <span style={{ color: "#222" }}>|</span>
-              <p style={{ margin: 0, fontSize: 13, color: "#9a9a9a", fontStyle: "italic", minWidth: 0 }}>
-                {aphorismo}
-              </p>
+              {aphAdding ? (
+                <input
+                  autoFocus
+                  value={aphDraft}
+                  onChange={(e) => setAphDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && aphDraft.trim()) { addAphorism(aphDraft); setAphAdding(false); setAphDraft(""); }
+                    if (e.key === "Escape") { setAphAdding(false); setAphDraft(""); }
+                  }}
+                  placeholder="New quote… (Enter saves, Esc cancels)"
+                  aria-label="New aphorism text"
+                  style={{
+                    flex: 1, minWidth: 0, background: "rgba(255,255,255,0.03)",
+                    border: "1px solid #333", color: "#bbb", fontSize: 12, fontStyle: "italic",
+                    padding: "5px 9px", borderRadius: 3, outline: "none",
+                  }}
+                />
+              ) : (
+                <p style={{ margin: 0, fontSize: 13, color: "#9a9a9a", fontStyle: "italic", minWidth: 0 }}>
+                  {aphorismo}
+                </p>
+              )}
             </>
           ) : (
             <div style={{ height: 8, width: 200, background: "#1e1e1e", borderRadius: 2 }} />
