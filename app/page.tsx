@@ -130,7 +130,7 @@ function GlowyWaves() {
 }
 
 // One email line — click to read it in the dashboard; archive with the ✓.
-function EmailRow({ email, onArchive, onOpen }: { email: Email; onArchive: (id: string) => void; onOpen: (email: Email) => void }) {
+function EmailRow({ email, onArchive, onOpen, onMakeTask }: { email: Email; onArchive: (id: string) => void; onOpen: (email: Email) => void; onMakeTask?: (email: Email) => void }) {
   return (
     <div className="reveal-row" style={{ borderBottom: "1px solid #1e1e1e", padding: "9px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, transition: "border-color 0.2s" }}
       onMouseEnter={e => (e.currentTarget.style.borderBottomColor = "#555")}
@@ -146,6 +146,22 @@ function EmailRow({ email, onArchive, onOpen }: { email: Email; onArchive: (id: 
         </div>
         <p style={{ margin: 0, fontSize: 12, color: "#808080", lineHeight: 1.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{email.subject}</p>
       </div>
+      {onMakeTask && (
+        <button
+          className="row-action"
+          aria-label={`Make a task from "${email.subject}"`}
+          title="Make a Short Term task from this email"
+          onClick={(e) => { e.stopPropagation(); onMakeTask(email); }}
+          style={{
+            background: "#1e1e1e", border: "1px solid #505050", borderRadius: 3, cursor: "pointer",
+            color: "#aaa", lineHeight: 1, padding: "4px 7px", flexShrink: 0, fontSize: 13,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "color 0.15s, border-color 0.15s",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; }}
+        ><span aria-hidden style={{ lineHeight: 1 }}>+</span></button>
+      )}
       <DoneButton onClick={() => onArchive(email.id)} />
     </div>
   );
@@ -362,6 +378,16 @@ function CheckIcon({ size = 11 }: { size?: number }) {
   );
 }
 
+// Hairline calendar, same SVG treatment as CheckIcon so the two sit together.
+function CalIcon({ size = 11 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden focusable="false" style={{ display: "block" }}>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2" stroke="currentColor" strokeWidth={2.2} />
+      <path d="M3.5 10.5h17M8 2.5v4M16 2.5v4" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function DoneButton({ onClick }: { onClick: () => void }) {
   return (
     <button
@@ -439,6 +465,7 @@ function TaskItem({
   onReorder,
   hasNote = false,
   onRate,
+  onToCalendar,
 }: {
   task: Task;
   itemCount?: number; // how many checklist items this task/project holds (drives the hover preview)
@@ -454,6 +481,7 @@ function TaskItem({
   listKey?: string; // which list this row belongs to (for same-list drag-reorder)
   onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => boolean;
   onRate?: (id: string, rating: number) => void; // when set (clients), show 1–5 priority stars
+  onToCalendar?: (id: string) => void; // when set, show a calendar button that schedules this task
 }) {
   const [inputValue, setInputValue] = useState(task.title);
   const [overSide, setOverSide] = useState<null | "top" | "bottom">(null); // reorder drop indicator
@@ -610,12 +638,28 @@ function TaskItem({
         </p>
       )}
       {onRate && !isEditing && <StarRating value={task.rating ?? 0} onChange={(v) => onRate(task.id, v)} />}
+      {onToCalendar && !isEditing && (
+        <button
+          className="row-action"
+          aria-label={`Send "${task.title}" to the calendar`}
+          title="Put this on the calendar (reads any date in the title; otherwise today)"
+          onClick={(e) => { e.stopPropagation(); onToCalendar(task.id); }}
+          style={{
+            background: "#1e1e1e", border: "1px solid #505050", borderRadius: 3, cursor: "pointer",
+            color: "#aaa", lineHeight: 1, padding: "4px 7px", flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "color 0.15s, border-color 0.15s",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; }}
+        ><CalIcon size={10} /></button>
+      )}
       <DoneButton onClick={() => onComplete(task.id)} />
     </div>
   );
 }
 
-function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave, listKey, onReorder, onRate }: { tasks: Task[]; onComplete: (id: string) => void; onEdit: (id: string, newTitle: string) => Promise<void>; onOpen?: (id: string) => void; onHover?: (id: string, rect: DOMRect) => void; onLeave?: () => void; listKey?: string; onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => boolean; onRate?: (id: string, rating: number) => void }) {
+function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave, listKey, onReorder, onRate, onToCalendar }: { tasks: Task[]; onComplete: (id: string) => void; onEdit: (id: string, newTitle: string) => Promise<void>; onOpen?: (id: string) => void; onHover?: (id: string, rect: DOMRect) => void; onLeave?: () => void; listKey?: string; onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => boolean; onRate?: (id: string, rating: number) => void; onToCalendar?: (id: string) => void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   if (tasks.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -641,14 +685,15 @@ function TaskList({ tasks, onComplete, onEdit, onOpen, onHover, onLeave, listKey
           listKey={listKey}
           onReorder={onReorder}
           onRate={onRate}
+          onToCalendar={onToCalendar}
         />
       ))}
     </>
   );
 }
 
-type AddHandle = { open: () => void };
-const AddTaskInput = forwardRef<AddHandle, { onAdd: (title: string) => Promise<void>; placeholder?: string }>(
+type AddHandle = { open: () => void; openWith?: (seed: string) => void };
+const AddTaskInput = forwardRef<AddHandle, { onAdd: (title: string) => Promise<unknown>; placeholder?: string }>(
   function AddTaskInput({ onAdd, placeholder = "New task..." }, ref) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
@@ -656,8 +701,12 @@ const AddTaskInput = forwardRef<AddHandle, { onAdd: (title: string) => Promise<v
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // let the surrounding panel open the input by clicking empty space
-  useImperativeHandle(ref, () => ({ open: () => setOpen(true) }), []);
+  // let the surrounding panel open the input by clicking empty space, and let
+  // the type-anywhere shortcut open it already carrying the first keystroke
+  useImperativeHandle(ref, () => ({
+    open: () => setOpen(true),
+    openWith: (seed: string) => { setValue(v => v + seed); setOpen(true); },
+  }), []);
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50);
@@ -2081,6 +2130,38 @@ function parseQuickCapture(raw: string):
   return { kind: "event", title: title || raw.trim(), date: iso, time };
 }
 
+const localIso = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// Insert text at the caret of a (possibly React-controlled) field. The native
+// value setter + input event is what makes React's onChange see the change;
+// execCommand covers the contentEditable notes canvas.
+function insertTextAtCursor(el: HTMLElement, text: string, smartPad = true) {
+  el.focus();
+  if (el.isContentEditable) {
+    document.execCommand("insertText", false, text);
+    return;
+  }
+  const input = el as HTMLInputElement | HTMLTextAreaElement;
+  const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+  if (!setter) return;
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+  // breathing room when dictating onto the end of existing text (not for
+  // literal single characters like the tap-typed backtick)
+  const pad = smartPad && start > 0 && !/\s/.test(input.value[start - 1] || "") && !/^\s/.test(text) ? " " : "";
+  const next = input.value.slice(0, start) + pad + text + input.value.slice(end);
+  setter.call(input, next);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  try { input.setSelectionRange(start + pad.length + text.length, start + pad.length + text.length); } catch {}
+}
+
+// plain boolean on purpose — an "el is HTMLElement" predicate would narrow the
+// else-branch to never and break the checks that follow it
+const isTextField = (el: Element | null): boolean =>
+  !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
+
 function QuickAdd({ onTask, onEvent, notify }: {
   onTask: (title: string) => void;
   onEvent: (title: string, date: string, time: string, type: string) => void;
@@ -2173,7 +2254,7 @@ function Dashboard() {
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [openEmail, setOpenEmail] = useState<{ source: "gmail" | "zoho"; email: Email } | null>(null);
   const [hover, setHover] = useState<{ id: string; rect: DOMRect } | null>(null);
-  const [toasts, setToasts] = useState<{ id: number; msg: string; undo?: () => void }[]>([]);
+  const [toasts, setToasts] = useState<{ id: number; msg: string; undo?: () => void; actionLabel?: string }[]>([]);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
   // let each list open its add-input when its empty space is clicked
   const shortAddRef = useRef<AddHandle>(null);
@@ -2182,9 +2263,11 @@ function Dashboard() {
   const highAddRef = useRef<AddHandle>(null);
   const scheduleAddRef = useRef<AddHandle>(null);
 
-  const toast = useCallback((msg: string, undo?: () => void) => {
+  // actionLabel renames the toast's button (default "Undo") — voice capture uses
+  // it to offer "Calendar" as the alternate destination.
+  const toast = useCallback((msg: string, undo?: () => void, actionLabel?: string) => {
     const id = (typeof performance !== "undefined" ? performance.now() : 0) + Math.random();
-    setToasts(prev => [...prev, { id, msg, undo }]);
+    setToasts(prev => [...prev, { id, msg, undo, actionLabel }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), undo ? 7000 : 4000);
   }, []);
 
@@ -2351,6 +2434,167 @@ function Dashboard() {
     }
   }, [aphorismo, toast, pushUndo, fetchAphorismo]);
 
+  // The + on an email row: the subject becomes a Short Term task carrying a link
+  // back to the thread. The email itself stays put (✓ archives it separately).
+  const makeTaskFromEmail = async (email: Email) => {
+    const title = email.subject && email.subject !== "(no subject)" ? email.subject : `Email from ${email.from}`;
+    toast(`→ Short Term: “${undoClip(title)}”`);
+    const id = await addTask(title, "Short Term");
+    if (id && email.link) {
+      fetch("/api/notion", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setLinks", id, links: `Email|${email.link}` }),
+      }).catch(() => {});
+    }
+  };
+
+  // The calendar button on a task row: put it on the schedule. Reads any date
+  // words in the title (same parser as quick capture); a title with none lands
+  // on today. The task stays in its list — this dates it, it doesn't move it.
+  const sendTaskToCalendar = (id: string) => {
+    const t = shortTerm.find(x => x.id === id) || longTerm.find(x => x.id === id);
+    if (!t) return;
+    const p = parseQuickCapture(t.title);
+    const date = p.kind === "event" ? p.date : localIso(new Date());
+    const time = p.kind === "event" ? p.time : "";
+    addEvent(p.title, date, time, "");
+    const d = new Date(`${date}T${time || "00:00"}`);
+    const day = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    toast(`→ Schedule: ${day}${time ? " " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }) : ""}`);
+  };
+
+  // ---- Hold-` voice ---------------------------------------------------------
+  // Hold the backtick key to dictate. In a text field the words land at the
+  // caret; anywhere else the transcript becomes a Short Term task, with a
+  // Calendar button on the toast for when it was really an appointment. A quick
+  // tap still types a plain backtick.
+  const [voice, setVoice] = useState<{ mode: "field" | "capture"; text: string } | null>(null);
+  // latest handler closures for the once-registered key listeners. Null at
+  // first paint (addTask/addEvent are declared further down), assigned every
+  // commit — voice can only fire after mount, so it always sees them populated.
+  const voiceOps = useRef<null | {
+    addTask: (title: string, status: "Short Term" | "Clients", priority?: boolean) => Promise<string | null>;
+    addEvent: (title: string, date: string, time: string, type: string) => void;
+    toast: (msg: string, undo?: () => void, actionLabel?: string) => void;
+    fetchTasks: () => Promise<void>;
+  }>(null);
+  useEffect(() => { voiceOps.current = { addTask, addEvent, toast, fetchTasks }; });
+  // modal state mirrored into a ref so the once-registered key listeners see it
+  const modalOpenRef = useRef(false);
+  modalOpenRef.current = !!(openProjectId || openClientId || openActionId || openEmail || editingEvent);
+
+  useEffect(() => {
+    let rec: any = null;              // active SpeechRecognition instance
+    let listening = false;            // recognition actually started
+    let holdTimer: number | null = null;
+    let held = false;                 // physical key currently down
+    let target: HTMLElement | null = null; // field focused when the hold began
+    let finalText = "";
+
+    const commit = () => {
+      const ops = voiceOps.current;
+      const text = finalText.trim();
+      listening = false; rec = null; finalText = "";
+      setVoice(null);
+      if (!text || !ops) return;
+      if (target) { insertTextAtCursor(target, text); target = null; return; }
+      // no field held focus → quick capture. Dates route to the schedule on
+      // their own; plain speech lands in Short Term with a Calendar alternate.
+      const p = parseQuickCapture(text);
+      if (p.kind === "event") {
+        ops.addEvent(p.title, p.date, p.time, "");
+        const d = new Date(`${p.date}T${p.time || "00:00"}`);
+        ops.toast(`→ Schedule: ${d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}${p.time ? " " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }) : ""}`);
+        return;
+      }
+      const created = ops.addTask(p.title, "Short Term");
+      ops.toast(`→ Short Term: “${p.title.length > 26 ? p.title.slice(0, 26) + "…" : p.title}”`, async () => {
+        const id = await created;
+        if (id) fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action: "complete" }) }).catch(() => {});
+        ops.addEvent(p.title, localIso(new Date()), "", "");
+        voiceOps.current?.fetchTasks();
+      }, "Calendar");
+    };
+
+    const start = () => {
+      const SR = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+      if (!SR) { voiceOps.current?.toast("Voice needs Chrome or Edge — no speech API in this browser"); return; }
+      rec = new SR();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = "en-US";
+      rec.onresult = (ev: any) => {
+        let interim = "";
+        finalText = "";
+        for (let i = 0; i < ev.results.length; i++) {
+          const r = ev.results[i];
+          if (r.isFinal) finalText += r[0].transcript;
+          else interim += r[0].transcript;
+        }
+        setVoice(v => (v ? { ...v, text: (finalText + interim).trim() } : v));
+      };
+      rec.onerror = (ev: any) => {
+        if (ev.error === "not-allowed") voiceOps.current?.toast("Mic blocked — allow it for this site in the browser");
+      };
+      rec.onend = commit; // fires after stop() AND after silence timeouts
+      try { rec.start(); } catch { rec = null; return; }
+      listening = true;
+      setVoice({ mode: target ? "field" : "capture", text: "" });
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== "Backquote" || e.ctrlKey || e.metaKey || e.altKey) return;
+      e.preventDefault(); // never let raw backticks spray into the page while held
+      if (e.repeat || held) return;
+      held = true;
+      const a = document.activeElement;
+      target = isTextField(a) ? (a as HTMLElement) : null;
+      holdTimer = window.setTimeout(() => { holdTimer = null; start(); }, 250);
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== "Backquote") return;
+      held = false;
+      if (holdTimer !== null) {
+        // released before the hold threshold → it was a tap, type the backtick
+        clearTimeout(holdTimer); holdTimer = null;
+        if (target) insertTextAtCursor(target, "`", false);
+        target = null;
+        return;
+      }
+      if (listening && rec) { try { rec.stop(); } catch { commit(); } } // commit runs via onend
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      if (holdTimer !== null) clearTimeout(holdTimer);
+      if (rec) { rec.onend = null; try { rec.stop(); } catch {} }
+    };
+  }, []);
+
+  // ---- Type anywhere → Short Term ------------------------------------------
+  // With nothing focused, just start typing: the Short Term add box opens with
+  // that first keystroke already in it. "/" keeps jumping to the header capture,
+  // "`" belongs to voice, and modals/inputs/buttons are left alone.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.length !== 1 || e.key === "/" || e.key === "`" || e.key === " ") return;
+      if (modalOpenRef.current) return;
+      const a = document.activeElement as HTMLElement | null;
+      if (isTextField(a)) return;
+      // focused buttons/links/rows handle their own keys (Space/Enter activate)
+      if (a && a !== document.body && (a.tagName === "BUTTON" || a.tagName === "A" || a.tagName === "SELECT" || a.getAttribute("role") === "button" || a.getAttribute("role") === "radio")) return;
+      e.preventDefault();
+      shortAddRef.current?.openWith?.(e.key);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   useEffect(() => {
     fetchStatic();
     fetchSpotify();
@@ -2475,8 +2719,10 @@ function Dashboard() {
   };
 
   // Short Term tasks and Clients differ in shape (Short Term carries a checklist,
-  // Clients don't), so add to the right list with the right shape.
-  const addTask = async (title: string, status: "Short Term" | "Clients", priority = false) => {
+  // Clients don't), so add to the right list with the right shape. Returns the
+  // created page id so callers (voice capture's CALENDAR button, email→task) can
+  // follow up on the row they just made.
+  const addTask = async (title: string, status: "Short Term" | "Clients", priority = false): Promise<string | null> => {
     const tempId = `temp-${Date.now()}`;
     if (status === "Short Term") setShortTerm(prev => [...prev, { id: tempId, title, items: [], priority }]);
     else setClients(prev => [...prev, { id: tempId, title }]);
@@ -2493,7 +2739,7 @@ function Dashboard() {
         body: JSON.stringify({ title, status }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) { rollback(); toast("Couldn’t add — try again"); return; }
+      if (!res.ok) { rollback(); toast("Couldn’t add — try again"); return null; }
       // swap the temp id for the real page id in place (no reconcile GET)
       if (data.id) {
         swap(data.id);
@@ -2505,10 +2751,12 @@ function Dashboard() {
           await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: data.id, action: "complete" }) });
           await fetchTasks();
         });
+        return data.id as string;
       } else fetchTasks();
     } catch {
       rollback(); toast("Couldn’t add — try again");
     }
+    return null;
   };
 
   // A Long Term "project" is a Notion page (Status=Long Term) that starts empty.
@@ -2965,10 +3213,10 @@ function Dashboard() {
     const notionDate = hasTime ? new Date(`${date}T${time}`).toISOString() : date;
     const tempId = `temp-${Date.now()}`;
     // optimistic display (reconciled by fetchSchedule)
+    // local calendar days — toISOString here flipped the labels every evening
     const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
-    const tom = new Date(now); tom.setUTCDate(now.getUTCDate() + 1);
-    const tomStr = tom.toISOString().split("T")[0];
+    const todayStr = localIso(now);
+    const tomStr = localIso(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
     const evDay = hasTime ? notionDate.split("T")[0] : date;
     const dObj = new Date(hasTime ? `${date}T${time}` : `${date}T00:00`);
     const displayDate = evDay === todayStr ? "Today" : evDay === tomStr ? "Tomorrow" : dObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -2997,10 +3245,10 @@ function Dashboard() {
     const hasTime = !!time;
     const notionDate = hasTime ? new Date(`${date}T${time}`).toISOString() : date;
     // optimistic display (reconciled by fetchSchedule)
+    // local calendar days — toISOString here flipped the labels every evening
     const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
-    const tom = new Date(now); tom.setUTCDate(now.getUTCDate() + 1);
-    const tomStr = tom.toISOString().split("T")[0];
+    const todayStr = localIso(now);
+    const tomStr = localIso(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
     const evDay = hasTime ? notionDate.split("T")[0] : date;
     const dObj = new Date(hasTime ? `${date}T${time}` : `${date}T00:00`);
     const displayDate = evDay === todayStr ? "Today" : evDay === tomStr ? "Tomorrow" : dObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -3188,7 +3436,7 @@ function Dashboard() {
             ) : (
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                 {sorenEmails.map((email) => (
-                  <EmailRow key={email.id} email={email} onArchive={archiveSorenEmail} onOpen={(e) => setOpenEmail({ source: "zoho", email: e })} />
+                  <EmailRow key={email.id} email={email} onArchive={archiveSorenEmail} onOpen={(e) => setOpenEmail({ source: "zoho", email: e })} onMakeTask={makeTaskFromEmail} />
                 ))}
               </div>
             )}
@@ -3231,7 +3479,7 @@ function Dashboard() {
                   <div style={{ borderLeft: "1px dashed #4a4a4a", padding: "2px 0 2px 10px" }}>
                     <p style={{ margin: 0, color: "#808080", fontSize: 11, fontStyle: "italic" }}>Drag tasks here, or use + to add</p>
                   </div>
-                ) : <TaskList tasks={shortHigh} onComplete={completeTask} onEdit={editTask} onOpen={handleOpenProject} onHover={(id, rect) => setHover({ id, rect })} onLeave={() => setHover(null)} listKey="short" onReorder={reorderTask} />}
+                ) : <TaskList tasks={shortHigh} onComplete={completeTask} onEdit={editTask} onOpen={handleOpenProject} onHover={(id, rect) => setHover({ id, rect })} onLeave={() => setHover(null)} listKey="short" onReorder={reorderTask} onToCalendar={sendTaskToCalendar} />}
               </div>
               <AddTaskInput ref={highAddRef} onAdd={(title) => addTask(title, "Short Term", true)} placeholder="New priority task..." />
             </div>
@@ -3261,7 +3509,7 @@ function Dashboard() {
                       <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${75 - i * 8}%` }} />
                     </div>
                   ))
-                ) : <TaskList tasks={shortNormal} onComplete={completeTask} onEdit={editTask} onOpen={handleOpenProject} onHover={(id, rect) => setHover({ id, rect })} onLeave={() => setHover(null)} listKey="short" onReorder={reorderTask} />}
+                ) : <TaskList tasks={shortNormal} onComplete={completeTask} onEdit={editTask} onOpen={handleOpenProject} onHover={(id, rect) => setHover({ id, rect })} onLeave={() => setHover(null)} listKey="short" onReorder={reorderTask} onToCalendar={sendTaskToCalendar} />}
               </div>
               <AddTaskInput ref={shortAddRef} onAdd={(title) => addTask(title, "Short Term")} />
             </Panel>
@@ -3354,7 +3602,7 @@ function Dashboard() {
             ) : (
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                 {emails.map((email) => (
-                  <EmailRow key={email.id} email={email} onArchive={archiveEmail} onOpen={(e) => setOpenEmail({ source: "gmail", email: e })} />
+                  <EmailRow key={email.id} email={email} onArchive={archiveEmail} onOpen={(e) => setOpenEmail({ source: "gmail", email: e })} onMakeTask={makeTaskFromEmail} />
                 ))}
               </div>
             )}
@@ -3657,6 +3905,25 @@ function Dashboard() {
         <EmailReader source={openEmail.source} email={openEmail.email} onClose={() => setOpenEmail(null)} />
       )}
 
+      {/* hold-` voice: live transcript while the key is down */}
+      {voice && (
+        <div style={{
+          position: "fixed", left: "50%", bottom: 64, transform: "translateX(-50%)", zIndex: 9700,
+          display: "flex", alignItems: "center", gap: 10, pointerEvents: "none",
+          background: "rgba(14,16,20,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+          border: "1px solid #3a3a3a", borderRadius: 4, padding: "8px 14px",
+          maxWidth: "min(560px, 90vw)", boxShadow: "0 8px 28px rgba(0,0,0,0.6)",
+        }}>
+          <span aria-hidden style={{ width: 7, height: 7, borderRadius: "50%", background: "#c06464", boxShadow: "0 0 8px #c06464", animation: "skpulse 1.2s ease-in-out infinite", flexShrink: 0 }} />
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.14em", color: "#9a9a9a", flexShrink: 0 }}>
+            {voice.mode === "field" ? "DICTATING" : "LISTENING"}
+          </span>
+          <span style={{ fontSize: 12, color: "#cfcfcf", fontStyle: "italic", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {voice.text || "…"}
+          </span>
+        </div>
+      )}
+
       {/* transient status toasts — sync failures and merge undo */}
       {toasts.length > 0 && (
         <div aria-live="polite" style={{ position: "fixed", left: "50%", bottom: 20, transform: "translateX(-50%)", zIndex: 9800, display: "flex", flexDirection: "column", gap: 8, alignItems: "center", pointerEvents: "none" }}>
@@ -3674,7 +3941,7 @@ function Dashboard() {
                   background: "none", border: "1px solid #505050", color: "#e8e8e8", cursor: "pointer",
                   fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.1em",
                   padding: "3px 8px", borderRadius: 3, textTransform: "uppercase",
-                }}>Undo</button>
+                }}>{t.actionLabel || "Undo"}</button>
               )}
             </div>
           ))}

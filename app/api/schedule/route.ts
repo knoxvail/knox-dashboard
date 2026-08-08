@@ -30,7 +30,14 @@ export async function GET() {
 
   try {
     const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
+    // "today" in the DISPLAY timezone, not UTC — toISOString flips to tomorrow
+    // at 5pm Pacific, which was filtering out today's all-day events every
+    // evening and mislabeling tomorrow's as "Today". en-CA formats YYYY-MM-DD.
+    const dayInTz = (d: Date) => {
+      try { return new Intl.DateTimeFormat("en-CA", { timeZone: DISPLAY_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d); }
+      catch { return d.toISOString().split("T")[0]; }
+    };
+    const todayStr = dayInTz(now);
 
     const res = await fetch(`https://api.notion.com/v1/databases/${dbId}/query`, {
       method: "POST",
@@ -70,11 +77,11 @@ export async function GET() {
         if (start) {
           const d = new Date(start);
           startMs = d.getTime();
-          const eventDay = start.split("T")[0];
+          // timed events are stored as UTC instants, so their calendar day must
+          // also be read in the display timezone; all-day dates are used as-is
+          const eventDay = isDatetime ? dayInTz(d) : start.split("T")[0];
           const isToday = eventDay === todayStr;
-          const tomorrow = new Date(now);
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          const tomorrowStr = tomorrow.toISOString().split("T")[0];
+          const tomorrowStr = dayInTz(new Date(now.getTime() + 24 * 60 * 60 * 1000));
           const isTomorrow = eventDay === tomorrowStr;
 
           displayDate = isToday ? "Today" : isTomorrow ? "Tomorrow" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
