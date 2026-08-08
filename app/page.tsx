@@ -2130,6 +2130,25 @@ function parseQuickCapture(raw: string):
   return { kind: "event", title: title || raw.trim(), date: iso, time };
 }
 
+// ---- Themes ----------------------------------------------------------------
+// The app is monochrome, which makes theming almost free: a single full-screen
+// mix-blend-mode:"color" layer re-hues every grey beneath it, so one tint color
+// restyles the whole board without touching a line of the grey palette. Each
+// theme = page background + tint + how hard the tint bites. PAPER is the odd
+// one out: a real luminance inversion (light mode), with images/iframes
+// double-inverted back to normal.
+type Theme = { name: string; bg: string; tint?: string; tintOpacity?: number; invert?: boolean };
+const THEMES: Theme[] = [
+  { name: "MONO", bg: "#0a0a0a" },
+  { name: "BLUE", bg: "#080b12", tint: "#4a7dbf", tintOpacity: 0.55 },
+  { name: "GREEN", bg: "#07100a", tint: "#4fae62", tintOpacity: 0.5 },
+  { name: "AMBER", bg: "#100c06", tint: "#c8862a", tintOpacity: 0.55 },
+  { name: "PURPLE", bg: "#0c0814", tint: "#8a63c9", tintOpacity: 0.5 },
+  { name: "STEEL", bg: "#0a0c0f", tint: "#7d93a8", tintOpacity: 0.4 },
+  { name: "CRIMSON", bg: "#120808", tint: "#c05050", tintOpacity: 0.45 },
+  { name: "PAPER", bg: "#0a0a0a", invert: true },
+];
+
 const localIso = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -2468,6 +2487,22 @@ function Dashboard() {
   // caret; anywhere else the transcript becomes a Short Term task, with a
   // Calendar button on the toast for when it was really an appointment. A quick
   // tap still types a plain backtick.
+  // theme index persists per device; hydrated after mount so SSR markup stays stable
+  const [themeIdx, setThemeIdx] = useState(0);
+  useEffect(() => {
+    try {
+      const saved = parseInt(localStorage.getItem("knox_theme") || "0", 10);
+      if (saved >= 0 && saved < THEMES.length) setThemeIdx(saved);
+    } catch {}
+  }, []);
+  const theme = THEMES[themeIdx] || THEMES[0];
+  const cycleTheme = () => {
+    const next = (themeIdx + 1) % THEMES.length;
+    setThemeIdx(next);
+    try { localStorage.setItem("knox_theme", String(next)); } catch {}
+    toast(`Theme: ${THEMES[next].name}`);
+  };
+
   const [voice, setVoice] = useState<{ mode: "field" | "capture"; text: string } | null>(null);
   // latest handler closures for the once-registered key listeners. Null at
   // first paint (addTask/addEvent are declared further down), assigned every
@@ -3341,7 +3376,7 @@ function Dashboard() {
 
   return (
     <div style={{
-      background: "#0a0a0a",
+      background: theme.bg,
       // definite viewport height (not minHeight) so the flex column is bounded:
       // main gets the leftover space and its panels scroll internally, instead of
       // the whole page growing past the (non-scrolling) viewport and clipping the footer
@@ -3376,6 +3411,9 @@ function Dashboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
           <Tag>{clock.day}</Tag>
           <Tag>{clock.date}</Tag>
+          <button onClick={cycleTheme} title="Cycle theme" aria-label={`Theme: ${theme.name}. Click for the next one`} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+            <Tag>{theme.name}</Tag>
+          </button>
           <button onClick={() => { fetchStatic(); fetchGmail(); fetchSoren(); fetchSpotify(); fetchSchedule(); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
             <Tag>REFRESH</Tag>
           </button>
@@ -3903,6 +3941,24 @@ function Dashboard() {
 
       {openEmail && (
         <EmailReader source={openEmail.source} email={openEmail.email} onClose={() => setOpenEmail(null)} />
+      )}
+
+      {/* theme tint: one color-blend layer re-hues the whole monochrome board.
+          Portaled last into body so it also covers every portaled modal/toast. */}
+      {theme.tint && typeof document !== "undefined" && createPortal(
+        <div aria-hidden style={{
+          position: "fixed", inset: 0, background: theme.tint,
+          mixBlendMode: "color", opacity: theme.tintOpacity ?? 0.5,
+          pointerEvents: "none", zIndex: 99998,
+        }} />,
+        document.body
+      )}
+      {/* PAPER: cheap light mode — invert the page, re-invert real imagery */}
+      {theme.invert && (
+        <style dangerouslySetInnerHTML={{ __html: `
+          html { filter: invert(1) hue-rotate(180deg); background: #f2f0ec; }
+          img, video, iframe { filter: invert(1) hue-rotate(180deg); }
+        ` }} />
       )}
 
       {/* hold-` voice: live transcript while the key is down */}
