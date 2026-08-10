@@ -2432,7 +2432,12 @@ function Dashboard() {
     const c = await contentP;
     let bodyText = (c?.text || "").trim();
     if (!bodyText && c?.html) bodyText = htmlToText(c.html);
-    if (!bodyText) return;
+    if (!bodyText) {
+      // say so instead of failing silently — the task exists either way, and
+      // the thread link on it still reaches the full message
+      toast("Task made, but couldn’t pull the email body");
+      return;
+    }
     const clean = bodyText
       .replace(/\r/g, "")
       .replace(/[ \t]+\n/g, "\n")
