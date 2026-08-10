@@ -2178,6 +2178,25 @@ function insertTextAtCursor(el: HTMLElement, text: string, smartPad = true) {
 
 // plain boolean on purpose — an "el is HTMLElement" predicate would narrow the
 // else-branch to never and break the checks that follow it
+// HTML email → readable plain text. innerText can't be used here: on a parsed
+// document that was never rendered it degrades to textContent, which drops
+// every line break. So newlines are injected at the block boundaries by hand,
+// and style/script bodies (rampant in marketing mail) are removed first.
+function htmlToText(html: string): string {
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    doc.querySelectorAll("style, script, title, head").forEach(n => n.remove());
+    doc.querySelectorAll("br").forEach(n => n.replaceWith("\n"));
+    doc.querySelectorAll("p, div, tr, li, h1, h2, h3, h4, h5, h6, blockquote, pre").forEach(n => n.append("\n"));
+    return (doc.body.textContent || "")
+      .replace(/\r/g, "")
+      .replace(/[ \t ]+/g, " ")
+      .replace(/ ?\n ?/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  } catch { return ""; }
+}
+
 const isTextField = (el: Element | null): boolean =>
   !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
 
@@ -2392,18 +2411,43 @@ function Dashboard() {
     }
   }, [aphorismo, toast, pushUndo, fetchAphorismo]);
 
-  // The + on an email row: the subject becomes a Short Term task carrying a link
-  // back to the thread. The email itself stays put (✓ archives it separately).
-  const makeTaskFromEmail = async (email: Email) => {
+  // The + on an email row: the subject becomes a Short Term task, the email BODY
+  // lands in the task's notes (so opening the task shows the whole message), and
+  // a link back to the thread rides along. The email itself stays put (✓
+  // archives it separately).
+  const makeTaskFromEmail = async (email: Email, source: "gmail" | "zoho") => {
     const title = email.subject && email.subject !== "(no subject)" ? email.subject : `Email from ${email.from}`;
     toast(`→ Short Term: “${undoClip(title)}”`);
+    // fetch the body while the task is being created — neither waits on the other
+    const contentP = fetch(`/api/${source}?content=${encodeURIComponent(email.id)}`)
+      .then(r => (r.ok ? r.json() : null)).catch(() => null);
     const id = await addTask(title, "Short Term");
-    if (id && email.link) {
+    if (!id) return;
+    if (email.link) {
       fetch("/api/notion", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "setLinks", id, links: `Email|${email.link}` }),
       }).catch(() => {});
     }
+    const c = await contentP;
+    let bodyText = (c?.text || "").trim();
+    if (!bodyText && c?.html) bodyText = htmlToText(c.html);
+    if (!bodyText) return;
+    const clean = bodyText
+      .replace(/\r/g, "")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n");
+    // Notes is a Notion rich-text property capped at 2000 chars — leave room for
+    // the header line and mark the cut when a long email doesn't fit
+    const header = `# ${email.from}${email.date ? ` — ${email.date}` : ""}`;
+    const room = 1980 - header.length;
+    const notes = `${header}\n${clean.length > room ? clean.slice(0, room) + "\n[cut]" : clean}`;
+    fetch("/api/notion", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "setClientNotes", id, notes }),
+    }).then(res => {
+      if (res.ok) patchProject(id, p => ({ ...p, notes })); // visible on open, no refetch
+    }).catch(() => {});
   };
 
   // The calendar button on a task row: put it on the schedule. Reads any date
@@ -3451,7 +3495,7 @@ function Dashboard() {
             ) : (
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                 {sorenEmails.map((email) => (
-                  <EmailRow key={email.id} email={email} onArchive={archiveSorenEmail} onOpen={(e) => setOpenEmail({ source: "zoho", email: e })} onMakeTask={makeTaskFromEmail} />
+                  <EmailRow key={email.id} email={email} onArchive={archiveSorenEmail} onOpen={(e) => setOpenEmail({ source: "zoho", email: e })} onMakeTask={(e) => makeTaskFromEmail(e, "zoho")} />
                 ))}
               </div>
             )}
@@ -3617,7 +3661,7 @@ function Dashboard() {
             ) : (
               <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
                 {emails.map((email) => (
-                  <EmailRow key={email.id} email={email} onArchive={archiveEmail} onOpen={(e) => setOpenEmail({ source: "gmail", email: e })} onMakeTask={makeTaskFromEmail} />
+                  <EmailRow key={email.id} email={email} onArchive={archiveEmail} onOpen={(e) => setOpenEmail({ source: "gmail", email: e })} onMakeTask={(e) => makeTaskFromEmail(e, "gmail")} />
                 ))}
               </div>
             )}
