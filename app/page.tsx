@@ -2181,67 +2181,6 @@ function insertTextAtCursor(el: HTMLElement, text: string, smartPad = true) {
 const isTextField = (el: Element | null): boolean =>
   !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
 
-function QuickAdd({ onTask, onEvent, notify }: {
-  onTask: (title: string) => void;
-  onEvent: (title: string, date: string, time: string, type: string) => void;
-  notify: (msg: string) => void;
-}) {
-  const [v, setV] = useState("");
-  const ref = useRef<HTMLInputElement>(null);
-
-  // "/" anywhere (outside a text field) jumps to this box
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
-      const el = document.activeElement as HTMLElement | null;
-      const tag = (el?.tagName || "").toLowerCase();
-      if (tag === "input" || tag === "textarea" || el?.isContentEditable) return;
-      e.preventDefault();
-      ref.current?.focus();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  const submit = () => {
-    const raw = v.trim();
-    if (!raw) return;
-    const p = parseQuickCapture(raw);
-    if (p.kind === "event") {
-      onEvent(p.title, p.date, p.time, "");
-      const d = new Date(`${p.date}T${p.time || "00:00"}`);
-      const day = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-      const at = p.time ? ` ${d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}` : "";
-      notify(`→ Schedule: ${day}${at}`);
-    } else {
-      onTask(p.title);
-      notify("→ Short Term");
-    }
-    setV("");
-  };
-
-  return (
-    <input
-      ref={ref}
-      value={v}
-      onChange={(e) => setV(e.target.value)}
-      onKeyDown={(e) => { if (e.key === "Enter") submit(); if (e.key === "Escape") { setV(""); e.currentTarget.blur(); } }}
-      placeholder={'make task…   ( "email jim"  ·  "lunch fri 12pm" )'}
-      aria-label="Make a task or schedule entry — anything with a date or time goes to the schedule"
-      title='Press "/" to jump here. A date or time routes it to Schedule; otherwise it lands in Short Term.'
-      style={{
-        flex: "0 1 380px", minWidth: 160,
-        background: "rgba(255,255,255,0.03)", border: "1px solid #262626",
-        color: "#bbb", fontSize: 11, padding: "6px 10px", borderRadius: 3,
-        fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.04em",
-        outline: "none", transition: "border-color 0.15s",
-      }}
-      onFocus={(e) => (e.currentTarget.style.borderColor = "#4a4a4a")}
-      onBlur={(e) => (e.currentTarget.style.borderColor = "#262626")}
-    />
-  );
-}
-
 function Dashboard() {
   const clock = useClock();
   const [shortTerm, setShortTerm] = useState<Project[]>([]);
@@ -2525,13 +2464,16 @@ function Dashboard() {
     let held = false;                 // physical key currently down
     let target: HTMLElement | null = null; // field focused when the hold began
     let finalText = "";
+    let cancelled = false;            // Esc / click while listening → discard
 
     const commit = () => {
       const ops = voiceOps.current;
       const text = finalText.trim();
+      const discard = cancelled;
+      cancelled = false;
       listening = false; rec = null; finalText = "";
       setVoice(null);
-      if (!text || !ops) return;
+      if (discard || !text || !ops) return;
       if (target) { insertTextAtCursor(target, text); target = null; return; }
       // no field held focus → quick capture. Dates route to the schedule on
       // their own; plain speech lands in Short Term with a Calendar alternate.
@@ -2600,11 +2542,33 @@ function Dashboard() {
       if (listening && rec) { try { rec.stop(); } catch { commit(); } } // commit runs via onend
     };
 
+    // Bail out mid-dictation: Escape or clicking anywhere discards the take.
+    // Both run in the capture phase so the same press can't also close a modal,
+    // and the cancelling click is swallowed so it doesn't open what it hit.
+    const cancel = () => {
+      cancelled = true;
+      if (rec) { try { rec.stop(); } catch { commit(); } } else commit();
+    };
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !listening) return;
+      e.preventDefault(); e.stopPropagation();
+      cancel();
+    };
+    const onPointerDown = () => {
+      if (!listening) return;
+      window.addEventListener("click", (ce) => { ce.stopPropagation(); ce.preventDefault(); }, { capture: true, once: true });
+      cancel();
+    };
+
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("keydown", onEscape, true);
+    window.addEventListener("pointerdown", onPointerDown, true);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("keydown", onEscape, true);
+      window.removeEventListener("pointerdown", onPointerDown, true);
       if (holdTimer !== null) clearTimeout(holdTimer);
       if (rec) { rec.onend = null; try { rec.stop(); } catch {} }
     };
@@ -3403,11 +3367,24 @@ function Dashboard() {
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#999", boxShadow: "0 0 8px #999" }} />
           <Tag accent>KNOX // COMMAND CENTER</Tag>
         </div>
-        <QuickAdd
-          onTask={(title) => addTask(title, "Short Term")}
-          onEvent={addEvent}
-          notify={toast}
-        />
+        {/* the voice slot — live transcript renders here while ` is held */}
+        <div aria-live="polite" style={{ flex: "0 1 420px", minWidth: 160, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minHeight: 22, overflow: "hidden" }}>
+          {voice ? (
+            <>
+              <span aria-hidden style={{ width: 7, height: 7, borderRadius: "50%", background: "#c06464", boxShadow: "0 0 8px #c06464", animation: "skpulse 1.2s ease-in-out infinite", flexShrink: 0 }} />
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.14em", color: "#9a9a9a", flexShrink: 0 }}>
+                {voice.mode === "field" ? "DICTATING" : "LISTENING"}
+              </span>
+              <span style={{ fontSize: 12, color: "#cfcfcf", fontStyle: "italic", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+                {voice.text || "…"}
+              </span>
+            </>
+          ) : (
+            <span aria-hidden style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.14em", color: "#3a3a3a", userSelect: "none" }}>
+              HOLD ` TO TALK
+            </span>
+          )}
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
           <Tag>{clock.day}</Tag>
           <Tag>{clock.date}</Tag>
@@ -3959,25 +3936,6 @@ function Dashboard() {
           html { filter: invert(1) hue-rotate(180deg); background: #f2f0ec; }
           img, video, iframe { filter: invert(1) hue-rotate(180deg); }
         ` }} />
-      )}
-
-      {/* hold-` voice: live transcript while the key is down */}
-      {voice && (
-        <div style={{
-          position: "fixed", left: "50%", bottom: 64, transform: "translateX(-50%)", zIndex: 9700,
-          display: "flex", alignItems: "center", gap: 10, pointerEvents: "none",
-          background: "rgba(14,16,20,0.96)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
-          border: "1px solid #3a3a3a", borderRadius: 4, padding: "8px 14px",
-          maxWidth: "min(560px, 90vw)", boxShadow: "0 8px 28px rgba(0,0,0,0.6)",
-        }}>
-          <span aria-hidden style={{ width: 7, height: 7, borderRadius: "50%", background: "#c06464", boxShadow: "0 0 8px #c06464", animation: "skpulse 1.2s ease-in-out infinite", flexShrink: 0 }} />
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.14em", color: "#9a9a9a", flexShrink: 0 }}>
-            {voice.mode === "field" ? "DICTATING" : "LISTENING"}
-          </span>
-          <span style={{ fontSize: 12, color: "#cfcfcf", fontStyle: "italic", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {voice.text || "…"}
-          </span>
-        </div>
       )}
 
       {/* transient status toasts — sync failures and merge undo */}
