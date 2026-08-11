@@ -2411,6 +2411,52 @@ function Dashboard() {
     }
   }, [aphorismo, toast, pushUndo, fetchAphorismo]);
 
+  // NEXT on the Today panel: finished items leave the board (un-tagged, they
+  // stay Complete in Notion) and the next tasks from the open Short Term
+  // backlog slide into their slots — priority-flagged first, then manual order.
+  // The queue is as endless as the backlog; when it runs dry, Next just clears.
+  const advanceToday = async () => {
+    const finished = actions.filter(a => a.done && !a.id.startsWith("temp-"));
+    if (!finished.length) { toast("Nothing checked off yet — Next replaces finished items"); return; }
+    const queue = shortTerm
+      .filter(t => !t.id.startsWith("temp-"))
+      .sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0) || byOrder(a, b));
+    const replacements = queue.slice(0, finished.length);
+
+    // optimistic: finished cards out, replacements into their slot positions
+    setActions(prev => prev
+      .filter(a => !a.done)
+      .concat(replacements.map((r, i) => ({
+        id: r.id, title: r.title, notes: r.notes, plan: "",
+        order: finished[i]?.order ?? 90 + i, done: false, status: "Short Term",
+      })))
+      .sort(byOrder));
+    setShortTerm(prev => prev.filter(t => !replacements.some(r => r.id === t.id)));
+
+    const tag = (id: string, tagged: boolean, order?: number | null) =>
+      fetch("/api/notion", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setActionTag", id, tagged, ...(typeof order === "number" ? { order } : {}) }),
+      });
+    try {
+      await Promise.all([
+        ...finished.map(a => tag(a.id, false)),
+        ...replacements.map((r, i) => tag(r.id, true, finished[i]?.order)),
+      ]);
+      pushUndo("advance Today", async () => {
+        await Promise.all([
+          ...finished.map(a => tag(a.id, true, a.order)),
+          ...replacements.map(r => tag(r.id, false)),
+        ]).catch(() => {});
+        await fetchTasks();
+      });
+      toast(replacements.length ? `→ ${replacements.length} new on Today` : "Cleared — the queue is empty");
+    } catch {
+      toast("Couldn’t advance — try again");
+    }
+    await fetchTasks(); // reconcile: replacement plans load, both lists settle
+  };
+
   // The + on an email row: the subject becomes a Short Term task, the email BODY
   // lands in the task's notes (so opening the task shows the whole message), and
   // a link back to the thread rides along. The email itself stays put (✓
@@ -3621,7 +3667,27 @@ function Dashboard() {
 
             {/* TODAY — actionable items from Cowork, stacked under Projects */}
             <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, padding: "14px 16px 10px" }}>
-          <PanelHeader label="Today" right={<Tag>COWORK</Tag>} />
+          <PanelHeader label="Today" right={
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              {actions.length > 0 && (
+                <button
+                  onClick={advanceToday}
+                  aria-label="Replace finished items with the next tasks from the backlog"
+                  title="Finished items leave the board; the next Short Term tasks take their slots"
+                  style={{
+                    background: "none", cursor: "pointer", border: "1px solid #3a3a3a",
+                    fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
+                    letterSpacing: "0.12em", textTransform: "uppercase",
+                    color: "#9a9a9a", padding: "3px 8px", borderRadius: 3,
+                    transition: "color 0.15s, border-color 0.15s",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#3a3a3a"; }}
+                >Next</button>
+              )}
+              <Tag>COWORK</Tag>
+            </div>
+          } />
           <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0 }}>
             {loading ? (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>

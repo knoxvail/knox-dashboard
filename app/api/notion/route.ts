@@ -194,6 +194,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
 
+    // Tag or un-tag a row as a Today action item. Tagging pulls a task onto the
+    // Today board (Type = "Action"); un-tagging drops it back to wherever its
+    // Status already points. Order positions it in the three slots.
+    if (action === "setActionTag") {
+      if (!id) return NextResponse.json({ error: "Missing task id" }, { status: 400 });
+      const props: Record<string, unknown> = {
+        Type: { select: body.tagged ? { name: "Action" } : null },
+      };
+      if (typeof body.order === "number") props.Order = { number: body.order };
+      const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ properties: props }),
+      });
+      if (!notionRes.ok) {
+        return NextResponse.json({ error: await notionRes.json() }, { status: notionRes.status });
+      }
+      return NextResponse.json({ success: true });
+    }
+
     // Finish (or un-finish) a Today action item. Deliberately NOT an archive:
     // archiving drops the row out of the GET, and these have to stay on the board
     // crossed off but still readable. Type stays "Action" so it keeps rendering;
