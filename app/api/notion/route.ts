@@ -106,6 +106,9 @@ export async function GET() {
     // `status` is carried so a finished item can be un-finished back to where it
     // was, and `done` is what makes it render crossed off instead of disappearing.
     const actionPages: { id: string; title: string; order: number | null; notes: string; status: string; done: boolean }[] = [];
+    // big goals (Type = "Goal"): Percent 0–100 + a one-line "how it's going" in
+    // Notes. The morning routine maintains them; the Today panel renders them.
+    const goals: { id: string; title: string; order: number | null; notes: string; percent: number }[] = [];
 
     (data.results || []).forEach((page: any) => {
       const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
@@ -134,6 +137,11 @@ export async function GET() {
         actionPages.push({ id: page.id, title, order, notes, status: actionStatus, done: actionStatus === "Complete" });
         return;
       }
+      if (typeProp?.select?.name === "Goal") {
+        const percent = Math.max(0, Math.min(100, (page.properties as any)["Percent"]?.number ?? 0));
+        goals.push({ id: page.id, title, order, notes, percent });
+        return;
+      }
 
       const statusProp = Object.values(page.properties).find((p: any) => p.type === "status") as any;
       const status = statusProp?.status?.name || "";
@@ -153,7 +161,7 @@ export async function GET() {
       Promise.all(actionPages.map(async (a) => ({ ...a, plan: await fetchPlan(token, a.id) }))),
     ]);
 
-    return NextResponse.json({ shortTerm: shortTermFull, longTerm: longTermFull, clients, actions });
+    return NextResponse.json({ shortTerm: shortTermFull, longTerm: longTermFull, clients, actions, goals: goals.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity)) });
   } catch {
     return NextResponse.json({ shortTerm: [], longTerm: [], clients: [] });
   }
@@ -192,6 +200,28 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({ success: true });
+    }
+
+    // Nudge a big goal's progress from the dashboard (Percent 0–100).
+    if (action === "setGoalPercent") {
+      if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+      if (typeof body.percent !== "number" || !isFinite(body.percent)) {
+        return NextResponse.json({ error: "Invalid percent" }, { status: 400 });
+      }
+      const pct = Math.max(0, Math.min(100, Math.round(body.percent)));
+      const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ properties: { Percent: { number: pct } } }),
+      });
+      if (!notionRes.ok) {
+        return NextResponse.json({ error: await notionRes.json() }, { status: notionRes.status });
+      }
+      return NextResponse.json({ success: true, percent: pct });
     }
 
     // Tag or un-tag a row as a Today action item. Tagging pulls a task onto the
@@ -501,6 +531,7 @@ export async function POST(request: Request) {
       if (!db.properties?.Notes) missing.Notes = { rich_text: {} };
       if (!db.properties?.Rating) missing.Rating = { number: {} };
       if (!db.properties?.Links) missing.Links = { rich_text: {} };
+      if (!db.properties?.Percent) missing.Percent = { number: {} }; // big-goal progress, 0–100
       if (Object.keys(missing).length === 0) return NextResponse.json({ success: true, existed: true });
       const patch = await fetch(`https://api.notion.com/v1/databases/${dbId}`, {
         method: "PATCH", headers: H, body: JSON.stringify({ properties: missing }),

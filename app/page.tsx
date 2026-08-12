@@ -14,6 +14,9 @@ type SavedLink = { label: string; url: string };
 // An action item written by the Cowork routine: a headline, a one-line why, and
 // a full plan (its Notion page body) rendered in the same notes format.
 type ActionItem = { id: string; title: string; notes?: string; plan?: string; order?: number | null; done?: boolean; status?: string };
+// A big goal (Notion row, Type = "Goal"): Percent 0–100 plus a one-line "how
+// it's going" in Notes. Maintained by the morning routine, nudgeable by hand.
+type Goal = { id: string; title: string; notes?: string; percent: number; order?: number | null };
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
 type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string; editDate?: string; editTime?: string };
@@ -1690,12 +1693,13 @@ function ProgressBar({ pct, height = 4 }: { pct: number | null; height?: number 
   );
 }
 
-// The click-through from the header bar: every project with its own bar,
-// checked/total, and percentage. Clicking a row opens that project.
-function ProgressModal({ projects, onClose, onOpenProject }: {
-  projects: Project[];
+// The click-through from the Today header bar: the big goals the morning
+// routine tracks, each with its bar and a one-line "how it's going". Click (or
+// arrow-key) a bar to nudge a goal's percent by hand.
+function GoalsModal({ goals, onClose, onSetPercent }: {
+  goals: Goal[];
   onClose: () => void;
-  onOpenProject: (id: string) => void;
+  onSetPercent: (id: string, percent: number) => void;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -1703,54 +1707,59 @@ function ProgressModal({ projects, onClose, onOpenProject }: {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const rows = projects.map(p => {
-    const total = p.items.length;
-    const done = p.items.filter(i => i.checked).length;
-    return { id: p.id, title: p.title, done, total, pct: total ? Math.round((done / total) * 100) : null };
-  }).sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || a.title.localeCompare(b.title));
-  const overallDone = rows.reduce((n, r) => n + r.done, 0);
-  const overallTotal = rows.reduce((n, r) => n + r.total, 0);
-  const overallPct = overallTotal ? Math.round((overallDone / overallTotal) * 100) : 0;
+  const avg = goals.length ? Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length) : 0;
 
   return createPortal(
     <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", zIndex: 9000, display: "grid", placeItems: "center", fontFamily: "'DM Sans', sans-serif", animation: "fadeIn 0.18s ease-out" }}>
-      <div role="dialog" aria-modal="true" aria-label="Project progress"
-        style={{ width: "min(480px, 92vw)", maxHeight: "80vh", overflowY: "auto", scrollbarWidth: "none", background: "rgba(12,14,18,0.92)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", border: "1px solid #3a3a3a", borderRadius: 6, padding: "16px 18px", boxShadow: "0 20px 60px rgba(0,0,0,0.7)", position: "relative", animation: "modalIn 0.2s ease-out" }}>
+      <div role="dialog" aria-modal="true" aria-label="Big goals"
+        style={{ width: "min(520px, 92vw)", maxHeight: "80vh", overflowY: "auto", scrollbarWidth: "none", background: "rgba(12,14,18,0.92)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", border: "1px solid #3a3a3a", borderRadius: 6, padding: "16px 18px", boxShadow: "0 20px 60px rgba(0,0,0,0.7)", position: "relative", animation: "modalIn 0.2s ease-out" }}>
         <div style={{ position: "absolute", top: -1, left: 16, width: 32, height: 1, background: "#999" }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 4 }}>
-          <h2 style={{ margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 400, letterSpacing: "0.16em", textTransform: "uppercase", color: "#f0f0f0" }}>Progress</h2>
+          <h2 style={{ margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 400, letterSpacing: "0.16em", textTransform: "uppercase", color: "#f0f0f0" }}>Big Goals</h2>
           <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "#808080", fontSize: 18, lineHeight: 1, padding: 0 }}
             onMouseEnter={(e) => (e.currentTarget.style.color = "#ccc")} onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}>✕</button>
         </div>
 
-        {/* the whole board in one line */}
         <div style={{ padding: "10px 0 14px", borderBottom: "1px solid #1e1e1e", marginBottom: 6 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
-            <span style={{ fontSize: 12, color: "#b0b0b0" }}>All projects</span>
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>{overallDone}/{overallTotal} · {overallPct}%</span>
+            <span style={{ fontSize: 12, color: "#b0b0b0" }}>Everything, together</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>{avg}%</span>
           </div>
-          <ProgressBar pct={overallPct} height={5} />
+          <ProgressBar pct={avg} height={5} />
         </div>
 
-        {rows.length === 0 ? (
-          <p style={{ color: "#808080", fontSize: 12, textAlign: "center", padding: "14px 0" }}>No projects yet</p>
-        ) : rows.map(r => (
-          <div key={r.id} role="button" tabIndex={0}
-            onClick={() => onOpenProject(r.id)}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenProject(r.id); } }}
-            title="Open project"
-            style={{ padding: "9px 4px", borderBottom: "1px solid #161616", cursor: "pointer", borderRadius: 3, transition: "background 0.15s" }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-          >
+        {goals.length === 0 ? (
+          <p style={{ color: "#808080", fontSize: 12, textAlign: "center", lineHeight: 1.7, padding: "14px 0" }}>
+            No goals tracked yet.<br />
+            <span style={{ color: "#5f5f5f" }}>The morning routine maintains these — or add a row with Type “Goal” in Notion.</span>
+          </p>
+        ) : goals.map(g => (
+          <div key={g.id} style={{ padding: "10px 4px 11px", borderBottom: "1px solid #161616" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
-              <span style={{ fontSize: 12.5, color: "#e8e8e8", textTransform: "capitalize", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{r.title}</span>
-              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", flexShrink: 0 }}>
-                {r.total ? `${r.done}/${r.total} · ${r.pct}%` : "no items"}
-              </span>
+              <span style={{ fontSize: 13, color: "#e8e8e8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{g.title}</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", flexShrink: 0 }}>{g.percent}%</span>
             </div>
-            <ProgressBar pct={r.total ? r.pct : 0} />
+            <div
+              role="slider" tabIndex={0}
+              aria-label={`Progress on ${g.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={g.percent}
+              title="Click to set progress; arrow keys nudge by 5"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                const pct = Math.round(((e.clientX - r.left) / r.width) * 20) * 5; // snap to 5s
+                onSetPercent(g.id, pct);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowRight" || e.key === "ArrowUp") { e.preventDefault(); onSetPercent(g.id, g.percent + 5); }
+                if (e.key === "ArrowLeft" || e.key === "ArrowDown") { e.preventDefault(); onSetPercent(g.id, g.percent - 5); }
+              }}
+              style={{ cursor: "pointer", padding: "3px 0" }}
+            >
+              <ProgressBar pct={g.percent} height={5} />
+            </div>
+            {g.notes?.trim() && (
+              <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "#808080", lineHeight: 1.45 }}>{g.notes}</p>
+            )}
           </div>
         ))}
       </div>
@@ -2312,6 +2321,7 @@ function Dashboard() {
   const [longTerm, setLongTerm] = useState<Project[]>([]);
   const [clients, setClients] = useState<Task[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [verse, setVerse] = useState<Verse | null>(null);
   const [allVerses, setAllVerses] = useState<Verse[]>([]);
@@ -2402,6 +2412,7 @@ function Dashboard() {
       setLongTerm(data.longTerm || []);
       setClients((data.clients || []).slice().sort(byClient));
       setActions((data.actions || []).slice().sort(byOrder));
+      setGoals(data.goals || []);
     } catch {}
   }, []);
 
@@ -2562,6 +2573,30 @@ function Dashboard() {
       toast("Couldn’t advance — try again");
     }
     await fetchTasks(); // reconcile: replacement plans load, both lists settle
+  };
+
+  // Nudge a goal's percent by hand (the bar in the goals window is clickable).
+  const setGoalPercent = async (id: string, percent: number) => {
+    const g = goals.find(x => x.id === id);
+    if (!g) return;
+    const pct = Math.max(0, Math.min(100, Math.round(percent)));
+    const prev = g.percent;
+    if (pct === prev) return;
+    setGoals(cur => cur.map(x => (x.id === id ? { ...x, percent: pct } : x)));
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setGoalPercent", id, percent: pct }),
+      });
+      if (!res.ok) { setGoals(cur => cur.map(x => (x.id === id ? { ...x, percent: prev } : x))); toast("Couldn’t save progress — reverted"); return; }
+      pushUndo(`set “${undoClip(g.title)}” to ${pct}%`, async () => {
+        setGoals(cur => cur.map(x => (x.id === id ? { ...x, percent: prev } : x)));
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setGoalPercent", id, percent: prev }) }).catch(() => {});
+      });
+    } catch {
+      setGoals(cur => cur.map(x => (x.id === id ? { ...x, percent: prev } : x)));
+      toast("Couldn’t save progress — reverted");
+    }
   };
 
   // The + on an email row: the subject becomes a Short Term task, the email BODY
@@ -3759,22 +3794,11 @@ function Dashboard() {
           {/* Projects (top) with Up Next stacked under it — full height, both rows */}
           <div style={{ gridColumn: 3, gridRow: "1 / span 2", display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             <Panel style={{ flex: 1.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-              <PanelHeader label="Projects" right={(() => {
-                const total = longTerm.reduce((n, p) => n + p.items.length, 0);
-                const done = longTerm.reduce((n, p) => n + p.items.filter(i => i.checked).length, 0);
-                const pct = total ? Math.round((done / total) * 100) : 0;
-                return (
-                  <button
-                    onClick={() => setProgressOpen(true)}
-                    aria-label={`Project progress: ${done} of ${total} items done. Open the breakdown`}
-                    title="Progress across all projects — click for the per-project breakdown"
-                    style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 8 }}
-                  >
-                    <div style={{ width: 72 }}><ProgressBar pct={pct} /></div>
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>{done}/{total}</span>
-                  </button>
-                );
-              })()} />
+              <PanelHeader label="Projects" right={
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
+                  {longTerm.length}
+                </span>
+              } />
               <div
                 onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOver !== "Long Term") setDragOver("Long Term"); }}
                 onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
@@ -3811,6 +3835,19 @@ function Dashboard() {
             <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, padding: "14px 16px 10px" }}>
           <PanelHeader label="Today" right={
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              {goals.length > 0 && (
+                <button
+                  onClick={() => setProgressOpen(true)}
+                  aria-label={`Big goals: ${Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length)}% overall. Open the breakdown`}
+                  title="How the big goals are going — click for the breakdown"
+                  style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 8 }}
+                >
+                  <div style={{ width: 72 }}><ProgressBar pct={Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length)} /></div>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
+                    {Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length)}%
+                  </span>
+                </button>
+              )}
               {actions.length > 0 && (
                 <button
                   onClick={advanceToday}
@@ -4130,10 +4167,10 @@ function Dashboard() {
       {hoverProject && createPortal(<HoverPopover project={hoverProject} rect={hover!.rect} />, document.body)}
 
       {progressOpen && (
-        <ProgressModal
-          projects={longTerm}
+        <GoalsModal
+          goals={goals}
           onClose={() => setProgressOpen(false)}
-          onOpenProject={(id) => { setProgressOpen(false); handleOpenProject(id); }}
+          onSetPercent={setGoalPercent}
         />
       )}
 
