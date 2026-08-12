@@ -998,8 +998,12 @@ function BucketCard({ project, onOpen, onHover, onLeave, onMerge }: {
         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           {project.items.map((it) => (
             <div key={it.id} style={{ display: "flex", gap: 6, alignItems: "baseline", minWidth: 0 }}>
-              <span aria-hidden style={{ color: badgeColor, fontSize: 11, lineHeight: 1.4, flexShrink: 0 }}>›</span>
-              <span style={{ fontSize: 12, color: "#9a9a9a", lineHeight: 1.4, overflowWrap: "break-word", minWidth: 0 }}>{it.text || "Untitled"}</span>
+              <span aria-hidden style={{ color: it.checked ? "#555" : badgeColor, fontSize: 11, lineHeight: 1.4, flexShrink: 0, display: "inline-flex", alignItems: "center" }}>{it.checked ? <CheckIcon size={8} /> : "›"}</span>
+              <span style={{
+                fontSize: 12, lineHeight: 1.4, overflowWrap: "break-word", minWidth: 0,
+                color: it.checked ? "#6f6f6f" : "#9a9a9a",
+                textDecoration: it.checked ? "line-through" : "none",
+              }}>{it.text || "Untitled"}</span>
             </div>
           ))}
         </div>
@@ -1677,10 +1681,89 @@ function LinksCard({ links, onChange }: { links: SavedLink[]; onChange: (next: S
 
 // Click-to-open editor for a project's checklist. Portalled to document.body so
 // the panel's overflow/backdrop-filter stacking context can't clip it.
-function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditItem, onEditTitle, onArchive, onMove, onReorderItems, onExtractItem, onSaveNotes, onSaveLinks }: {
+// Thin monochrome progress bar — the theme tint recolors it for free.
+function ProgressBar({ pct, height = 4 }: { pct: number | null; height?: number }) {
+  return (
+    <div aria-hidden style={{ height, background: "#242424", borderRadius: height, overflow: "hidden", width: "100%" }}>
+      <div style={{ height: "100%", width: `${Math.max(0, Math.min(100, pct ?? 0))}%`, background: "#9a9a9a", borderRadius: height, transition: "width 0.3s ease" }} />
+    </div>
+  );
+}
+
+// The click-through from the header bar: every project with its own bar,
+// checked/total, and percentage. Clicking a row opens that project.
+function ProgressModal({ projects, onClose, onOpenProject }: {
+  projects: Project[];
+  onClose: () => void;
+  onOpenProject: (id: string) => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const rows = projects.map(p => {
+    const total = p.items.length;
+    const done = p.items.filter(i => i.checked).length;
+    return { id: p.id, title: p.title, done, total, pct: total ? Math.round((done / total) * 100) : null };
+  }).sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || a.title.localeCompare(b.title));
+  const overallDone = rows.reduce((n, r) => n + r.done, 0);
+  const overallTotal = rows.reduce((n, r) => n + r.total, 0);
+  const overallPct = overallTotal ? Math.round((overallDone / overallTotal) * 100) : 0;
+
+  return createPortal(
+    <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", zIndex: 9000, display: "grid", placeItems: "center", fontFamily: "'DM Sans', sans-serif", animation: "fadeIn 0.18s ease-out" }}>
+      <div role="dialog" aria-modal="true" aria-label="Project progress"
+        style={{ width: "min(480px, 92vw)", maxHeight: "80vh", overflowY: "auto", scrollbarWidth: "none", background: "rgba(12,14,18,0.92)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", border: "1px solid #3a3a3a", borderRadius: 6, padding: "16px 18px", boxShadow: "0 20px 60px rgba(0,0,0,0.7)", position: "relative", animation: "modalIn 0.2s ease-out" }}>
+        <div style={{ position: "absolute", top: -1, left: 16, width: 32, height: 1, background: "#999" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 4 }}>
+          <h2 style={{ margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 400, letterSpacing: "0.16em", textTransform: "uppercase", color: "#f0f0f0" }}>Progress</h2>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "#808080", fontSize: 18, lineHeight: 1, padding: 0 }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#ccc")} onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}>✕</button>
+        </div>
+
+        {/* the whole board in one line */}
+        <div style={{ padding: "10px 0 14px", borderBottom: "1px solid #1e1e1e", marginBottom: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
+            <span style={{ fontSize: 12, color: "#b0b0b0" }}>All projects</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>{overallDone}/{overallTotal} · {overallPct}%</span>
+          </div>
+          <ProgressBar pct={overallPct} height={5} />
+        </div>
+
+        {rows.length === 0 ? (
+          <p style={{ color: "#808080", fontSize: 12, textAlign: "center", padding: "14px 0" }}>No projects yet</p>
+        ) : rows.map(r => (
+          <div key={r.id} role="button" tabIndex={0}
+            onClick={() => onOpenProject(r.id)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenProject(r.id); } }}
+            title="Open project"
+            style={{ padding: "9px 4px", borderBottom: "1px solid #161616", cursor: "pointer", borderRadius: 3, transition: "background 0.15s" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, marginBottom: 6 }}>
+              <span style={{ fontSize: 12.5, color: "#e8e8e8", textTransform: "capitalize", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{r.title}</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", flexShrink: 0 }}>
+                {r.total ? `${r.done}/${r.total} · ${r.pct}%` : "no items"}
+              </span>
+            </div>
+            <ProgressBar pct={r.total ? r.pct : 0} />
+          </div>
+        ))}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onToggleItem, onEditItem, onEditTitle, onArchive, onMove, onReorderItems, onExtractItem, onSaveNotes, onSaveLinks }: {
   project: Project;
   list: "Short Term" | "Long Term" | null; // which list the project is in (for the Move control)
   onClose: () => void;
+  onToggleItem: (projectId: string, itemId: string, checked: boolean) => void;
   onAddItem: (projectId: string, text: string) => void;
   onDeleteItem: (projectId: string, itemId: string) => void;
   onEditItem: (projectId: string, itemId: string, text: string) => void;
@@ -1877,19 +1960,29 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
                         arr.splice(side === "top" ? ti : ti + 1, 0, dr);
                         onReorderItems(project.id, arr);
                       }}
+                      className="reveal-row"
                       style={{
                         display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 0", borderBottom: "1px solid #1a1a1a",
                         cursor: draggableItem ? "grab" : "default",
                         boxShadow: itemOver?.id === it.id ? (itemOver.side === "top" ? "inset 0 2px 0 #8a8a8a" : "inset 0 -2px 0 #8a8a8a") : "none",
                       }}
                     >
+                      {/* check toggle — the item stays, struck through, so progress can count it */}
                       <button
-                        disabled={temp} title="Remove" aria-label="Remove item"
-                        onClick={() => onDeleteItem(project.id, it.id)}
-                        style={{ width: 18, height: 18, flexShrink: 0, marginTop: 1, background: "#1e1e1e", border: "1px solid #505050", borderRadius: 3, color: "#aaa", lineHeight: 1, cursor: temp ? "default" : "pointer", opacity: temp ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center", transition: "color 0.15s, border-color 0.15s, background 0.15s" }}
-                        onMouseEnter={(e) => { if (temp) return; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; e.currentTarget.style.background = "#2a2a2a"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; e.currentTarget.style.background = "#1e1e1e"; }}
-                      ><CheckIcon size={10} /></button>
+                        disabled={temp} title={it.checked ? "Uncheck" : "Check off"} aria-label={it.checked ? "Uncheck item" : "Check off item"} aria-pressed={it.checked}
+                        onClick={() => onToggleItem(project.id, it.id, !it.checked)}
+                        style={{
+                          width: 18, height: 18, flexShrink: 0, marginTop: 1,
+                          background: it.checked ? "#20301f" : "#1e1e1e",
+                          border: `1px solid ${it.checked ? "#3f6f4a" : "#505050"}`,
+                          borderRadius: 3, color: it.checked ? "#7bd88f" : "#aaa", lineHeight: 1,
+                          cursor: temp ? "default" : "pointer", opacity: temp ? 0.4 : 1,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          transition: "color 0.15s, border-color 0.15s, background 0.15s",
+                        }}
+                        onMouseEnter={(e) => { if (temp || it.checked) return; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "#aaa"; }}
+                        onMouseLeave={(e) => { if (it.checked) return; e.currentTarget.style.color = "#aaa"; e.currentTarget.style.borderColor = "#505050"; }}
+                      >{it.checked ? <CheckIcon size={10} /> : null}</button>
                       {editingItemId === it.id ? (
                         <input autoFocus value={itemDraft} onChange={(e) => setItemDraft(e.target.value)}
                           onKeyDown={(e) => { if (e.key === "Enter") { onEditItem(project.id, it.id, itemDraft); setEditingItemId(null); } if (e.key === "Escape") setEditingItemId(null); }}
@@ -1897,9 +1990,22 @@ function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onEditI
                           style={{ flex: 1, minWidth: 0, background: "#1a1a1a", border: "1px solid #333", color: "#ddd", fontSize: 13, padding: "2px 6px", fontFamily: "'DM Sans', sans-serif", outline: "none", borderRadius: 3 }} />
                       ) : (
                         <span onClick={() => { if (!temp) { setEditingItemId(it.id); setItemDraft(it.text); } }} title={temp ? undefined : "Click to edit"}
-                          style={{ flex: 1, fontSize: 12, color: "#9a9a9a", lineHeight: 1.4, minWidth: 0, wordBreak: "break-word", cursor: temp ? "default" : "text" }}
+                          style={{
+                            flex: 1, fontSize: 12, lineHeight: 1.4, minWidth: 0, wordBreak: "break-word",
+                            cursor: temp ? "default" : "text",
+                            color: it.checked ? "#6f6f6f" : "#9a9a9a",
+                            textDecoration: it.checked ? "line-through" : "none",
+                            transition: "color 0.15s",
+                          }}
                         >{it.text || "Untitled"}</span>
                       )}
+                      <button
+                        className="row-action" disabled={temp} title="Remove" aria-label={`Remove "${it.text || "item"}"`}
+                        onClick={() => onDeleteItem(project.id, it.id)}
+                        style={{ background: "none", border: "none", cursor: temp ? "default" : "pointer", color: "#808080", fontSize: 12, lineHeight: 1, padding: "2px 2px 0", flexShrink: 0, transition: "color 0.15s, opacity 0.15s" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = "#c06464")}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}
+                      >✕</button>
                     </div>
                   );
                 })}
@@ -2228,6 +2334,7 @@ function Dashboard() {
   const [priorityDrag, setPriorityDrag] = useState<"high" | "normal" | null>(null);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const [openClientId, setOpenClientId] = useState<string | null>(null);
+  const [progressOpen, setProgressOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [openEmail, setOpenEmail] = useState<{ source: "gmail" | "zoho"; email: Email } | null>(null);
   const [hover, setHover] = useState<{ id: string; rect: DOMRect } | null>(null);
@@ -2550,7 +2657,7 @@ function Dashboard() {
   useEffect(() => { voiceOps.current = { addTask, addEvent, toast, fetchTasks }; });
   // modal state mirrored into a ref so the once-registered key listeners see it
   const modalOpenRef = useRef(false);
-  modalOpenRef.current = !!(openProjectId || openClientId || openActionId || openEmail || editingEvent);
+  modalOpenRef.current = !!(openProjectId || openClientId || openActionId || openEmail || editingEvent || progressOpen);
 
   useEffect(() => {
     let rec: any = null;              // active SpeechRecognition instance
@@ -3002,6 +3109,30 @@ function Dashboard() {
       }
     } catch {
       restore();
+    }
+  };
+
+  // Check / un-check a checklist item. The item stays in the list struck
+  // through — that persistence is what makes project progress measurable.
+  const toggleChecklistItem = async (projectId: string, itemId: string, checked: boolean) => {
+    if (itemId.startsWith("temp-")) return;
+    const prev = findProject(projectId)?.items.find(it => it.id === itemId)?.checked ?? false;
+    if (prev === checked) return;
+    const patch = (v: boolean) => patchProject(projectId, p => ({ ...p, items: p.items.map(it => it.id === itemId ? { ...it, checked: v } : it) }));
+    patch(checked);
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "updateChecklistItem", itemId, checked }),
+      });
+      if (!res.ok) { patch(prev); toast("Couldn’t update the item — reverted"); return; }
+      pushUndo(`${checked ? "check" : "uncheck"} an item`, async () => {
+        patch(prev);
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "updateChecklistItem", itemId, checked: prev }) }).catch(() => {});
+      });
+    } catch {
+      patch(prev); toast("Couldn’t update the item — reverted");
     }
   };
 
@@ -3628,11 +3759,22 @@ function Dashboard() {
           {/* Projects (top) with Up Next stacked under it — full height, both rows */}
           <div style={{ gridColumn: 3, gridRow: "1 / span 2", display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             <Panel style={{ flex: 1.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-              <PanelHeader label="Projects" right={
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
-                  {longTerm.length}
-                </span>
-              } />
+              <PanelHeader label="Projects" right={(() => {
+                const total = longTerm.reduce((n, p) => n + p.items.length, 0);
+                const done = longTerm.reduce((n, p) => n + p.items.filter(i => i.checked).length, 0);
+                const pct = total ? Math.round((done / total) * 100) : 0;
+                return (
+                  <button
+                    onClick={() => setProgressOpen(true)}
+                    aria-label={`Project progress: ${done} of ${total} items done. Open the breakdown`}
+                    title="Progress across all projects — click for the per-project breakdown"
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    <div style={{ width: 72 }}><ProgressBar pct={pct} /></div>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>{done}/{total}</span>
+                  </button>
+                );
+              })()} />
               <div
                 onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOver !== "Long Term") setDragOver("Long Term"); }}
                 onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
@@ -3987,6 +4129,14 @@ function Dashboard() {
 
       {hoverProject && createPortal(<HoverPopover project={hoverProject} rect={hover!.rect} />, document.body)}
 
+      {progressOpen && (
+        <ProgressModal
+          projects={longTerm}
+          onClose={() => setProgressOpen(false)}
+          onOpenProject={(id) => { setProgressOpen(false); handleOpenProject(id); }}
+        />
+      )}
+
       {openProject && (
         <ProjectModal
           project={openProject}
@@ -3994,6 +4144,7 @@ function Dashboard() {
           onClose={() => setOpenProjectId(null)}
           onAddItem={addChecklistItem}
           onDeleteItem={deleteChecklistItem}
+          onToggleItem={toggleChecklistItem}
           onEditItem={editChecklistItem}
           onEditTitle={editTask}
           onArchive={(id) => { completeTask(id); setOpenProjectId(null); }}

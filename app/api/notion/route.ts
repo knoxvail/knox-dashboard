@@ -372,13 +372,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, id: itemId });
     }
 
-    // Rename a checklist item (itemId = Notion BLOCK id)
+    // Rename and/or check off a checklist item (itemId = Notion BLOCK id).
+    // Checking keeps the block in place — progress is checked/total, so the
+    // denominator has to survive completion (deleting was the old "done").
     if (action === "updateChecklistItem") {
       const { itemId, text } = body;
       if (!itemId) return NextResponse.json({ error: "Missing itemId" }, { status: 400 });
-      if (typeof text !== "string" || text.trim().length === 0) {
-        return NextResponse.json({ error: "Invalid text" }, { status: 400 });
+      const hasText = typeof text === "string" && text.trim().length > 0;
+      const hasChecked = typeof body.checked === "boolean";
+      if (!hasText && !hasChecked) {
+        return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
       }
+      const todo: Record<string, unknown> = {};
+      if (hasText) todo.rich_text = [{ type: "text", text: { content: text.trim() } }];
+      if (hasChecked) todo.checked = body.checked;
       const notionRes = await fetch(`https://api.notion.com/v1/blocks/${itemId}`, {
         method: "PATCH",
         headers: {
@@ -386,13 +393,13 @@ export async function POST(request: Request) {
           "Notion-Version": "2022-06-28",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ to_do: { rich_text: [{ type: "text", text: { content: text.trim() } }] } }),
+        body: JSON.stringify({ to_do: todo }),
       });
       if (!notionRes.ok) {
         const err = await notionRes.json();
         return NextResponse.json({ error: err }, { status: notionRes.status });
       }
-      return NextResponse.json({ success: true, item: { id: itemId, text: text.trim() } });
+      return NextResponse.json({ success: true, item: { id: itemId, ...(hasText ? { text: text.trim() } : {}), ...(hasChecked ? { checked: body.checked } : {}) } });
     }
 
     // Flag/unflag a task as high priority (Priority checkbox on the page)
