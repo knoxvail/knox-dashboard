@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef, forwardRef, useImperativeHandle, memo } from "react";
 import { createPortal } from "react-dom";
 
 // useLayoutEffect on the client, useEffect on the server (avoids the SSR warning
@@ -1695,9 +1695,9 @@ function ProgressBar({ pct, height = 4 }: { pct: number | null; height?: number 
 
 // The banner strip between Projects and Today: the big goals as a hero bar
 // with a drifting hatch fill, a pulsing dot on the leading edge, a notch per
-// goal, and Cowork's daily line on how everything fits together (the "Brief"
-// row in Notion). Clicking anywhere opens the map.
-function GoalsBanner({ goals, brief, onOpen }: { goals: Goal[]; brief: string; onOpen: () => void }) {
+// goal, and the Brief beneath — Cowork's daily line on how everything fits
+// together, rewritten each morning. Clicking anywhere opens the map.
+const GoalsBanner = memo(function GoalsBanner({ goals, brief, onOpen }: { goals: Goal[]; brief: string; onOpen: () => void }) {
   const avg = goals.length ? Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length) : 0;
   if (goals.length === 0) return null;
   return (
@@ -1749,7 +1749,7 @@ function GoalsBanner({ goals, brief, onOpen }: { goals: Goal[]; brief: string; o
       )}
     </button>
   );
-}
+});
 
 // ---- The map: an Obsidian-style force-directed graph of the operation ------
 // Root at the center, big goals as the inner ring (drawn as progress rings),
@@ -1816,16 +1816,24 @@ function buildGraph(goals: Goal[], projects: Project[], actions: ActionItem[]) {
   return { nodes, edges };
 }
 
-function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpenProject, onOpenAction }: {
+const GoalsMapModal = memo(function GoalsMapModal({ goals, projects, actions, brief, onClose, onSetPercent, onOpenProject, onOpenAction }: {
   goals: Goal[];
   projects: Project[];
   actions: ActionItem[];
+  brief: string;
   onClose: () => void;
   onSetPercent: (id: string, percent: number) => void;
   onOpenProject: (id: string) => void;
   onOpenAction: (id: string) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // the canvas engine registers listeners ONCE and reads the latest callbacks
+  // through this ref — if the engine effect depended on the props directly, a
+  // parent re-render (the clock ticks every second) would tear the whole thing
+  // down each time: rAF loop, pan/zoom, hover, everything. That was the
+  // "constantly refreshing" bug.
+  const opsRef = useRef({ onOpenProject, onOpenAction });
+  useEffect(() => { opsRef.current = { onOpenProject, onOpenAction }; });
   const [selected, setSelected] = useState<MapNode | null>(null);   // pinned by click
   const [hoverNode, setHoverNode] = useState<MapNode | null>(null); // live under the cursor
   const graphRef = useRef(buildGraph(goals, projects, actions));
@@ -2034,8 +2042,8 @@ function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpen
       const r = canvas.getBoundingClientRect();
       const n = nodeAt(e.clientX - r.left, e.clientY - r.top, 4);
       if (!n || !n.refId) return;
-      if (n.kind === "project" || n.kind === "item") onOpenProject(n.refId);
-      if (n.kind === "action") onOpenAction(n.refId);
+      if (n.kind === "project" || n.kind === "item") opsRef.current.onOpenProject(n.refId);
+      if (n.kind === "action") opsRef.current.onOpenAction(n.refId);
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -2061,8 +2069,10 @@ function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpen
       canvas.removeEventListener("dblclick", onDblClick);
       canvas.removeEventListener("wheel", onWheel);
     };
+    // ONCE. The engine must outlive parent re-renders; callbacks flow in
+    // through opsRef instead of deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onOpenProject, onOpenAction]);
+  }, []);
 
   const avg = goals.length ? Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length) : 0;
   // the summary panel follows the cursor; a click pins it in place
@@ -2177,6 +2187,12 @@ function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpen
                   {g.notes?.trim() && <p style={{ margin: "5px 0 0", fontSize: 10.5, color: "#808080", lineHeight: 1.45 }}>{g.notes}</p>}
                 </div>
               ))}
+              {brief.trim() && (
+                <>
+                  <div style={{ ...monoLabel, margin: "4px 0 6px" }}>How it fits together</div>
+                  <p style={{ margin: "0 0 10px", fontSize: 11.5, color: "#9a9a9a", fontStyle: "italic", lineHeight: 1.55 }}>{brief}</p>
+                </>
+              )}
               <p style={{ margin: "6px 0 0", fontSize: 10.5, color: "#808080", lineHeight: 1.5 }}>Hover anything on the map for its story. Click to pin it here.</p>
             </>
           )}
@@ -2189,7 +2205,7 @@ function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpen
     </div>,
     document.body
   );
-}
+});
 
 function ProjectModal({ project, list, onClose, onAddItem, onDeleteItem, onToggleItem, onEditItem, onEditTitle, onArchive, onMove, onReorderItems, onExtractItem, onSaveNotes, onSaveLinks }: {
   project: Project;
@@ -3001,7 +3017,8 @@ function Dashboard() {
   };
 
   // Nudge a goal's percent by hand (the bar in the goals window is clickable).
-  const setGoalPercent = async (id: string, percent: number) => {
+  // useCallback so the memoized map isn't re-rendered by the 1 Hz clock tick.
+  const setGoalPercent = useCallback(async (id: string, percent: number) => {
     const g = goals.find(x => x.id === id);
     if (!g) return;
     const pct = Math.max(0, Math.min(100, Math.round(percent)));
@@ -3022,7 +3039,8 @@ function Dashboard() {
       setGoals(cur => cur.map(x => (x.id === id ? { ...x, percent: prev } : x)));
       toast("Couldn’t save progress — reverted");
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goals, toast, pushUndo]);
 
   // The + on an email row: the subject becomes a Short Term task, the email BODY
   // lands in the task's notes (so opening the task shows the whole message), and
@@ -3269,6 +3287,27 @@ function Dashboard() {
     return () => { if (spotifyInterval.current) clearInterval(spotifyInterval.current); };
   }, [fetchSpotify]);
 
+  // Keep the board live: refetch everything on a slow interval and whenever the
+  // tab comes back into focus, so the morning routine's writes (the three, the
+  // goals, the Brief) appear without touching REFRESH. Skips while a modal is
+  // open or an optimistic add is still reconciling, so a background reconcile
+  // can't clobber an in-flight edit.
+  const tempPendingRef = useRef(false);
+  tempPendingRef.current =
+    shortTerm.some(t => t.id.startsWith("temp-")) ||
+    longTerm.some(p => p.id.startsWith("temp-")) ||
+    events.some(e => e.id.startsWith("temp-"));
+  useEffect(() => {
+    const refresh = () => {
+      if (document.hidden || modalOpenRef.current || tempPendingRef.current) return;
+      fetchTasks(); fetchGmail(); fetchSoren(); fetchSchedule();
+    };
+    const iv = setInterval(refresh, 4 * 60 * 1000);
+    const onVis = () => { if (!document.hidden) refresh(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
+  }, [fetchTasks, fetchGmail, fetchSoren, fetchSchedule]);
+
 
   // the hover popover is pinned to a captured rect, so it detaches on scroll —
   // just dismiss it (capture:true also catches the inner panel's scroll)
@@ -3289,6 +3328,13 @@ function Dashboard() {
   // open a project's modal, clearing any hover preview first so a popover can't
   // stay pinned on screen behind/after the modal
   const handleOpenProject = useCallback((id: string) => { setHover(null); setOpenProjectId(id); }, []);
+
+  // stable handles for the map/banner (memoized components stay quiet through
+  // the every-second clock re-render)
+  const openMap = useCallback(() => setProgressOpen(true), []);
+  const mapOpenProject = useCallback((id: string) => { setProgressOpen(false); handleOpenProject(id); }, [handleOpenProject]);
+  const mapOpenAction = useCallback((id: string) => { setProgressOpen(false); setOpenActionId(id); }, []);
+  const closeMap = useCallback(() => setProgressOpen(false), []);
 
   // Save a client's note (optimistic; persisted to the Notion "Notes" property).
   const saveClientNotes = async (id: string, notes: string) => {
@@ -4257,8 +4303,8 @@ function Dashboard() {
               <AddTaskInput ref={longAddRef} onAdd={addProject} placeholder="New project..." />
             </Panel>
 
-            {/* the state of the big goals + Cowork's read on how it fits together */}
-            <GoalsBanner goals={goals} brief={brief} onOpen={() => setProgressOpen(true)} />
+            {/* the state of the big goals + Cowork's daily read, kept live */}
+            <GoalsBanner goals={goals} brief={brief} onOpen={openMap} />
           </div>
 
           {/* TODAY — same grid row as Up Next, so the two match heights */}
@@ -4587,10 +4633,11 @@ function Dashboard() {
           goals={goals}
           projects={longTerm}
           actions={actions}
-          onClose={() => setProgressOpen(false)}
+          brief={brief}
+          onClose={closeMap}
           onSetPercent={setGoalPercent}
-          onOpenProject={(id) => { setProgressOpen(false); handleOpenProject(id); }}
-          onOpenAction={(id) => { setProgressOpen(false); setOpenActionId(id); }}
+          onOpenProject={mapOpenProject}
+          onOpenAction={mapOpenAction}
         />
       )}
 
