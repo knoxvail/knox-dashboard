@@ -1693,11 +1693,11 @@ function ProgressBar({ pct, height = 4 }: { pct: number | null; height?: number 
   );
 }
 
-// The banner strip between Projects and Today: the big goals as a hero bar
-// with a drifting hatch fill, a pulsing dot on the leading edge, a notch per
-// goal, and the Brief beneath — Cowork's daily line on how everything fits
-// together, rewritten each morning. Clicking anywhere opens the map.
-const GoalsBanner = memo(function GoalsBanner({ goals, brief, onOpen }: { goals: Goal[]; brief: string; onOpen: () => void }) {
+// The banner strip between Projects and Today: one slim row — label, the
+// hatch-filled bar with a notch per goal and the pulsing leading edge, the
+// number. Nothing else; the written Brief lives at the top of the map.
+// Hovering a notch names its goal. Clicking anywhere opens the map.
+const GoalsBanner = memo(function GoalsBanner({ goals, onOpen }: { goals: Goal[]; onOpen: () => void }) {
   const avg = goals.length ? Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length) : 0;
   if (goals.length === 0) return null;
   return (
@@ -1708,7 +1708,7 @@ const GoalsBanner = memo(function GoalsBanner({ goals, brief, onOpen }: { goals:
       style={{
         display: "block", width: "100%", cursor: "pointer", textAlign: "left", flexShrink: 0,
         background: "rgba(12,14,18,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
-        border: "1px solid #2a2a2a", borderRadius: 6, padding: "11px 16px 10px",
+        border: "1px solid #2a2a2a", borderRadius: 6, padding: "9px 16px",
         transition: "border-color 0.2s",
       }}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4a4a4a")}
@@ -1735,18 +1735,6 @@ const GoalsBanner = memo(function GoalsBanner({ goals, brief, onOpen }: { goals:
         </div>
         <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 22, fontWeight: 400, color: "#e8e8e8", lineHeight: 1, flexShrink: 0, minWidth: 48, textAlign: "right" }}>{avg}%</span>
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 7, flexWrap: "wrap" }}>
-        {goals.map(g => (
-          <span key={g.id} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.12em", color: "#808080", whiteSpace: "nowrap" }}>
-            {g.title.toUpperCase()} <span style={{ color: "#cfcfcf" }}>{g.percent}%</span>
-          </span>
-        ))}
-      </div>
-      {brief.trim() && (
-        <p style={{ margin: "7px 0 0", fontSize: 11.5, color: "#9a9a9a", fontStyle: "italic", lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-          {brief}
-        </p>
-      )}
     </button>
   );
 });
@@ -2102,6 +2090,13 @@ const GoalsMapModal = memo(function GoalsMapModal({ goals, projects, actions, br
         </div>
       </div>
 
+      {/* the Brief — Cowork's daily read on how everything fits together */}
+      {brief.trim() && (
+        <div style={{ padding: "9px 20px", borderBottom: "1px solid #1a1a1a", flexShrink: 0 }}>
+          <p style={{ margin: 0, fontSize: 11.5, color: "#9a9a9a", fontStyle: "italic", lineHeight: 1.55 }}>{brief}</p>
+        </div>
+      )}
+
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         {/* the summary rail: hover fills it live, a click pins it */}
         <aside style={{ width: 300, flexShrink: 0, borderRight: "1px solid #1a1a1a", padding: "16px 18px", overflowY: "auto", scrollbarWidth: "none" }}>
@@ -2187,12 +2182,6 @@ const GoalsMapModal = memo(function GoalsMapModal({ goals, projects, actions, br
                   {g.notes?.trim() && <p style={{ margin: "5px 0 0", fontSize: 10.5, color: "#808080", lineHeight: 1.45 }}>{g.notes}</p>}
                 </div>
               ))}
-              {brief.trim() && (
-                <>
-                  <div style={{ ...monoLabel, margin: "4px 0 6px" }}>How it fits together</div>
-                  <p style={{ margin: "0 0 10px", fontSize: 11.5, color: "#9a9a9a", fontStyle: "italic", lineHeight: 1.55 }}>{brief}</p>
-                </>
-              )}
               <p style={{ margin: "6px 0 0", fontSize: 10.5, color: "#808080", lineHeight: 1.5 }}>Hover anything on the map for its story. Click to pin it here.</p>
             </>
           )}
@@ -4303,8 +4292,8 @@ function Dashboard() {
               <AddTaskInput ref={longAddRef} onAdd={addProject} placeholder="New project..." />
             </Panel>
 
-            {/* the state of the big goals + Cowork's daily read, kept live */}
-            <GoalsBanner goals={goals} brief={brief} onOpen={openMap} />
+            {/* the state of the big goals — one slim bar; the Brief lives in the map */}
+            <GoalsBanner goals={goals} onOpen={openMap} />
           </div>
 
           {/* TODAY — same grid row as Up Next, so the two match heights */}
