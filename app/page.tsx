@@ -1693,6 +1693,64 @@ function ProgressBar({ pct, height = 4 }: { pct: number | null; height?: number 
   );
 }
 
+// The banner strip between Projects and Today: the big goals as a hero bar
+// with a drifting hatch fill, a pulsing dot on the leading edge, a notch per
+// goal, and Cowork's daily line on how everything fits together (the "Brief"
+// row in Notion). Clicking anywhere opens the map.
+function GoalsBanner({ goals, brief, onOpen }: { goals: Goal[]; brief: string; onOpen: () => void }) {
+  const avg = goals.length ? Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length) : 0;
+  if (goals.length === 0) return null;
+  return (
+    <button
+      onClick={onOpen}
+      aria-label={`Big goals: ${avg} percent overall. Open the map`}
+      title="The big goals — click for the map"
+      style={{
+        display: "block", width: "100%", cursor: "pointer", textAlign: "left", flexShrink: 0,
+        background: "rgba(12,14,18,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
+        border: "1px solid #2a2a2a", borderRadius: 6, padding: "11px 16px 10px",
+        transition: "border-color 0.2s",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4a4a4a")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.16em", color: "#808080", flexShrink: 0 }}>BIG GOALS</span>
+        <div style={{ flex: 1, height: 15, position: "relative", border: "1px solid #2a2a2a", borderRadius: 8, background: "rgba(255,255,255,0.02)" }}>
+          <div style={{ position: "absolute", inset: 1, borderRadius: 7, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", width: `${avg}%`, transition: "width 0.6s ease",
+              background: "repeating-linear-gradient(-45deg, rgba(232,232,232,0.22) 0 6px, rgba(232,232,232,0.07) 6px 12px)",
+              animation: "barDrift 1.6s linear infinite",
+            }} />
+          </div>
+          {goals.map(g => (
+            <span key={g.id} title={`${g.title} — ${g.percent}%`} style={{ position: "absolute", left: `${g.percent}%`, top: 3, bottom: 3, width: 1, background: "#5f5f5f" }} />
+          ))}
+          <span aria-hidden style={{
+            position: "absolute", left: `${avg}%`, top: "50%", transform: "translate(-50%, -50%)",
+            width: 7, height: 7, borderRadius: "50%", background: "#f0f0f0",
+            boxShadow: "0 0 12px rgba(240,240,240,0.9)", animation: "edgePulse 2.2s ease-in-out infinite",
+          }} />
+        </div>
+        <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 22, fontWeight: 400, color: "#e8e8e8", lineHeight: 1, flexShrink: 0, minWidth: 48, textAlign: "right" }}>{avg}%</span>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 7, flexWrap: "wrap" }}>
+        {goals.map(g => (
+          <span key={g.id} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.12em", color: "#808080", whiteSpace: "nowrap" }}>
+            {g.title.toUpperCase()} <span style={{ color: "#cfcfcf" }}>{g.percent}%</span>
+          </span>
+        ))}
+      </div>
+      {brief.trim() && (
+        <p style={{ margin: "7px 0 0", fontSize: 11.5, color: "#9a9a9a", fontStyle: "italic", lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+          {brief}
+        </p>
+      )}
+    </button>
+  );
+}
+
 // ---- The map: an Obsidian-style force-directed graph of the operation ------
 // Root at the center, big goals as the inner ring (drawn as progress rings),
 // projects and Today actions attach to whichever goal their words overlap —
@@ -1768,8 +1826,12 @@ function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpen
   onOpenAction: (id: string) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [selected, setSelected] = useState<MapNode | null>(null);
+  const [selected, setSelected] = useState<MapNode | null>(null);   // pinned by click
+  const [hoverNode, setHoverNode] = useState<MapNode | null>(null); // live under the cursor
   const graphRef = useRef(buildGraph(goals, projects, actions));
+  // sim temperature: forces scale by this and it decays to stillness, so the
+  // graph settles instead of wobbling forever; grabbing a node reheats it
+  const heatRef = useRef(1);
   // rebuild when data changes, preserving positions of survivors so a percent
   // nudge doesn't scatter the map
   useEffect(() => {
@@ -1777,7 +1839,9 @@ function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpen
     const next = buildGraph(goals, projects, actions);
     next.nodes.forEach(n => { const o = prev.get(n.id); if (o) { n.x = o.x; n.y = o.y; n.vx = o.vx; n.vy = o.vy; } });
     graphRef.current = next;
+    heatRef.current = Math.max(heatRef.current, 0.5); // let the new layout re-settle
     setSelected(cur => (cur ? next.nodes.find(n => n.id === cur.id) ?? null : null));
+    setHoverNode(cur => (cur ? next.nodes.find(n => n.id === cur.id) ?? null : null));
   }, [goals, projects, actions]);
 
   useEffect(() => {
@@ -1807,15 +1871,17 @@ function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpen
     ro.observe(canvas);
 
     const toWorld = (cx: number, cy: number) => ({ x: (cx - w / 2 - view.x) / view.scale, y: (cy - h / 2 - view.y) / view.scale });
-    const nodeAt = (cx: number, cy: number) => {
+    const nodeAt = (cx: number, cy: number, slack = 0) => {
       const p = toWorld(cx, cy);
       const { nodes } = graphRef.current;
-      for (let i = nodes.length - 1; i >= 0; i--) {
-        const n = nodes[i];
+      let best: MapNode | null = null, bestD = Infinity;
+      for (const n of nodes) {
         const d = Math.hypot(n.x - p.x, n.y - p.y);
-        if (d < Math.max(n.r + 6, 10)) return n;
+        // generous targets: the nearest node within its radius + slack wins,
+        // so clicking near a small node still lands on it
+        if (d < Math.max(n.r + 9, 15) + slack && d < bestD) { best = n; bestD = d; }
       }
-      return null;
+      return best;
     };
     const neighbors = (id: string) => {
       const { nodes, edges } = graphRef.current;
@@ -1828,18 +1894,24 @@ function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpen
     };
 
     const tick = () => {
+      const H = heatRef.current;
+      // cold and untouched → perfectly still (this is what kills the wobble)
+      if (H < 0.02 && !drag?.node) return;
       const { nodes, edges } = graphRef.current;
       // pin the root
       const root = nodes[0];
       if (root) { root.x = 0; root.y = 0; root.vx = 0; root.vy = 0; }
-      // pairwise repulsion (n is small — tens of nodes)
+      // pairwise repulsion + a hard personal-space shove so labels don't stack
       for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
         const a = nodes[i], b = nodes[j];
         let dx = b.x - a.x, dy = b.y - a.y;
         let d2 = dx * dx + dy * dy;
         if (d2 < 1) { d2 = 1; dx = 1; dy = 0; }
-        const f = Math.min(2600 / d2, 6);
         const d = Math.sqrt(d2);
+        let f = Math.min(2600 / d2, 6);
+        const minD = a.r + b.r + 22;
+        if (d < minD) f += (minD - d) * 0.12;
+        f *= H;
         const fx = (dx / d) * f, fy = (dy / d) * f;
         a.vx -= fx; a.vy -= fy; b.vx += fx; b.vy += fy;
       }
@@ -1848,7 +1920,7 @@ function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpen
         const a = graphRef.current.nodes[e.a], b = graphRef.current.nodes[e.b];
         const dx = b.x - a.x, dy = b.y - a.y;
         const d = Math.max(Math.hypot(dx, dy), 0.01);
-        const f = (d - e.rest) * 0.02;
+        const f = (d - e.rest) * 0.02 * H;
         const fx = (dx / d) * f, fy = (dy / d) * f;
         a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
       });
@@ -1860,6 +1932,7 @@ function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpen
         if (sp > 5) { n.vx = (n.vx / sp) * 5; n.vy = (n.vy / sp) * 5; }
         n.x += n.vx; n.y += n.vy;
       });
+      heatRef.current = Math.max(H * 0.992, drag?.node ? 1 : 0.015);
     };
 
     const draw = () => {
@@ -1920,40 +1993,60 @@ function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpen
       const p = pos(e);
       const n = nodeAt(p.x, p.y);
       drag = n ? { node: n, sx: p.x, sy: p.y } : { panning: true, sx: p.x, sy: p.y };
+      if (n && n.kind !== "root") heatRef.current = 1; // grabbing reheats the sim
       canvas.setPointerCapture(e.pointerId);
     };
     const onPointerMove = (e: PointerEvent) => {
       const p = pos(e);
       if (drag?.node) {
-        const wp = toWorld(p.x, p.y);
-        drag.node.x = wp.x; drag.node.y = wp.y;
+        if (drag.node.kind !== "root") {
+          const wp = toWorld(p.x, p.y);
+          drag.node.x = wp.x; drag.node.y = wp.y;
+          heatRef.current = 1;
+        }
       } else if (drag?.panning) {
         view.x += p.x - drag.sx; view.y += p.y - drag.sy;
         drag.sx = p.x; drag.sy = p.y;
       } else {
-        const n = nodeAt(p.x, p.y);
-        hoverId = n?.id ?? null;
+        // sticky hover: keep the current node while the cursor is anywhere
+        // near it, so the summary panel doesn't flicker between rows
+        const cur = hoverId ? graphRef.current.nodes.find(n => n.id === hoverId) : null;
+        const still = cur && (() => {
+          const wp = toWorld(p.x, p.y);
+          return Math.hypot(cur.x - wp.x, cur.y - wp.y) < Math.max(cur.r + 9, 15) + 10;
+        })();
+        const n = still ? cur! : nodeAt(p.x, p.y);
+        if ((n?.id ?? null) !== hoverId) {
+          hoverId = n?.id ?? null;
+          setHoverNode(n ?? null);
+        }
         canvas.style.cursor = n ? "pointer" : "grab";
       }
     };
     const onPointerUp = (e: PointerEvent) => {
       const p = pos(e);
       const moved = drag ? Math.hypot(p.x - drag.sx, p.y - drag.sy) : 0;
-      if (drag?.node && moved < 4) setSelected(drag.node);
-      else if (drag?.panning && moved < 4) setSelected(null);
+      if (drag?.node && moved < 6) setSelected(cur => (cur?.id === drag!.node!.id ? null : drag!.node!)); // click pins, click again unpins
+      else if (drag?.panning && moved < 6) setSelected(null);
       drag = null;
     };
     const onDblClick = (e: MouseEvent) => {
       const r = canvas.getBoundingClientRect();
-      const n = nodeAt(e.clientX - r.left, e.clientY - r.top);
+      const n = nodeAt(e.clientX - r.left, e.clientY - r.top, 4);
       if (!n || !n.refId) return;
       if (n.kind === "project" || n.kind === "item") onOpenProject(n.refId);
       if (n.kind === "action") onOpenAction(n.refId);
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      const r = canvas.getBoundingClientRect();
+      const cx = e.clientX - r.left, cy = e.clientY - r.top;
+      const before = toWorld(cx, cy);
       const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
       view.scale = Math.max(0.35, Math.min(2.8, view.scale * factor));
+      // keep the world point under the cursor fixed, so zoom goes where you point
+      view.x = cx - w / 2 - before.x * view.scale;
+      view.y = cy - h / 2 - before.y * view.scale;
     };
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
@@ -1972,9 +2065,17 @@ function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpen
   }, [onOpenProject, onOpenAction]);
 
   const avg = goals.length ? Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length) : 0;
-  const selGoal = selected?.kind === "goal" ? goals.find(g => g.id === selected.refId) : null;
-  const selProject = selected && (selected.kind === "project" || selected.kind === "item") ? projects.find(p => p.id === selected.refId) : null;
-  const selAction = selected?.kind === "action" ? actions.find(a => a.id === selected.refId) : null;
+  // the summary panel follows the cursor; a click pins it in place
+  const focus = hoverNode ?? selected;
+  const fGoal = focus?.kind === "goal" ? goals.find(g => g.id === focus.refId) : null;
+  const fProject = focus && (focus.kind === "project" || focus.kind === "item") ? projects.find(p => p.id === focus.refId) : null;
+  const fAction = focus?.kind === "action" ? actions.find(a => a.id === focus.refId) : null;
+  const fItem = focus?.kind === "item" ? fProject?.items.find(i => `itm-${i.id}` === focus.id) : null;
+  const childrenOf = (id: string) => graphRef.current.nodes.filter(n => n.parentId === id);
+  const goalOfNode = (n: MapNode | null) => (n?.parentId ? goals.find(g => g.id === n.parentId) : null);
+
+  const monoLabel: React.CSSProperties = { fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.14em", color: "#808080", textTransform: "uppercase" };
+  const openBtn: React.CSSProperties = { background: "rgba(255,255,255,0.04)", border: "1px solid #3a3a3a", color: "#9a9a9a", fontSize: 9, padding: "4px 10px", cursor: "pointer", borderRadius: 3, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.1em", textTransform: "uppercase" };
 
   return createPortal(
     <div style={{ position: "fixed", inset: 0, background: "rgba(6,7,9,0.97)", zIndex: 9000, display: "flex", flexDirection: "column", fontFamily: "'DM Sans', sans-serif", animation: "fadeIn 0.18s ease-out" }}>
@@ -1991,52 +2092,99 @@ function GoalsMapModal({ goals, projects, actions, onClose, onSetPercent, onOpen
         </div>
       </div>
 
-      <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
-        <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none" }} />
-
-        {/* detail card for the selected node */}
-        {selected && (selGoal || selProject || selAction) && (
-          <div style={{ position: "absolute", top: 16, right: 16, width: 280, background: "rgba(12,14,18,0.94)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", border: "1px solid #3a3a3a", borderRadius: 5, padding: "13px 15px", boxShadow: "0 12px 40px rgba(0,0,0,0.6)" }}>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.14em", color: "#808080", textTransform: "uppercase", marginBottom: 6 }}>
-              {selGoal ? "Big Goal" : selProject ? "Project" : "Today"}
-            </div>
-            {selGoal && (
-              <>
-                <div style={{ fontSize: 13.5, color: "#f0f0f0", marginBottom: 8 }}>{selGoal.title}</div>
-                <div
-                  role="slider" tabIndex={0} aria-label={`Progress on ${selGoal.title}`}
-                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={selGoal.percent}
-                  title="Click to set progress; arrow keys nudge by 5"
-                  onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onSetPercent(selGoal.id, Math.round(((e.clientX - r.left) / r.width) * 20) * 5); }}
-                  onKeyDown={(e) => {
-                    if (e.key === "ArrowRight" || e.key === "ArrowUp") { e.preventDefault(); onSetPercent(selGoal.id, selGoal.percent + 5); }
-                    if (e.key === "ArrowLeft" || e.key === "ArrowDown") { e.preventDefault(); onSetPercent(selGoal.id, selGoal.percent - 5); }
-                  }}
-                  style={{ cursor: "pointer", padding: "3px 0", marginBottom: 4 }}
-                ><ProgressBar pct={selGoal.percent} height={5} /></div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", marginBottom: 8 }}>{selGoal.percent}%</div>
-                {selGoal.notes?.trim() && <p style={{ margin: 0, fontSize: 11.5, color: "#9a9a9a", lineHeight: 1.5 }}>{selGoal.notes}</p>}
-              </>
-            )}
-            {selProject && (
-              <>
-                <div style={{ fontSize: 13.5, color: "#f0f0f0", textTransform: "capitalize", marginBottom: 8 }}>{selProject.title}</div>
-                <div style={{ marginBottom: 4 }}><ProgressBar pct={selProject.items.length ? Math.round((selProject.items.filter(i => i.checked).length / selProject.items.length) * 100) : 0} height={5} /></div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", marginBottom: 8 }}>
-                  {selProject.items.filter(i => i.checked).length}/{selProject.items.length} items
-                </div>
-                <button onClick={() => onOpenProject(selProject.id)} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid #3a3a3a", color: "#9a9a9a", fontSize: 9, padding: "4px 10px", cursor: "pointer", borderRadius: 3, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.1em", textTransform: "uppercase" }}>Open project →</button>
-              </>
-            )}
-            {selAction && (
-              <>
-                <div style={{ fontSize: 13.5, color: selAction.done ? "#6f6f6f" : "#f0f0f0", textDecoration: selAction.done ? "line-through" : "none", marginBottom: 8 }}>{selAction.title}</div>
-                {selAction.notes?.trim() && <p style={{ margin: "0 0 10px", fontSize: 11.5, color: "#9a9a9a", lineHeight: 1.5 }}>{selAction.notes}</p>}
-                <button onClick={() => onOpenAction(selAction.id)} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid #3a3a3a", color: "#9a9a9a", fontSize: 9, padding: "4px 10px", cursor: "pointer", borderRadius: 3, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.1em", textTransform: "uppercase" }}>Open plan →</button>
-              </>
-            )}
+      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+        {/* the summary rail: hover fills it live, a click pins it */}
+        <aside style={{ width: 300, flexShrink: 0, borderRight: "1px solid #1a1a1a", padding: "16px 18px", overflowY: "auto", scrollbarWidth: "none" }}>
+          <div style={{ ...monoLabel, marginBottom: 12, display: "flex", justifyContent: "space-between" }}>
+            <span>{fItem ? "Item" : fProject ? "Project" : fGoal ? "Big Goal" : fAction ? "Today" : "Overview"}</span>
+            {selected && !hoverNode && <span style={{ color: "#5f5f5f" }}>pinned · click space to unpin</span>}
           </div>
-        )}
+
+          {fItem && fProject ? (
+            <>
+              <div style={{ fontSize: 13.5, color: fItem.checked ? "#8a8a8a" : "#f0f0f0", textDecoration: fItem.checked ? "line-through" : "none", lineHeight: 1.4, marginBottom: 8 }}>{fItem.text || "Untitled"}</div>
+              <p style={{ margin: "0 0 10px", fontSize: 11.5, color: "#9a9a9a", lineHeight: 1.5 }}>
+                {fItem.checked ? "Done." : "Still open."} One of {fProject.items.length} item{fProject.items.length === 1 ? "" : "s"} in <span style={{ color: "#cfcfcf", textTransform: "capitalize" }}>{fProject.title}</span>.
+              </p>
+              <button onClick={() => onOpenProject(fProject.id)} style={openBtn}>Open project →</button>
+            </>
+          ) : fProject ? (
+            <>
+              <div style={{ fontSize: 14, color: "#f0f0f0", textTransform: "capitalize", lineHeight: 1.35, marginBottom: 8 }}>{fProject.title}</div>
+              <div style={{ marginBottom: 4 }}><ProgressBar pct={fProject.items.length ? Math.round((fProject.items.filter(i => i.checked).length / fProject.items.length) * 100) : 0} height={5} /></div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", marginBottom: 10 }}>
+                {fProject.items.filter(i => i.checked).length}/{fProject.items.length} done
+                {goalOfNode(focus) ? <> · feeds <span style={{ color: "#cfcfcf" }}>{goalOfNode(focus)!.title}</span></> : null}
+              </div>
+              {fProject.items.slice(0, 9).map(it => (
+                <div key={it.id} style={{ display: "flex", gap: 7, alignItems: "baseline", marginBottom: 5 }}>
+                  <span style={{ fontSize: 10, color: it.checked ? "#cfcfcf" : "#555", flexShrink: 0 }}>{it.checked ? "▪" : "▫"}</span>
+                  <span style={{ fontSize: 11.5, lineHeight: 1.4, color: it.checked ? "#6f6f6f" : "#9a9a9a", textDecoration: it.checked ? "line-through" : "none", overflowWrap: "break-word", minWidth: 0 }}>{it.text || "Untitled"}</span>
+                </div>
+              ))}
+              {fProject.items.length > 9 && <div style={{ ...monoLabel, margin: "4px 0 8px" }}>+{fProject.items.length - 9} more</div>}
+              <div style={{ marginTop: 10 }}><button onClick={() => onOpenProject(fProject.id)} style={openBtn}>Open project →</button></div>
+            </>
+          ) : fGoal ? (
+            <>
+              <div style={{ fontSize: 14, color: "#f0f0f0", lineHeight: 1.35, marginBottom: 8 }}>{fGoal.title}</div>
+              <div
+                role="slider" tabIndex={0} aria-label={`Progress on ${fGoal.title}`}
+                aria-valuemin={0} aria-valuemax={100} aria-valuenow={fGoal.percent}
+                title="Click to set progress; arrow keys nudge by 5"
+                onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onSetPercent(fGoal.id, Math.round(((e.clientX - r.left) / r.width) * 20) * 5); }}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowRight" || e.key === "ArrowUp") { e.preventDefault(); onSetPercent(fGoal.id, fGoal.percent + 5); }
+                  if (e.key === "ArrowLeft" || e.key === "ArrowDown") { e.preventDefault(); onSetPercent(fGoal.id, fGoal.percent - 5); }
+                }}
+                style={{ cursor: "pointer", padding: "3px 0", marginBottom: 4 }}
+              ><ProgressBar pct={fGoal.percent} height={5} /></div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", marginBottom: 8 }}>{fGoal.percent}%</div>
+              {fGoal.notes?.trim() && <p style={{ margin: "0 0 12px", fontSize: 11.5, color: "#9a9a9a", lineHeight: 1.55 }}>{fGoal.notes}</p>}
+              {childrenOf(fGoal.id).length > 0 && (
+                <>
+                  <div style={{ ...monoLabel, margin: "0 0 7px" }}>Feeding this</div>
+                  {childrenOf(fGoal.id).map(c => (
+                    <div key={c.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 5 }}>
+                      <span style={{ fontSize: 11.5, color: c.done ? "#6f6f6f" : "#9a9a9a", textDecoration: c.done ? "line-through" : "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, textTransform: c.kind === "project" ? "capitalize" : "none" }}>{c.label}</span>
+                      <span style={{ ...monoLabel, flexShrink: 0 }}>{c.kind === "project" ? `${c.pct ?? 0}%` : c.kind === "action" ? (c.done ? "done" : "today") : ""}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </>
+          ) : fAction ? (
+            <>
+              <div style={{ fontSize: 14, color: fAction.done ? "#8a8a8a" : "#f0f0f0", textDecoration: fAction.done ? "line-through" : "none", lineHeight: 1.35, marginBottom: 8 }}>{fAction.title}</div>
+              <div style={{ ...monoLabel, marginBottom: 8 }}>{fAction.done ? "Done" : "On today's board"}{fAction.plan?.trim() ? " · has a plan" : " · no plan written"}</div>
+              {fAction.notes?.trim() && <p style={{ margin: "0 0 10px", fontSize: 11.5, color: "#9a9a9a", lineHeight: 1.55 }}>{fAction.notes}</p>}
+              <button onClick={() => onOpenAction(fAction.id)} style={openBtn}>Open plan →</button>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 14, color: "#f0f0f0", marginBottom: 8 }}>The whole operation</div>
+              <div style={{ marginBottom: 4 }}><ProgressBar pct={avg} height={5} /></div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080", marginBottom: 12 }}>
+                {avg}% · {projects.length} project{projects.length === 1 ? "" : "s"} · {projects.reduce((n, p) => n + p.items.filter(i => !i.checked).length, 0)} open items · today {actions.filter(a => a.done).length}/{actions.length}
+              </div>
+              {goals.map(g => (
+                <div key={g.id} style={{ marginBottom: 11 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, color: "#cfcfcf", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{g.title}</span>
+                    <span style={{ ...monoLabel, flexShrink: 0 }}>{g.percent}%</span>
+                  </div>
+                  <ProgressBar pct={g.percent} height={3} />
+                  {g.notes?.trim() && <p style={{ margin: "5px 0 0", fontSize: 10.5, color: "#808080", lineHeight: 1.45 }}>{g.notes}</p>}
+                </div>
+              ))}
+              <p style={{ margin: "6px 0 0", fontSize: 10.5, color: "#808080", lineHeight: 1.5 }}>Hover anything on the map for its story. Click to pin it here.</p>
+            </>
+          )}
+        </aside>
+
+        <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
+          <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none" }} />
+        </div>
       </div>
     </div>,
     document.body
@@ -2597,6 +2745,7 @@ function Dashboard() {
   const [clients, setClients] = useState<Task[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [brief, setBrief] = useState("");
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [verse, setVerse] = useState<Verse | null>(null);
   const [allVerses, setAllVerses] = useState<Verse[]>([]);
@@ -2688,6 +2837,7 @@ function Dashboard() {
       setClients((data.clients || []).slice().sort(byClient));
       setActions((data.actions || []).slice().sort(byOrder));
       setGoals(data.goals || []);
+      setBrief(data.brief || "");
     } catch {}
   }, []);
 
@@ -4066,8 +4216,9 @@ function Dashboard() {
             </Panel>
           </div>
 
-          {/* Projects (top) with Up Next stacked under it — full height, both rows */}
-          <div style={{ gridColumn: 3, gridRow: "1 / span 2", display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
+          {/* Projects + the goals banner fill row 1; Today sits in row 2 so it
+              matches Up Next's height exactly (same grid row) */}
+          <div style={{ gridColumn: 3, gridRow: 1, display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             <Panel style={{ flex: 1.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
               <PanelHeader label="Projects" right={
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
@@ -4106,23 +4257,14 @@ function Dashboard() {
               <AddTaskInput ref={longAddRef} onAdd={addProject} placeholder="New project..." />
             </Panel>
 
-            {/* TODAY — actionable items from Cowork, stacked under Projects */}
-            <Panel style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, padding: "14px 16px 10px" }}>
+            {/* the state of the big goals + Cowork's read on how it fits together */}
+            <GoalsBanner goals={goals} brief={brief} onOpen={() => setProgressOpen(true)} />
+          </div>
+
+          {/* TODAY — same grid row as Up Next, so the two match heights */}
+          <Panel style={{ gridColumn: 3, gridRow: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "14px 16px 10px" }}>
           <PanelHeader label="Today" right={
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              {goals.length > 0 && (
-                <button
-                  onClick={() => setProgressOpen(true)}
-                  aria-label={`Big goals: ${Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length)}% overall. Open the breakdown`}
-                  title="How the big goals are going — click for the breakdown"
-                  style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 8 }}
-                >
-                  <div style={{ width: 72 }}><ProgressBar pct={Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length)} /></div>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
-                    {Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length)}%
-                  </span>
-                </button>
-              )}
               {actions.length > 0 && (
                 <button
                   onClick={advanceToday}
@@ -4170,7 +4312,6 @@ function Dashboard() {
             )}
           </div>
         </Panel>
-          </div>
         </div>
 
         {/* Right column - Gmail + Spotify (full height, both rows) */}
@@ -4553,6 +4694,10 @@ function Dashboard() {
         @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
         @keyframes modalIn { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        /* the big-goals banner: hatch texture drifts through the fill (17px =
+           one -45deg stripe period), the leading-edge dot breathes */
+        @keyframes barDrift { from { background-position: 0 0; } to { background-position: 17px 0; } }
+        @keyframes edgePulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         * { box-sizing: border-box; }
         body { margin: 0; overflow: hidden; }
         ::-webkit-scrollbar { width: 3px; height: 3px; }

@@ -109,6 +109,9 @@ export async function GET() {
     // big goals (Type = "Goal"): Percent 0–100 + a one-line "how it's going" in
     // Notes. The morning routine maintains them; the Today panel renders them.
     const goals: { id: string; title: string; order: number | null; notes: string; percent: number }[] = [];
+    // the daily one-liner on how everything fits together (Type = "Brief"),
+    // rewritten by the morning routine; the banner renders it verbatim
+    let brief = "";
 
     (data.results || []).forEach((page: any) => {
       const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
@@ -142,6 +145,10 @@ export async function GET() {
         goals.push({ id: page.id, title, order, notes, percent });
         return;
       }
+      if (typeProp?.select?.name === "Brief") {
+        if (!brief) brief = notes; // one Brief row; first wins if there are strays
+        return;
+      }
 
       const statusProp = Object.values(page.properties).find((p: any) => p.type === "status") as any;
       const status = statusProp?.status?.name || "";
@@ -161,7 +168,7 @@ export async function GET() {
       Promise.all(actionPages.map(async (a) => ({ ...a, plan: await fetchPlan(token, a.id) }))),
     ]);
 
-    return NextResponse.json({ shortTerm: shortTermFull, longTerm: longTermFull, clients, actions, goals: goals.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity)) });
+    return NextResponse.json({ shortTerm: shortTermFull, longTerm: longTermFull, clients, actions, goals: goals.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity)), brief });
   } catch {
     return NextResponse.json({ shortTerm: [], longTerm: [], clients: [] });
   }
