@@ -1514,18 +1514,18 @@ function ActionCard({ action, index, onOpen, onToggleDone }: {
         ><CheckIcon /></button>
       </div>
       <span style={{
-        fontSize: 13, lineHeight: 1.35, overflowWrap: "break-word", transition: "color 0.15s", flexShrink: 0,
+        fontSize: 12.5, lineHeight: 1.35, overflowWrap: "break-word", transition: "color 0.15s", flexShrink: 0,
         color: done ? "#6f6f6f" : (hover ? "#ffffff" : "#e8e8e8"),
         textDecoration: done ? "line-through" : "none",
         textDecorationColor: done ? "#5a5a5a" : undefined,
-        display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
+        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
       }}>{action.title}</span>
       {action.notes?.trim() && (
         <span style={{
-          fontSize: 11, lineHeight: 1.4, color: done ? "#5a5a5a" : "#8a8a8a", transition: "color 0.15s",
+          fontSize: 10.5, lineHeight: 1.4, color: done ? "#5a5a5a" : "#8a8a8a", transition: "color 0.15s",
           // flexes into whatever room is left, so the card never outgrows its slot
           flex: "1 1 auto", minHeight: 0,
-          display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden",
+          display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
         }}>{action.notes}</span>
       )}
       {/* marginTop:auto pins the footer to the bottom so all three line up even
@@ -4145,7 +4145,9 @@ function Dashboard() {
         // Only cols 1-2 split into rows, so Today takes space from Soren + Short
         // Term while Projects and email keep their full height.
         gridTemplateColumns: "1fr 1fr 2fr 1fr",
-        gridTemplateRows: "2.1fr 1fr",
+        // row 2 carries Today + Up Next; it needs enough height for a full
+        // action card (header, two-line title, note line, footer)
+        gridTemplateRows: "1.9fr 1.15fr",
         gap: 12,
         padding: "0 24px",
         minHeight: 0,
