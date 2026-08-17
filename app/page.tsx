@@ -13,7 +13,7 @@ type Project = { id: string; title: string; items: ChecklistItem[]; priority?: b
 type SavedLink = { label: string; url: string };
 // An action item written by the Cowork routine: a headline, a one-line why, and
 // a full plan (its Notion page body) rendered in the same notes format.
-type ActionItem = { id: string; title: string; notes?: string; plan?: string; order?: number | null; done?: boolean; status?: string };
+type ActionItem = { id: string; title: string; notes?: string; plan?: string; links?: string; order?: number | null; done?: boolean; status?: string };
 // A big goal (Notion row, Type = "Goal"): Percent 0–100 plus a one-line "how
 // it's going" in Notes. Maintained by the morning routine, nudgeable by hand.
 type Goal = { id: string; title: string; notes?: string; percent: number; order?: number | null };
@@ -895,6 +895,16 @@ const parseLinks = (src: string): SavedLink[] =>
     return { label: label || hostLabel(url), url };
   }).filter(l => !!l.url);
 const serializeLinks = (links: SavedLink[]) => links.map(l => `${l.label}|${l.url}`).join("\n");
+// Today-card chips accept semicolons as separators too. Kept separate from
+// parseLinks on purpose: project links are newline-separated and a stored URL
+// may legally contain ";", so widening the shared parser could corrupt them.
+const parseActionLinks = (src: string): SavedLink[] =>
+  (src || "").split(/[\n;]/).map(part => part.trim()).filter(Boolean).map(part => {
+    const i = part.indexOf("|");
+    const label = i >= 0 ? part.slice(0, i).trim() : "";
+    const url = safeUrl(i >= 0 ? part.slice(i + 1) : part);
+    return { label: label || hostLabel(url), url };
+  }).filter(l => !!l.url);
 
 // How "heavy" a project is — drives its tint and its position in the warmth sort.
 // Counting items alone under-weights a project with two dense, detailed items, so
@@ -1466,6 +1476,7 @@ function ActionCard({ action, index, onOpen, onToggleDone }: {
 }) {
   const [hover, setHover] = useState(false);
   const done = !!action.done;
+  const chips = parseActionLinks(action.links || "");
   return (
     <div
       role="button" tabIndex={0}
@@ -1527,6 +1538,31 @@ function ActionCard({ action, index, onOpen, onToggleDone }: {
           flex: "1 1 auto", minHeight: 0,
           display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
         }}>{action.notes}</span>
+      )}
+      {/* link chips — a shortcut row, subordinate to the title; absent entirely
+          when the row has no links */}
+      {chips.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, flexShrink: 0 }}>
+          {chips.map((l, i) => (
+            <a
+              key={`${l.url}-${i}`}
+              href={l.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={l.url}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.08em",
+                color: "#9a9a9a", textDecoration: "none",
+                background: "rgba(255,255,255,0.03)", border: "1px solid #3a3a3a", borderRadius: 3,
+                padding: "2px 7px", maxWidth: 130, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                transition: "color 0.15s, border-color 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#3a3a3a"; }}
+            >{l.label}</a>
+          ))}
+        </div>
       )}
       {/* marginTop:auto pins the footer to the bottom so all three line up even
           when their titles wrap to different depths */}
@@ -2975,7 +3011,7 @@ function Dashboard() {
     setActions(prev => prev
       .filter(a => !a.done)
       .concat(replacements.map((r, i) => ({
-        id: r.id, title: r.title, notes: r.notes, plan: "",
+        id: r.id, title: r.title, notes: r.notes, plan: "", links: r.links,
         order: finished[i]?.order ?? 90 + i, done: false, status: "Short Term",
       })))
       .sort(byOrder));

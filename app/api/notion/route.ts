@@ -105,7 +105,7 @@ export async function GET() {
     // today's action items, written by the Cowork routine (Type = "Action").
     // `status` is carried so a finished item can be un-finished back to where it
     // was, and `done` is what makes it render crossed off instead of disappearing.
-    const actionPages: { id: string; title: string; order: number | null; notes: string; status: string; done: boolean }[] = [];
+    const actionPages: { id: string; title: string; order: number | null; notes: string; links: string; status: string; done: boolean }[] = [];
     // big goals (Type = "Goal"): Percent 0–100 + a one-line "how it's going" in
     // Notes. The morning routine maintains them; the Today panel renders them.
     const goals: { id: string; title: string; order: number | null; notes: string; percent: number }[] = [];
@@ -135,9 +135,10 @@ export async function GET() {
       if (typeProp?.select?.name === "Action") {
         // Action rows are selected by Type alone, so a Complete one still comes
         // back here — that's what lets a finished item stay on the board.
+        // `links` rides along so the Today cards can render link chips.
         const actionStatus =
           (Object.values(page.properties).find((p: any) => p.type === "status") as any)?.status?.name || "";
-        actionPages.push({ id: page.id, title, order, notes, status: actionStatus, done: actionStatus === "Complete" });
+        actionPages.push({ id: page.id, title, order, notes, links, status: actionStatus, done: actionStatus === "Complete" });
         return;
       }
       if (typeProp?.select?.name === "Goal") {
