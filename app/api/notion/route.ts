@@ -84,20 +84,33 @@ export async function GET() {
   if (!token || !dbId) return NextResponse.json({ shortTerm: [], longTerm: [], clients: [] });
 
   try {
-    const res = await fetch(`https://api.notion.com/v1/databases/${dbId}/query`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Notion-Version": "2022-06-28",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        sorts: [{ timestamp: "created_time", direction: "ascending" }],
-        page_size: 50,
-      }),
-      cache: "no-store",
-    });
-    const data = await res.json();
+    // Paginate the whole database. A single page_size:50 read sorted
+    // oldest-first meant that once the DB passed 50 live rows, the NEWEST rows
+    // silently vanished from the board — fresh tasks looked like they were
+    // never created.
+    const allResults: any[] = [];
+    let startCursor: string | undefined;
+    do {
+      const res = await fetch(`https://api.notion.com/v1/databases/${dbId}/query`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sorts: [{ timestamp: "created_time", direction: "ascending" }],
+          page_size: 100,
+          ...(startCursor ? { start_cursor: startCursor } : {}),
+        }),
+        cache: "no-store",
+      });
+      const page = await res.json();
+      if (!res.ok) break;
+      allResults.push(...(page.results || []));
+      startCursor = page.has_more ? page.next_cursor : undefined;
+    } while (startCursor);
+    const data = { results: allResults };
 
     const shortTerm: { id: string; title: string; priority: boolean; order: number | null; notes: string; links: string }[] = [];
     const longTerm: { id: string; title: string; priority: boolean; order: number | null; notes: string; links: string }[] = [];

@@ -1468,15 +1468,16 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
 }
 
 // One of today's action items: headline + the one-line why, click for the plan.
-// One of the three fixed Today slots. Finishing an item does NOT remove it: it
-// crosses out in place and stays clickable so the plan is still readable, and the
-// check toggles back off.
-function ActionCard({ action, index, onOpen, onToggleDone }: {
-  action: ActionItem; index: number; onOpen: () => void; onToggleDone: (done: boolean) => void;
+// One Today slot (the board holds up to six, three across). Finishing an item
+// does NOT remove it: it crosses out in place and stays clickable so the plan
+// is still readable, and the check toggles back off. compact = two-row board.
+// Deliberately spare: number, title, footer. The why-note and the link chips
+// live inside the plan window.
+function ActionCard({ action, index, onOpen, onToggleDone, compact = false }: {
+  action: ActionItem; index: number; onOpen: () => void; onToggleDone: (done: boolean) => void; compact?: boolean;
 }) {
   const [hover, setHover] = useState(false);
   const done = !!action.done;
-  const chips = parseActionLinks(action.links || "");
   return (
     <div
       role="button" tabIndex={0}
@@ -1485,14 +1486,14 @@ function ActionCard({ action, index, onOpen, onToggleDone }: {
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       className="reveal-row"
       style={{
-        display: "flex", flexDirection: "column", gap: 6, minWidth: 0, cursor: "pointer",
-        // bounded by the grid row; the note is the part that gives when it's tight
+        display: "flex", flexDirection: "column", gap: compact ? 3 : 6, minWidth: 0, cursor: "pointer",
+        // bounded by the grid row; the title is the part that gives when it's tight
         minHeight: 0, overflow: "hidden",
         background: done
           ? (hover ? "rgba(255,255,255,0.035)" : "rgba(255,255,255,0.012)")
           : (hover ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.022)"),
         border: `1px solid ${hover ? (done ? "#4a4a4a" : "#6a6a6a") : (done ? "#242424" : "#2a2a2a")}`,
-        borderRadius: 5, padding: "9px 12px 8px",
+        borderRadius: 5, padding: compact ? "6px 10px 5px" : "9px 12px 8px",
         opacity: done ? 0.72 : 1,
         // No hover lift here. The card is sized to fill its grid row exactly, so
         // any translateY pushes its top edge past the scroll container's clip box
@@ -1525,48 +1526,18 @@ function ActionCard({ action, index, onOpen, onToggleDone }: {
         ><CheckIcon /></button>
       </div>
       <span style={{
-        fontSize: 12.5, lineHeight: 1.35, overflowWrap: "break-word", transition: "color 0.15s", flexShrink: 0,
+        fontSize: compact ? 11.5 : 12.5, lineHeight: 1.3, overflowWrap: "break-word", transition: "color 0.15s",
         color: done ? "#6f6f6f" : (hover ? "#ffffff" : "#e8e8e8"),
         textDecoration: done ? "line-through" : "none",
         textDecorationColor: done ? "#5a5a5a" : undefined,
-        display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+        // compact rows get one clean line (the plan window has the full title);
+        // roomy rows get two. flexShrink 0 so a line is never sliver-cut.
+        flexShrink: 0,
+        display: "-webkit-box", WebkitLineClamp: compact ? 1 : 2, WebkitBoxOrient: "vertical", overflow: "hidden",
       }}>{action.title}</span>
-      {action.notes?.trim() && (
-        <span style={{
-          fontSize: 10.5, lineHeight: 1.4, color: done ? "#5a5a5a" : "#8a8a8a", transition: "color 0.15s",
-          // flexes into whatever room is left, so the card never outgrows its slot
-          flex: "1 1 auto", minHeight: 0,
-          display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
-        }}>{action.notes}</span>
-      )}
-      {/* link chips — a shortcut row, subordinate to the title; absent entirely
-          when the row has no links */}
-      {chips.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, flexShrink: 0 }}>
-          {chips.map((l, i) => (
-            <a
-              key={`${l.url}-${i}`}
-              href={l.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={l.url}
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.08em",
-                color: "#9a9a9a", textDecoration: "none",
-                background: "rgba(255,255,255,0.03)", border: "1px solid #3a3a3a", borderRadius: 3,
-                padding: "2px 7px", maxWidth: 130, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                transition: "color 0.15s, border-color 0.15s",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#3a3a3a"; }}
-            >{l.label}</a>
-          ))}
-        </div>
-      )}
-      {/* marginTop:auto pins the footer to the bottom so all three line up even
+      {/* marginTop:auto pins the footer to the bottom so the cards line up even
           when their titles wrap to different depths */}
-      <span style={{ marginTop: "auto", paddingTop: 4, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.14em", color: hover ? "#cfcfcf" : "#6a6a6a", transition: "color 0.15s" }}>
+      <span style={{ marginTop: "auto", paddingTop: compact ? 2 : 4, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.14em", color: hover ? "#cfcfcf" : "#6a6a6a", transition: "color 0.15s" }}>
         {action.plan?.trim() ? "OPEN PLAN →" : "NO PLAN YET"}
       </span>
     </div>
@@ -1621,6 +1592,29 @@ function ActionPlanModal({ action, onClose, onComplete }: {
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.16em", color: "#7a7a7a", textTransform: "uppercase", marginBottom: 5 }}>Today · Action</div>
             <h2 style={{ margin: 0, fontSize: 19, fontWeight: 500, color: "#f2f2f2", lineHeight: 1.3, overflowWrap: "break-word" }}>{action.title}</h2>
             {action.notes?.trim() && <p style={{ margin: "6px 0 0", fontSize: 13, color: "#9a9a9a", lineHeight: 1.5 }}>{action.notes}</p>}
+            {/* the item's links live here, inside the window, not on the card */}
+            {parseActionLinks(action.links || "").length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 9 }}>
+                {parseActionLinks(action.links || "").map((l, i) => (
+                  <a
+                    key={`${l.url}-${i}`}
+                    href={l.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={l.url}
+                    style={{
+                      fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, letterSpacing: "0.08em",
+                      color: "#9a9a9a", textDecoration: "none",
+                      background: "rgba(255,255,255,0.03)", border: "1px solid #3a3a3a", borderRadius: 3,
+                      padding: "3px 9px", maxWidth: "100%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                      transition: "color 0.15s, border-color 0.15s",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#3a3a3a"; }}
+                  >{l.label} ↗</a>
+                ))}
+              </div>
+            )}
           </div>
           <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "#808080", fontSize: 20, lineHeight: 1, padding: "0 2px", flexShrink: 0 }}
             onMouseEnter={(e) => (e.currentTarget.style.color = "#ccc")} onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}>✕</button>
@@ -4354,14 +4348,22 @@ function Dashboard() {
                 </p>
               </div>
             ) : (
-              // three fixed slots. The routine always writes three, so the columns
-              // are pinned rather than derived — a finished item keeps its slot
-              // instead of the row resizing under the remaining ones.
-              // minmax(0,1fr) bounds the row to the panel's height, so the cards
-              // size themselves to the space available instead of overflowing it
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gridTemplateRows: "minmax(0, 1fr)", gap: 10, alignItems: "stretch", height: "100%" }}>
+              // three across, up to six on the board: one roomy row for 1-3
+              // items, two compact rows for 4-6 (7+ wrap and the panel scrolls).
+              // Columns stay pinned so a finished item keeps its slot, and
+              // minmax(0,1fr) bounds each row so cards size to the space.
+              <div style={{
+                display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
+                // up to six: rows share the panel exactly. Seven or more: rows
+                // keep a working minimum and the panel scrolls — minmax(0,1fr)
+                // with height:100% would crush every row instead.
+                ...(actions.length <= 6
+                  ? { gridTemplateRows: actions.length > 3 ? "repeat(2, minmax(0, 1fr))" : "minmax(0, 1fr)", height: "100%" }
+                  : { gridAutoRows: "minmax(84px, auto)" }),
+                gap: actions.length > 3 ? 8 : 10, alignItems: "stretch",
+              }}>
                 {actions.map((a, i) => (
-                  <ActionCard key={a.id} action={a} index={i} onOpen={() => setOpenActionId(a.id)} onToggleDone={(d) => toggleActionDone(a.id, d)} />
+                  <ActionCard key={a.id} action={a} index={i} compact={actions.length > 3} onOpen={() => setOpenActionId(a.id)} onToggleDone={(d) => toggleActionDone(a.id, d)} />
                 ))}
               </div>
             )}
