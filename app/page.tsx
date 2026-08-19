@@ -1530,16 +1530,18 @@ function ActionCard({ action, index, onOpen, onToggleDone, compact = false }: {
         color: done ? "#6f6f6f" : (hover ? "#ffffff" : "#e8e8e8"),
         textDecoration: done ? "line-through" : "none",
         textDecorationColor: done ? "#5a5a5a" : undefined,
-        // compact rows get one clean line (the plan window has the full title);
-        // roomy rows get two. flexShrink 0 so a line is never sliver-cut.
+        // titles wrap so the whole thing reads; flexShrink 0 so a line is
+        // never sliver-cut. Three lines covers the routine's longest names.
         flexShrink: 0,
-        display: "-webkit-box", WebkitLineClamp: compact ? 1 : 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+        display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
       }}>{action.title}</span>
-      {/* marginTop:auto pins the footer to the bottom so the cards line up even
-          when their titles wrap to different depths */}
-      <span style={{ marginTop: "auto", paddingTop: compact ? 2 : 4, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.14em", color: hover ? "#cfcfcf" : "#6a6a6a", transition: "color 0.15s" }}>
-        {action.plan?.trim() ? "OPEN PLAN →" : "NO PLAN YET"}
-      </span>
+      {/* compact rows give the footer's space to the wrapped title — the card
+          is clickable everywhere, so the affordance line is a luxury there */}
+      {!compact && (
+        <span style={{ marginTop: "auto", paddingTop: 4, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.14em", color: hover ? "#cfcfcf" : "#6a6a6a", transition: "color 0.15s" }}>
+          {action.plan?.trim() ? "OPEN PLAN →" : "NO PLAN YET"}
+        </span>
+      )}
     </div>
   );
 }
@@ -4157,9 +4159,9 @@ function Dashboard() {
         // Only cols 1-2 split into rows, so Today takes space from Soren + Short
         // Term while Projects and email keep their full height.
         gridTemplateColumns: "1fr 1fr 2fr 1fr",
-        // row 2 carries Today + Up Next; it needs enough height for a full
-        // action card (header, two-line title, note line, footer)
-        gridTemplateRows: "1.9fr 1.15fr",
+        // row 2 carries Today + Up Next; sized so a compact card fits a fully
+        // wrapped three-line title with nothing cut
+        gridTemplateRows: "1.8fr 1.25fr",
         gap: 12,
         padding: "0 24px",
         minHeight: 0,
