@@ -2995,27 +2995,15 @@ function Dashboard() {
     }
   }, [aphorismo, toast, pushUndo, fetchAphorismo]);
 
-  // NEXT on the Today panel: finished items leave the board (un-tagged, they
-  // stay Complete in Notion) and the next tasks from the open Short Term
-  // backlog slide into their slots — priority-flagged first, then manual order.
-  // The queue is as endless as the backlog; when it runs dry, Next just clears.
-  const advanceToday = async () => {
+  // CLEAR on the Today panel: finished items leave the board (un-tagged, they
+  // stay Complete in Notion). Nothing is pulled in to replace them — Today only
+  // ever shows what's deliberately tagged in Notion (the morning routine's
+  // three, or anything tagged by hand). No auto-promotion from the backlog.
+  const clearToday = async () => {
     const finished = actions.filter(a => a.done && !a.id.startsWith("temp-"));
-    if (!finished.length) { toast("Nothing checked off yet — Next replaces finished items"); return; }
-    const queue = shortTerm
-      .filter(t => !t.id.startsWith("temp-"))
-      .sort((a, b) => (b.priority ? 1 : 0) - (a.priority ? 1 : 0) || byOrder(a, b));
-    const replacements = queue.slice(0, finished.length);
+    if (!finished.length) { toast("Nothing checked off yet — Clear sweeps finished items"); return; }
 
-    // optimistic: finished cards out, replacements into their slot positions
-    setActions(prev => prev
-      .filter(a => !a.done)
-      .concat(replacements.map((r, i) => ({
-        id: r.id, title: r.title, notes: r.notes, plan: "", links: r.links,
-        order: finished[i]?.order ?? 90 + i, done: false, status: "Short Term",
-      })))
-      .sort(byOrder));
-    setShortTerm(prev => prev.filter(t => !replacements.some(r => r.id === t.id)));
+    setActions(prev => prev.filter(a => !a.done)); // optimistic
 
     const tag = (id: string, tagged: boolean, order?: number | null) =>
       fetch("/api/notion", {
@@ -3023,22 +3011,16 @@ function Dashboard() {
         body: JSON.stringify({ action: "setActionTag", id, tagged, ...(typeof order === "number" ? { order } : {}) }),
       });
     try {
-      await Promise.all([
-        ...finished.map(a => tag(a.id, false)),
-        ...replacements.map((r, i) => tag(r.id, true, finished[i]?.order)),
-      ]);
-      pushUndo("advance Today", async () => {
-        await Promise.all([
-          ...finished.map(a => tag(a.id, true, a.order)),
-          ...replacements.map(r => tag(r.id, false)),
-        ]).catch(() => {});
+      await Promise.all(finished.map(a => tag(a.id, false)));
+      pushUndo("clear Today", async () => {
+        await Promise.all(finished.map(a => tag(a.id, true, a.order))).catch(() => {});
         await fetchTasks();
       });
-      toast(replacements.length ? `→ ${replacements.length} new on Today` : "Cleared — the queue is empty");
+      toast(`Cleared ${finished.length} finished`);
     } catch {
-      toast("Couldn’t advance — try again");
+      toast("Couldn’t clear — try again");
     }
-    await fetchTasks(); // reconcile: replacement plans load, both lists settle
+    await fetchTasks();
   };
 
   // Nudge a goal's percent by hand (the bar in the goals window is clickable).
@@ -4340,9 +4322,9 @@ function Dashboard() {
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
               {actions.length > 0 && (
                 <button
-                  onClick={advanceToday}
-                  aria-label="Replace finished items with the next tasks from the backlog"
-                  title="Finished items leave the board; the next Short Term tasks take their slots"
+                  onClick={clearToday}
+                  aria-label="Clear finished items off the board"
+                  title="Finished items leave the board. Nothing is pulled in — Today only shows what's tagged in Notion"
                   style={{
                     background: "none", cursor: "pointer", border: "1px solid #3a3a3a",
                     fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
@@ -4352,7 +4334,7 @@ function Dashboard() {
                   }}
                   onMouseEnter={(e) => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#3a3a3a"; }}
-                >Next</button>
+                >Clear</button>
               )}
               <Tag>COWORK</Tag>
             </div>
