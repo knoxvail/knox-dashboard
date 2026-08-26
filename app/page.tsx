@@ -1946,7 +1946,8 @@ const MiniMap = memo(function MiniMap({ goals, projects, actions, onExpand }: {
       aria-label="Open the map"
       title="The map — click to expand"
       style={{
-        gridColumn: "1 / span 2", gridRow: 2, minHeight: 0, minWidth: 0,
+        gridColumn: 2, gridRow: 2, aspectRatio: "1 / 1", height: "100%", justifySelf: "start",
+        minHeight: 0, minWidth: 0,
         position: "relative", overflow: "hidden", cursor: "pointer", textAlign: "left",
         background: "rgba(12,14,18,0.5)", backdropFilter: "blur(7px)", WebkitBackdropFilter: "blur(7px)",
         border: "1px solid #2a2a2a", borderRadius: 6, padding: 0,
@@ -4562,7 +4563,9 @@ function Dashboard() {
         {/* display:contents so both halves sit directly on the main grid — that
             lets Projects keep full height while Short Term shortens for Today */}
         <div style={{ display: "contents" }}>
-          <div style={{ gridColumn: 2, gridRow: 1, display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
+          {/* High Priority + Short Term stretch across both left columns —
+              double the width so task text breathes */}
+          <div style={{ gridColumn: "1 / span 2", gridRow: 1, display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             {/* HIGH PRIORITY — same darkness as the other panels, framed in a
                 black/white hazard-tape border so it still reads as the focal point */}
             <div
@@ -4772,8 +4775,8 @@ function Dashboard() {
           </Panel>
         </div>
 
-        {/* Schedule — the tall top-left slot */}
-        <Panel style={{ gridColumn: 1, gridRow: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
+        {/* Schedule — the outer square, bottom-left */}
+        <Panel style={{ gridColumn: 1, gridRow: 2, aspectRatio: "1 / 1", height: "100%", justifySelf: "start", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
               <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
               <div
                 onClick={(e) => { if (e.target === e.currentTarget) scheduleAddRef.current?.open(); }}
