@@ -1566,14 +1566,14 @@ function ActionCard({ action, index, onOpen, onToggleDone, onReorder, compact = 
         ><CheckIcon /></button>
       </div>
       <span style={{
-        fontSize: compact ? 11.5 : 12.5, lineHeight: 1.3, overflowWrap: "break-word", transition: "color 0.15s",
+        fontSize: compact ? 11 : 12.5, lineHeight: 1.3, overflowWrap: "break-word", transition: "color 0.15s",
         color: done ? "#6f6f6f" : (hover ? "#ffffff" : "#e8e8e8"),
         textDecoration: done ? "line-through" : "none",
         textDecorationColor: done ? "#5a5a5a" : undefined,
-        // titles wrap so the whole thing reads; flexShrink 0 so a line is
-        // never sliver-cut. Three lines covers the routine's longest names.
+        // titles wrap so the whole thing reads — compact cards grow to their
+        // content, so the clamp there is only a guard against absurd lengths
         flexShrink: 0,
-        display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
+        display: "-webkit-box", WebkitLineClamp: compact ? 8 : 3, WebkitBoxOrient: "vertical", overflow: "hidden",
       }}>{action.title}</span>
       {/* compact rows give the footer's space to the wrapped title — the card
           is clickable everywhere, so the affordance line is a luxury there */}
@@ -1815,6 +1815,150 @@ const GoalsBanner = memo(function GoalsBanner({ goals, onOpen }: { goals: Goal[]
           }} />
         </div>
         <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 22, fontWeight: 400, color: "#e8e8e8", lineHeight: 1, flexShrink: 0, minWidth: 48, textAlign: "right" }}>{avg}%</span>
+      </div>
+    </button>
+  );
+});
+
+// The always-on miniature of the map: same graph, same physics, drawn small
+// and auto-fitted in a board panel. No interactions of its own — the whole
+// panel is a button that expands into the full map.
+const MiniMap = memo(function MiniMap({ goals, projects, actions, onExpand }: {
+  goals: Goal[]; projects: Project[]; actions: ActionItem[]; onExpand: () => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const graphRef = useRef(buildGraph(goals, projects, actions));
+  const heatRef = useRef(1);
+
+  useEffect(() => {
+    const prev = new Map(graphRef.current.nodes.map(n => [n.id, n]));
+    const next = buildGraph(goals, projects, actions);
+    next.nodes.forEach(n => { const o = prev.get(n.id); if (o) { n.x = o.x; n.y = o.y; n.vx = o.vx; n.vy = o.vy; } });
+    graphRef.current = next;
+    heatRef.current = Math.max(heatRef.current, 0.6);
+  }, [goals, projects, actions]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let w = 0, h = 0, raf = 0;
+    const resize = () => {
+      const r = canvas.getBoundingClientRect();
+      w = r.width; h = r.height;
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      heatRef.current = Math.max(heatRef.current, 0.3);
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas);
+
+    const tick = () => {
+      const H = heatRef.current;
+      if (H < 0.02) return;
+      const { nodes, edges } = graphRef.current;
+      const root = nodes[0];
+      if (root) { root.x = 0; root.y = 0; root.vx = 0; root.vy = 0; }
+      for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 1) { d2 = 1; dx = 1; dy = 0; }
+        const d = Math.sqrt(d2);
+        let f = Math.min(2600 / d2, 6);
+        const minD = a.r + b.r + 22;
+        if (d < minD) f += (minD - d) * 0.12;
+        f *= H;
+        const fx = (dx / d) * f, fy = (dy / d) * f;
+        a.vx -= fx; a.vy -= fy; b.vx += fx; b.vy += fy;
+      }
+      edges.forEach(e => {
+        const a = nodes[e.a], b = nodes[e.b];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.max(Math.hypot(dx, dy), 0.01);
+        const f = (d - e.rest) * 0.02 * H;
+        const fx = (dx / d) * f, fy = (dy / d) * f;
+        a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+      });
+      nodes.forEach(n => {
+        if (n.kind === "root") return;
+        n.vx *= 0.82; n.vy *= 0.82;
+        const sp = Math.hypot(n.vx, n.vy);
+        if (sp > 5) { n.vx = (n.vx / sp) * 5; n.vy = (n.vy / sp) * 5; }
+        n.x += n.vx; n.y += n.vy;
+      });
+      heatRef.current = Math.max(H * 0.992, 0.015);
+    };
+
+    const draw = () => {
+      const { nodes, edges } = graphRef.current;
+      // auto-fit the whole graph into the panel with a little breathing room
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      nodes.forEach(n => {
+        minX = Math.min(minX, n.x - n.r); maxX = Math.max(maxX, n.x + n.r);
+        minY = Math.min(minY, n.y - n.r); maxY = Math.max(maxY, n.y + n.r);
+      });
+      const bw = Math.max(maxX - minX, 60), bh = Math.max(maxY - minY, 60);
+      const scale = Math.min((w * 0.86) / bw, (h * 0.8) / bh, 1);
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * (w / 2 - cx * scale), dpr * (h / 2 - cy * scale + h * 0.03));
+      edges.forEach(e => {
+        const a = nodes[e.a], b = nodes[e.b];
+        ctx.strokeStyle = "rgba(200,200,200,0.09)";
+        ctx.lineWidth = 0.7 / scale;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      });
+      nodes.forEach(n => {
+        if (n.kind === "goal") {
+          ctx.strokeStyle = "#3a3a3a"; ctx.lineWidth = 2 / Math.sqrt(scale);
+          ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 3, 0, Math.PI * 2); ctx.stroke();
+          ctx.strokeStyle = "#e8e8e8";
+          ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 3, -Math.PI / 2, -Math.PI / 2 + ((n.pct ?? 0) / 100) * Math.PI * 2); ctx.stroke();
+          ctx.fillStyle = "#b8b8b8";
+          ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill();
+          // tiny label under each goal so the mini map reads at a glance
+          ctx.font = `${8 / Math.sqrt(scale)}px 'Courier Prime', monospace`;
+          ctx.textAlign = "center"; ctx.fillStyle = "#8a8a8a";
+          const lbl = n.label.length > 18 ? n.label.slice(0, 18) + "…" : n.label;
+          ctx.fillText(lbl, n.x, n.y + n.r + 11 / Math.sqrt(scale));
+        } else {
+          const fills: Record<MapNode["kind"], string> = { root: "#f0f0f0", goal: "#cfcfcf", project: "#9a9a9a", action: n.done ? "#4a4a4a" : "#c8c8c8", item: n.done ? "#3a3a3a" : "#6f6f6f" };
+          ctx.fillStyle = fills[n.kind];
+          ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill();
+        }
+      });
+    };
+
+    const loop = () => { tick(); draw(); raf = requestAnimationFrame(loop); };
+    tick(); draw();
+    raf = requestAnimationFrame(loop);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  }, []);
+
+  const avg = goals.length ? Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length) : 0;
+  return (
+    <button
+      onClick={onExpand}
+      aria-label="Open the map"
+      title="The map — click to expand"
+      style={{
+        gridColumn: "1 / span 2", gridRow: 2, minHeight: 0, minWidth: 0,
+        position: "relative", overflow: "hidden", cursor: "pointer", textAlign: "left",
+        background: "rgba(12,14,18,0.5)", backdropFilter: "blur(7px)", WebkitBackdropFilter: "blur(7px)",
+        border: "1px solid #2a2a2a", borderRadius: 6, padding: 0,
+        transition: "border-color 0.2s",
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4a4a4a")}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
+    >
+      <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
+      <div style={{ position: "absolute", top: 12, left: 15, right: 15, display: "flex", justifyContent: "space-between", alignItems: "center", pointerEvents: "none" }}>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "#f0f0f0" }}>The Map</span>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>{avg}%</span>
       </div>
     </button>
   );
@@ -2857,6 +3001,7 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [dragOver, setDragOver] = useState<"Short Term" | "Long Term" | null>(null);
   const [priorityDrag, setPriorityDrag] = useState<"high" | "normal" | null>(null);
+  const [todayDrag, setTodayDrag] = useState(false);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const [openClientId, setOpenClientId] = useState<string | null>(null);
   const [progressOpen, setProgressOpen] = useState(false);
@@ -3920,6 +4065,38 @@ function Dashboard() {
     }
   };
 
+  // Drag a Short Term / High Priority task INTO Today: a deliberate hand-tag,
+  // which is exactly what the tag-only rule allows. Buckets are refused, and
+  // the six cap is enforced at the door.
+  const moveTaskToToday = async (id: string) => {
+    if (!id || id.startsWith("temp-")) return;
+    if (actions.some(a => a.id === id)) return; // already on the board
+    const t = shortTerm.find(x => x.id === id);
+    if (!t) {
+      if (longTerm.some(p => p.id === id)) toast("Buckets stay in Projects — drag a task instead");
+      return;
+    }
+    if (actions.length >= 6) { toast("Today is full — six max"); return; }
+    const nextOrder = actions.reduce((m, a) => Math.max(m, a.order ?? 0), 0) + 1;
+    setShortTerm(prev => prev.filter(x => x.id !== id));
+    setActions(prev => [...prev, { id, title: t.title, notes: t.notes, links: t.links, plan: "", order: nextOrder, done: false, status: "Short Term" }]);
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setActionTag", id, tagged: true, order: nextOrder }),
+      });
+      if (!res.ok) { await fetchTasks(); toast("Couldn’t tag it — reverted"); return; }
+      pushUndo(`put “${undoClip(t.title)}” on Today`, async () => {
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setActionTag", id, tagged: false }) }).catch(() => {});
+        await fetchTasks();
+      });
+      toast("→ Today");
+    } catch {
+      await fetchTasks(); toast("Couldn’t tag it — reverted");
+    }
+    await fetchTasks();
+  };
+
   // Drag-reorder within the Today board. Order = index persists to Notion, so
   // the arrangement survives refreshes and the morning routine's next write.
   const reorderActions = (draggedId: string, targetId: string, placeBefore: boolean) => {
@@ -4300,32 +4477,86 @@ function Dashboard() {
         zIndex: 1,
       }}>
 
-        {/* Left column: Soren Email */}
-        <div style={{ gridColumn: 1, gridRow: 1, display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
-          <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-            <PanelHeader label="Soren Email" right={<Tag>ZOHO</Tag>} />
-            {!sorenConnected ? (
-              // Self Client flow: connection comes from server env vars, so
-              // there's nothing to click — just say what's missing.
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 12px" }}>
-                <p style={{ color: "#808080", fontSize: 11, textAlign: "center", lineHeight: 1.6, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.05em" }}>
-                  ZOHO NOT CONNECTED — SET ZOHO_CLIENT_ID / ZOHO_CLIENT_SECRET / ZOHO_REFRESH_TOKEN IN VERCEL
+        {/* TODAY — under Projects, across from the map (Soren email left the
+            screen; its data plumbing stays so reconnecting Zoho later is a
+            render change, not a rebuild) */}
+        <Panel style={{ gridColumn: 3, gridRow: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "14px 16px 10px" }}>
+          <PanelHeader label="Today" right={
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              {actions.length > 6 && (
+                <span title={`${actions.length} rows are tagged for Today; the board caps at six`} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
+                  6/{actions.length}
+                </span>
+              )}
+              {actions.length > 0 && (
+                <button
+                  onClick={clearToday}
+                  aria-label="Clear finished items off the board"
+                  title="Finished items leave the board. Nothing is pulled in — Today only shows what's tagged in Notion"
+                  style={{
+                    background: "none", cursor: "pointer", border: "1px solid #3a3a3a",
+                    fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
+                    letterSpacing: "0.12em", textTransform: "uppercase",
+                    color: "#9a9a9a", padding: "3px 8px", borderRadius: 3,
+                    transition: "color 0.15s, border-color 0.15s",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#3a3a3a"; }}
+                >Clear</button>
+              )}
+              <Tag>COWORK</Tag>
+            </div>
+          } />
+          <div
+            onDragOver={(e) => {
+              if (e.dataTransfer.types.includes("x-today")) return; // reorders are handled per-card
+              e.preventDefault(); e.dataTransfer.dropEffect = "move";
+              if (!todayDrag) setTodayDrag(true);
+            }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setTodayDrag(false); }}
+            onDrop={(e) => {
+              if (e.dataTransfer.types.includes("x-today")) return;
+              e.preventDefault();
+              setTodayDrag(false);
+              const id = e.dataTransfer.getData("text/plain");
+              if (id) moveTaskToToday(id);
+            }}
+            style={{
+              flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0, borderRadius: 2, outlineOffset: -2,
+              outline: todayDrag ? "1px dashed #8a8a8a" : "1px dashed transparent",
+              background: todayDrag ? "rgba(255,255,255,0.025)" : "transparent",
+              transition: "background 0.15s, outline-color 0.15s",
+            }}
+          >
+            {loading ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="skeleton" style={{ height: 84, background: "rgba(255,255,255,0.02)", border: "1px solid #2a2a2a", borderRadius: 5 }} />
+                ))}
+              </div>
+            ) : actions.length === 0 ? (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "18px 0" }}>
+                <p style={{ color: "#808080", fontSize: 12, textAlign: "center", lineHeight: 1.6 }}>
+                  No action items yet.<br />
+                  <span style={{ color: "#5f5f5f" }}>Your Cowork routine drops three here each morning.</span>
                 </p>
               </div>
-            ) : sorenEmails.length === 0 ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <p style={{ color: "#808080", fontSize: 12 }}>No emails</p>
-              </div>
             ) : (
-              <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
-                {sorenEmails.map((email) => (
-                  <EmailRow key={email.id} email={email} onArchive={archiveSorenEmail} onOpen={(e) => setOpenEmail({ source: "zoho", email: e })} onMakeTask={(e) => makeTaskFromEmail(e, "zoho")} />
+              // three across in the wide slot. Rows grow to their content so
+              // titles always read in full; the panel scrolls if six long
+              // ones outgrow it.
+              <div style={{
+                display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
+                gridAutoRows: "minmax(84px, auto)",
+                gap: 8, alignItems: "stretch",
+              }}>
+                {todayShown.map((a, i) => (
+                  <ActionCard key={a.id} action={a} index={i} compact={todayShown.length > 2} onOpen={() => setOpenActionId(a.id)} onToggleDone={(d) => toggleActionDone(a.id, d)} onReorder={reorderActions} />
                 ))}
               </div>
             )}
-          </Panel>
-
-        </div>
+          </div>
+        </Panel>
 
         {/* Tasks — Short Term stays tall but skinny; the buckets get the width */}
         {/* display:contents so both halves sit directly on the main grid — that
@@ -4443,65 +4674,8 @@ function Dashboard() {
             <GoalsBanner goals={goals} onOpen={openMap} />
           </div>
 
-          {/* TODAY — same grid row as Up Next, so the two match heights */}
-          <Panel style={{ gridColumn: 3, gridRow: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "14px 16px 10px" }}>
-          <PanelHeader label="Today" right={
-            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              {actions.length > 6 && (
-                <span title={`${actions.length} rows are tagged for Today; the board caps at six`} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
-                  6/{actions.length}
-                </span>
-              )}
-              {actions.length > 0 && (
-                <button
-                  onClick={clearToday}
-                  aria-label="Clear finished items off the board"
-                  title="Finished items leave the board. Nothing is pulled in — Today only shows what's tagged in Notion"
-                  style={{
-                    background: "none", cursor: "pointer", border: "1px solid #3a3a3a",
-                    fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
-                    letterSpacing: "0.12em", textTransform: "uppercase",
-                    color: "#9a9a9a", padding: "3px 8px", borderRadius: 3,
-                    transition: "color 0.15s, border-color 0.15s",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "#9a9a9a"; e.currentTarget.style.borderColor = "#3a3a3a"; }}
-                >Clear</button>
-              )}
-              <Tag>COWORK</Tag>
-            </div>
-          } />
-          <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0 }}>
-            {loading ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="skeleton" style={{ height: 84, background: "rgba(255,255,255,0.02)", border: "1px solid #2a2a2a", borderRadius: 5 }} />
-                ))}
-              </div>
-            ) : actions.length === 0 ? (
-              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "18px 0" }}>
-                <p style={{ color: "#808080", fontSize: 12, textAlign: "center", lineHeight: 1.6 }}>
-                  No action items yet.<br />
-                  <span style={{ color: "#5f5f5f" }}>Your Cowork routine drops three here each morning.</span>
-                </p>
-              </div>
-            ) : (
-              // three across, six on the board max: one roomy row for 1-3
-              // items, two compact rows for 4-6. Columns stay pinned so a
-              // finished item keeps its slot; minmax(0,1fr) bounds each row.
-              <div style={{
-                display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
-                gridTemplateRows: todayShown.length > 3 ? "repeat(2, minmax(0, 1fr))" : "minmax(0, 1fr)",
-                height: "100%",
-                gap: todayShown.length > 3 ? 8 : 10, alignItems: "stretch",
-              }}>
-                {todayShown.map((a, i) => (
-                  <ActionCard key={a.id} action={a} index={i} compact={todayShown.length > 3} onOpen={() => setOpenActionId(a.id)} onToggleDone={(d) => toggleActionDone(a.id, d)} onReorder={reorderActions} />
-                ))}
-              </div>
-            )}
-          </div>
-        </Panel>
+          {/* the live mini map — Today's old slot; click expands to the full map */}
+          <MiniMap goals={goals} projects={longTerm} actions={actions} onExpand={openMap} />
         </div>
 
         {/* Right column - Gmail + Spotify (full height, both rows) */}
@@ -4598,8 +4772,8 @@ function Dashboard() {
           </Panel>
         </div>
 
-        {/* Schedule — wide box across the bottom-left */}
-        <Panel style={{ gridColumn: "1 / span 2", gridRow: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
+        {/* Schedule — the tall top-left slot */}
+        <Panel style={{ gridColumn: 1, gridRow: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
               <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
               <div
                 onClick={(e) => { if (e.target === e.currentTarget) scheduleAddRef.current?.open(); }}
