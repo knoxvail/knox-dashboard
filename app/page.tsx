@@ -1477,11 +1477,20 @@ function ActionCard({ action, index, onOpen, onToggleDone, compact = false }: {
   action: ActionItem; index: number; onOpen: () => void; onToggleDone: (done: boolean) => void; compact?: boolean;
 }) {
   const [hover, setHover] = useState(false);
+  const dragging = useRef(false); // disambiguates drag from click, same as the task rows
   const done = !!action.done;
   return (
     <div
       role="button" tabIndex={0}
-      onClick={onOpen}
+      draggable={!action.id.startsWith("temp-")}
+      onDragStart={(e) => {
+        dragging.current = true;
+        e.dataTransfer.setData("text/plain", action.id);
+        e.dataTransfer.effectAllowed = "move";
+        e.currentTarget.style.opacity = "0.4";
+      }}
+      onDragEnd={(e) => { setTimeout(() => { dragging.current = false; }, 0); e.currentTarget.style.opacity = "1"; }}
+      onClick={() => { if (dragging.current) return; onOpen(); }}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       className="reveal-row"
@@ -3843,8 +3852,41 @@ function Dashboard() {
 
   // Drop handler for the Short Term high/normal zones: pull the item into Short
   // Term if it came from Long Term, then set its priority flag.
+  // A Today card dragged into High Priority (or plain Short Term): it leaves
+  // the board — un-tagged, deliberately, by your own hand — and lands as a
+  // Short Term task with the priority flag to match the box it was dropped on.
+  // Dragging a finished card reopens it (Status back to Short Term).
+  const moveActionOut = async (id: string, priority: boolean) => {
+    const a = actions.find(x => x.id === id);
+    if (!a) return;
+    setActions(prev => prev.filter(x => x.id !== id));
+    setShortTerm(prev => [...prev, { id, title: a.title, items: [], priority, notes: a.notes, links: a.links }]);
+    const post = (body: Record<string, unknown>) =>
+      fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    try {
+      await Promise.all([
+        post({ action: "setActionTag", id, tagged: false }),
+        post({ action: "setPriority", id, priority }),
+        post({ id, status: "Short Term", action: "move" }),
+      ]);
+      pushUndo(`move “${undoClip(a.title)}” off Today`, async () => {
+        await Promise.all([
+          post({ action: "setActionTag", id, tagged: true, order: a.order }),
+          post({ action: "setPriority", id, priority: false }),
+          a.done ? post({ action: "setActionDone", id, done: true }) : Promise.resolve(),
+        ]).catch(() => {});
+        await fetchTasks();
+      });
+      toast(priority ? "→ High Priority" : "→ Short Term");
+    } catch {
+      toast("Couldn’t move it — reverted");
+    }
+    await fetchTasks();
+  };
+
   const dropToPriority = (id: string, priority: boolean) => {
     if (!id || id.startsWith("temp-")) return;
+    if (actions.some(a => a.id === id)) { moveActionOut(id, priority); return; }
     if (longTerm.some(p => p.id === id)) moveTask(id, "Short Term");
     setPriority(id, priority);
   };
