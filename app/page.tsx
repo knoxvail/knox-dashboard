@@ -1473,10 +1473,12 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
 // is still readable, and the check toggles back off. compact = two-row board.
 // Deliberately spare: number, title, footer. The why-note and the link chips
 // live inside the plan window.
-function ActionCard({ action, index, onOpen, onToggleDone, compact = false }: {
-  action: ActionItem; index: number; onOpen: () => void; onToggleDone: (done: boolean) => void; compact?: boolean;
+function ActionCard({ action, index, onOpen, onToggleDone, onReorder, compact = false }: {
+  action: ActionItem; index: number; onOpen: () => void; onToggleDone: (done: boolean) => void;
+  onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => void; compact?: boolean;
 }) {
   const [hover, setHover] = useState(false);
+  const [overSide, setOverSide] = useState<null | "left" | "right">(null); // reorder drop indicator
   const dragging = useRef(false); // disambiguates drag from click, same as the task rows
   const done = !!action.done;
   return (
@@ -1486,10 +1488,27 @@ function ActionCard({ action, index, onOpen, onToggleDone, compact = false }: {
       onDragStart={(e) => {
         dragging.current = true;
         e.dataTransfer.setData("text/plain", action.id);
+        e.dataTransfer.setData("x-today", ""); // marks a same-board drag for reordering
         e.dataTransfer.effectAllowed = "move";
         e.currentTarget.style.opacity = "0.4";
       }}
-      onDragEnd={(e) => { setTimeout(() => { dragging.current = false; }, 0); e.currentTarget.style.opacity = "1"; }}
+      onDragEnd={(e) => { setTimeout(() => { dragging.current = false; }, 0); setOverSide(null); e.currentTarget.style.opacity = "1"; }}
+      // another Today card dragged across this one: show which side it lands on
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes("x-today") || dragging.current) return;
+        e.preventDefault(); e.stopPropagation();
+        const b = e.currentTarget.getBoundingClientRect();
+        setOverSide(e.clientX - b.left < b.width / 2 ? "left" : "right");
+      }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverSide(null); }}
+      onDrop={(e) => {
+        const side = overSide;
+        setOverSide(null);
+        if (!e.dataTransfer.types.includes("x-today")) return;
+        e.preventDefault(); e.stopPropagation();
+        const draggedId = e.dataTransfer.getData("text/plain");
+        if (draggedId && draggedId !== action.id) onReorder?.(draggedId, action.id, side !== "right");
+      }}
       onClick={() => { if (dragging.current) return; onOpen(); }}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
@@ -1508,6 +1527,7 @@ function ActionCard({ action, index, onOpen, onToggleDone, compact = false }: {
         // any translateY pushes its top edge past the scroll container's clip box
         // and shaves the top border off. Background + border + title color carry
         // the hover state instead.
+        boxShadow: overSide ? (overSide === "left" ? "inset 2px 0 0 #8a8a8a" : "inset -2px 0 0 #8a8a8a") : "none",
         transition: "background 0.15s, border-color 0.15s, opacity 0.15s",
       }}
     >
@@ -3852,6 +3872,24 @@ function Dashboard() {
 
   // Drop handler for the Short Term high/normal zones: pull the item into Short
   // Term if it came from Long Term, then set its priority flag.
+  // Drag-reorder within the Today board. Order = index persists to Notion, so
+  // the arrangement survives refreshes and the morning routine's next write.
+  const reorderActions = (draggedId: string, targetId: string, placeBefore: boolean) => {
+    if (!draggedId || draggedId === targetId || draggedId.startsWith("temp-")) return;
+    const prevIds = actions.map(a => a.id);
+    const dragged = actions.find(a => a.id === draggedId);
+    const arr = actions.filter(a => a.id !== draggedId);
+    const ti = arr.findIndex(a => a.id === targetId);
+    if (!dragged || ti < 0) return;
+    arr.splice(placeBefore ? ti : ti + 1, 0, dragged);
+    setActions(arr.map((a, i) => ({ ...a, order: i })));
+    persistTaskOrder(arr.map(a => a.id));
+    pushUndo("reorder Today", async () => {
+      setActions(cur => sortByIds(cur, prevIds).map((a, i) => ({ ...a, order: i })));
+      persistTaskOrder(prevIds);
+    });
+  };
+
   // A Today card dragged into High Priority (or plain Short Term): it leaves
   // the board — un-tagged, deliberately, by your own hand — and lands as a
   // Short Term task with the priority flag to match the box it was dropped on.
@@ -4114,6 +4152,9 @@ function Dashboard() {
   const hoverProject = hover && !openProjectId ? findProject(hover.id) : null;
   const shortHigh = shortTerm.filter(t => t.priority);
   const shortNormal = shortTerm.filter(t => !t.priority);
+  // Today shows six, full stop. Anything tagged beyond six stays off the board
+  // (the header shows the surplus count so over-tagging is visible).
+  const todayShown = actions.slice(0, 6);
 
   return (
     <div style={{
@@ -4358,6 +4399,11 @@ function Dashboard() {
           <Panel style={{ gridColumn: 3, gridRow: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "14px 16px 10px" }}>
           <PanelHeader label="Today" right={
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              {actions.length > 6 && (
+                <span title={`${actions.length} rows are tagged for Today; the board caps at six`} style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
+                  6/{actions.length}
+                </span>
+              )}
               {actions.length > 0 && (
                 <button
                   onClick={clearToday}
@@ -4392,22 +4438,17 @@ function Dashboard() {
                 </p>
               </div>
             ) : (
-              // three across, up to six on the board: one roomy row for 1-3
-              // items, two compact rows for 4-6 (7+ wrap and the panel scrolls).
-              // Columns stay pinned so a finished item keeps its slot, and
-              // minmax(0,1fr) bounds each row so cards size to the space.
+              // three across, six on the board max: one roomy row for 1-3
+              // items, two compact rows for 4-6. Columns stay pinned so a
+              // finished item keeps its slot; minmax(0,1fr) bounds each row.
               <div style={{
                 display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
-                // up to six: rows share the panel exactly. Seven or more: rows
-                // keep a working minimum and the panel scrolls — minmax(0,1fr)
-                // with height:100% would crush every row instead.
-                ...(actions.length <= 6
-                  ? { gridTemplateRows: actions.length > 3 ? "repeat(2, minmax(0, 1fr))" : "minmax(0, 1fr)", height: "100%" }
-                  : { gridAutoRows: "minmax(84px, auto)" }),
-                gap: actions.length > 3 ? 8 : 10, alignItems: "stretch",
+                gridTemplateRows: todayShown.length > 3 ? "repeat(2, minmax(0, 1fr))" : "minmax(0, 1fr)",
+                height: "100%",
+                gap: todayShown.length > 3 ? 8 : 10, alignItems: "stretch",
               }}>
-                {actions.map((a, i) => (
-                  <ActionCard key={a.id} action={a} index={i} compact={actions.length > 3} onOpen={() => setOpenActionId(a.id)} onToggleDone={(d) => toggleActionDone(a.id, d)} />
+                {todayShown.map((a, i) => (
+                  <ActionCard key={a.id} action={a} index={i} compact={todayShown.length > 3} onOpen={() => setOpenActionId(a.id)} onToggleDone={(d) => toggleActionDone(a.id, d)} onReorder={reorderActions} />
                 ))}
               </div>
             )}
