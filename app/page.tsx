@@ -1259,6 +1259,13 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
   const savedRef = useRef(value);
   const latestRef = useRef(value);
   const timerRef = useRef<number | undefined>(undefined);
+  // latest onSave through a ref: parents pass inline arrows and the dashboard
+  // re-renders every second (the clock), so an effect keyed on [onSave] would
+  // tear down and re-run its cleanup once a second — which made the "save on
+  // close" cleanup fire mid-typing, once per second, flooding Notion and the
+  // undo stack. Registered once, reading through the ref, that's gone.
+  const onSaveRef = useRef(onSave);
+  useEffect(() => { onSaveRef.current = onSave; });
   const [flash, setFlash] = useState(false);
   const [copied, setCopied] = useState(false);
   const [words, setWords] = useState(countWords(value));
@@ -1292,11 +1299,11 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
   const commit = useCallback(() => {
     if (latestRef.current !== savedRef.current) {
       savedRef.current = latestRef.current;
-      onSave(latestRef.current);
+      onSaveRef.current(latestRef.current);
       setFlash(true);
       setTimeout(() => setFlash(false), 1400);
     }
-  }, [onSave]);
+  }, []);
 
   // Copy the notes to the clipboard, keeping the "# " / "* " marks so headings
   // and bullets survive the paste.
@@ -1324,11 +1331,15 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
     window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(commit, 700);
   }, [commit]);
-  // save anything unsaved when the window closes
+  // save anything unsaved when the window closes — registered ONCE (see
+  // onSaveRef above); a dep on onSave made this cleanup run every second
   useEffect(() => () => {
     window.clearTimeout(timerRef.current);
-    if (latestRef.current !== savedRef.current) onSave(latestRef.current);
-  }, [onSave]);
+    if (latestRef.current !== savedRef.current) {
+      savedRef.current = latestRef.current;
+      onSaveRef.current(latestRef.current);
+    }
+  }, []);
 
   const normalize = (root: HTMLElement) => {
     if (root.children.length === 0) { root.appendChild(makeBlock("nb-p", "")); return; }
@@ -1575,9 +1586,11 @@ function ActionCard({ action, index, onOpen, onToggleDone, onReorder, compact = 
   );
 }
 
-// The full plan for an action item, rendered read-only from its Notion page body.
-function ActionPlanModal({ action, onClose, onComplete }: {
+// The full plan for an action item, rendered read-only from its Notion page
+// body — plus a live notes canvas writing to the item's Notes property.
+function ActionPlanModal({ action, onClose, onComplete, onSaveNotes }: {
   action: ActionItem; onClose: () => void; onComplete: () => void;
+  onSaveNotes: (id: string, notes: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -1622,7 +1635,6 @@ function ActionPlanModal({ action, onClose, onComplete }: {
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.16em", color: "#7a7a7a", textTransform: "uppercase", marginBottom: 5 }}>Today · Action</div>
             <h2 style={{ margin: 0, fontSize: 19, fontWeight: 500, color: "#f2f2f2", lineHeight: 1.3, overflowWrap: "break-word" }}>{action.title}</h2>
-            {action.notes?.trim() && <p style={{ margin: "6px 0 0", fontSize: 13, color: "#9a9a9a", lineHeight: 1.5 }}>{action.notes}</p>}
             {/* the item's links live here, inside the window, not on the card */}
             {parseActionLinks(action.links || "").length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 9 }}>
@@ -1661,6 +1673,14 @@ function ActionPlanModal({ action, onClose, onComplete }: {
                 No plan written for this one yet. The Cowork routine writes the full plan into this item&rsquo;s Notion page body: where to start, the steps, and what a finished version looks like.
               </p>
             )}
+
+            {/* the item's notes — the routine's why-line plus whatever you add.
+                Same live canvas as the project window, saved to the Notes
+                property with the usual debounce + save-on-close */}
+            <div style={{ borderTop: "1px solid #1e1e1e", marginTop: 26, paddingTop: 14 }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.16em", color: "#808080", textTransform: "uppercase", marginBottom: 4 }}>Notes</div>
+              <NotesEditor value={action.notes || ""} onSave={(v) => onSaveNotes(action.id, v)} />
+            </div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 20px 14px", borderTop: "1px solid #1a1a1a", flexShrink: 0 }}>
@@ -2083,9 +2103,14 @@ const GoalsMapModal = memo(function GoalsMapModal({ goals, projects, actions, br
     const onPointerUp = (e: PointerEvent) => {
       const p = pos(e);
       const moved = drag ? Math.hypot(p.x - drag.sx, p.y - drag.sy) : 0;
-      if (drag?.node && moved < 6) setSelected(cur => (cur?.id === drag!.node!.id ? null : drag!.node!)); // click pins, click again unpins
-      else if (drag?.panning && moved < 6) setSelected(null);
+      // capture VALUES before clearing drag: the setSelected updater runs after
+      // this handler finishes, when `drag` is already null — reading through it
+      // there crashed the app on every node click
+      const node = drag?.node ?? null;
+      const panning = !!drag?.panning;
       drag = null;
+      if (node && moved < 6) setSelected(cur => (cur?.id === node.id ? null : node)); // click pins, click again unpins
+      else if (panning && moved < 6) setSelected(null);
     };
     const onDblClick = (e: MouseEvent) => {
       const r = canvas.getBoundingClientRect();
@@ -3872,6 +3897,29 @@ function Dashboard() {
 
   // Drop handler for the Short Term high/normal zones: pull the item into Short
   // Term if it came from Long Term, then set its priority flag.
+  // Notes on a Today item — same Notes property the routine's why-line lives
+  // in, so what you write rides with the row wherever it goes next.
+  const saveActionNotes = async (id: string, notes: string) => {
+    const a = actions.find(x => x.id === id);
+    if (!a || (a.notes || "") === notes) return;
+    const prev = a.notes || "";
+    setActions(cur => cur.map(x => (x.id === id ? { ...x, notes } : x)));
+    try {
+      const res = await fetch("/api/notion", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setClientNotes", id, notes }),
+      });
+      if (!res.ok) { setActions(cur => cur.map(x => (x.id === id ? { ...x, notes: prev } : x))); toast("Couldn’t save the note — reverted"); return; }
+      pushUndo(`edit notes on “${undoClip(a.title)}”`, async () => {
+        setActions(cur => cur.map(x => (x.id === id ? { ...x, notes: prev } : x)));
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setClientNotes", id, notes: prev }) }).catch(() => {});
+      });
+    } catch {
+      setActions(cur => cur.map(x => (x.id === id ? { ...x, notes: prev } : x)));
+      toast("Couldn’t save the note — reverted");
+    }
+  };
+
   // Drag-reorder within the Today board. Order = index persists to Notion, so
   // the arrangement survives refreshes and the morning routine's next write.
   const reorderActions = (draggedId: string, targetId: string, placeBefore: boolean) => {
@@ -4761,6 +4809,7 @@ function Dashboard() {
           action={openAction}
           onClose={() => setOpenActionId(null)}
           onComplete={() => toggleActionDone(openAction.id, !openAction.done)}
+          onSaveNotes={saveActionNotes}
         />
       )}
 
