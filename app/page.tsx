@@ -1828,7 +1828,7 @@ const GoalsBanner = memo(function GoalsBanner({ goals, onOpen, panelStyle }: { g
 // props): the banner is the panhandle — its own thin grid row spanning the map
 // column and Today — and the map is the block hanging flush beneath its left
 // end, bridging the grid row gap with a negative top margin.
-const BANNER_PANHANDLE_STYLE: React.CSSProperties = { gridColumn: "1 / span 3", gridRow: 2, borderRadius: "6px 6px 0 6px" };
+const BANNER_PANHANDLE_STYLE: React.CSSProperties = { gridColumn: "2 / span 2", gridRow: 2, borderRadius: "6px 6px 0 6px", borderBottom: "none" };
 const MAP_BLOCK_STYLE: React.CSSProperties = { gridColumn: 3, gridRow: 3, width: "100%", height: "calc(100% + 12px)", marginTop: -12, aspectRatio: "auto", borderRadius: "0 0 6px 6px", borderTop: "none" };
 
 // The always-on miniature of the map: same graph, same physics, drawn small
@@ -4579,13 +4579,11 @@ function Dashboard() {
           </div>
         </Panel>
 
-        {/* Tasks — Short Term stays tall but skinny; the buckets get the width */}
-        {/* display:contents so both halves sit directly on the main grid — that
-            lets Projects keep full height while Short Term shortens for Today */}
-        <div style={{ display: "contents" }}>
-          {/* High Priority + Short Term stretch across both left columns —
-              double the width so task text breathes */}
-          <div style={{ gridColumn: "1 / span 2", gridRow: 1, display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
+        {/* Top row runs its OWN two-column grid, decoupled from the bottom
+            tracks — so Today's wide middle track below can't squeeze Projects */}
+        <div style={{ gridColumn: "1 / span 3", gridRow: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, minHeight: 0, minWidth: 0 }}>
+          {/* High Priority + Short Term, left half */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             {/* HIGH PRIORITY — same darkness as the other panels, framed in a
                 black/white hazard-tape border so it still reads as the focal point */}
             <div
@@ -4652,9 +4650,8 @@ function Dashboard() {
             </Panel>
           </div>
 
-          {/* Column 3, row 1: Projects alone — the banner lives in its own
-              strip row below, and the map hangs from it */}
-          <div style={{ gridColumn: 3, gridRow: 1, display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
+          {/* Projects, right half — full width again */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             <Panel style={{ flex: 1.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
               <PanelHeader label="Projects" right={
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
@@ -4796,8 +4793,9 @@ function Dashboard() {
           </Panel>
         </div>
 
-        {/* Schedule — bottom-left cell */}
-        <Panel style={{ gridColumn: 1, gridRow: 3, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
+        {/* Schedule — bottom-left, rising through the strip row since the arm
+            no longer reaches over it */}
+        <Panel style={{ gridColumn: 1, gridRow: "2 / span 2", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
               <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
               <div
                 onClick={(e) => { if (e.target === e.currentTarget) scheduleAddRef.current?.open(); }}
