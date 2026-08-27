@@ -118,7 +118,7 @@ export async function GET() {
     // today's action items, written by the Cowork routine (Type = "Action").
     // `status` is carried so a finished item can be un-finished back to where it
     // was, and `done` is what makes it render crossed off instead of disappearing.
-    const actionPages: { id: string; title: string; order: number | null; notes: string; links: string; status: string; done: boolean }[] = [];
+    const actionPages: { id: string; title: string; order: number | null; notes: string; links: string; scratch: string; status: string; done: boolean }[] = [];
     // big goals (Type = "Goal"): Percent 0–100 + a one-line "how it's going" in
     // Notes. The morning routine maintains them; the Today panel renders them.
     const goals: { id: string; title: string; order: number | null; notes: string; percent: number }[] = [];
@@ -151,7 +151,9 @@ export async function GET() {
         // `links` rides along so the Today cards can render link chips.
         const actionStatus =
           (Object.values(page.properties).find((p: any) => p.type === "status") as any)?.status?.name || "";
-        actionPages.push({ id: page.id, title, order, notes, links, status: actionStatus, done: actionStatus === "Complete" });
+        // scratch = Knox's own notes on the item; Notes stays the routine's why-line
+        const scratch = ((page.properties as any)["Scratch"]?.rich_text || []).map((t: any) => t.plain_text).join("");
+        actionPages.push({ id: page.id, title, order, notes, links, scratch, status: actionStatus, done: actionStatus === "Complete" });
         return;
       }
       if (typeProp?.select?.name === "Goal") {
@@ -553,6 +555,7 @@ export async function POST(request: Request) {
       if (!db.properties?.Rating) missing.Rating = { number: {} };
       if (!db.properties?.Links) missing.Links = { rich_text: {} };
       if (!db.properties?.Percent) missing.Percent = { number: {} }; // big-goal progress, 0–100
+      if (!db.properties?.Scratch) missing.Scratch = { rich_text: {} }; // personal notes on Today items, separate from the routine's why-line
       if (Object.keys(missing).length === 0) return NextResponse.json({ success: true, existed: true });
       const patch = await fetch(`https://api.notion.com/v1/databases/${dbId}`, {
         method: "PATCH", headers: H, body: JSON.stringify({ properties: missing }),
@@ -645,6 +648,21 @@ export async function POST(request: Request) {
         method: "PATCH",
         headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" },
         body: JSON.stringify({ properties: { Links: { rich_text: content ? [{ text: { content } }] : [] } } }),
+      });
+      if (!notionRes.ok) return NextResponse.json({ error: await notionRes.json() }, { status: notionRes.status });
+      return NextResponse.json({ success: true });
+    }
+
+    // Personal notes on a Today item (the Scratch property — the routine's
+    // why-line in Notes is never touched by this).
+    if (action === "setScratch") {
+      if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
+      if (typeof body.scratch !== "string") return NextResponse.json({ error: "Invalid scratch" }, { status: 400 });
+      const content = body.scratch.slice(0, 2000);
+      const notionRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" },
+        body: JSON.stringify({ properties: { Scratch: { rich_text: content ? [{ text: { content } }] : [] } } }),
       });
       if (!notionRes.ok) return NextResponse.json({ error: await notionRes.json() }, { status: notionRes.status });
       return NextResponse.json({ success: true });

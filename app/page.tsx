@@ -13,7 +13,7 @@ type Project = { id: string; title: string; items: ChecklistItem[]; priority?: b
 type SavedLink = { label: string; url: string };
 // An action item written by the Cowork routine: a headline, a one-line why, and
 // a full plan (its Notion page body) rendered in the same notes format.
-type ActionItem = { id: string; title: string; notes?: string; plan?: string; links?: string; order?: number | null; done?: boolean; status?: string };
+type ActionItem = { id: string; title: string; notes?: string; plan?: string; links?: string; scratch?: string; order?: number | null; done?: boolean; status?: string };
 // A big goal (Notion row, Type = "Goal"): Percent 0–100 plus a one-line "how
 // it's going" in Notes. Maintained by the morning routine, nudgeable by hand.
 type Goal = { id: string; title: string; notes?: string; percent: number; order?: number | null };
@@ -1588,9 +1588,9 @@ function ActionCard({ action, index, onOpen, onToggleDone, onReorder, compact = 
 
 // The full plan for an action item, rendered read-only from its Notion page
 // body — plus a live notes canvas writing to the item's Notes property.
-function ActionPlanModal({ action, onClose, onComplete, onSaveNotes }: {
+function ActionPlanModal({ action, onClose, onComplete, onSaveScratch }: {
   action: ActionItem; onClose: () => void; onComplete: () => void;
-  onSaveNotes: (id: string, notes: string) => void;
+  onSaveScratch: (id: string, scratch: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -1635,6 +1635,7 @@ function ActionPlanModal({ action, onClose, onComplete, onSaveNotes }: {
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.16em", color: "#7a7a7a", textTransform: "uppercase", marginBottom: 5 }}>Today · Action</div>
             <h2 style={{ margin: 0, fontSize: 19, fontWeight: 500, color: "#f2f2f2", lineHeight: 1.3, overflowWrap: "break-word" }}>{action.title}</h2>
+            {action.notes?.trim() && <p style={{ margin: "6px 0 0", fontSize: 13, color: "#9a9a9a", lineHeight: 1.5 }}>{action.notes}</p>}
             {/* the item's links live here, inside the window, not on the card */}
             {parseActionLinks(action.links || "").length > 0 && (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 9 }}>
@@ -1662,8 +1663,10 @@ function ActionPlanModal({ action, onClose, onComplete, onSaveNotes }: {
           <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "#808080", fontSize: 20, lineHeight: 1, padding: "0 2px", flexShrink: 0 }}
             onMouseEnter={(e) => (e.currentTarget.style.color = "#ccc")} onMouseLeave={(e) => (e.currentTarget.style.color = "#808080")}>✕</button>
         </div>
-        <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0 }}>
-          <div style={{ maxWidth: 760, margin: "0 auto", padding: "22px 30px 40px" }}>
+        <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+          {/* the plan, left */}
+          <div style={{ flex: 1, minWidth: 0, overflowY: "auto", scrollbarWidth: "none" }}>
+          <div style={{ maxWidth: 680, margin: "0 auto", padding: "22px 30px 40px" }}>
             {hasPlan ? (
               <div className="notes-edit" style={{ fontFamily: '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif', fontSize: 16, lineHeight: 1.75, color: "#d4d1cb" }}>
                 {blocks.map((b, i) => <div key={i} className={b.cls}>{b.text || " "}</div>)}
@@ -1674,14 +1677,14 @@ function ActionPlanModal({ action, onClose, onComplete, onSaveNotes }: {
               </p>
             )}
 
-            {/* the item's notes — the routine's why-line plus whatever you add.
-                Same live canvas as the project window, saved to the Notes
-                property with the usual debounce + save-on-close */}
-            <div style={{ borderTop: "1px solid #1e1e1e", marginTop: 26, paddingTop: 14 }}>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.16em", color: "#808080", textTransform: "uppercase", marginBottom: 4 }}>Notes</div>
-              <NotesEditor value={action.notes || ""} onSave={(v) => onSaveNotes(action.id, v)} />
-            </div>
           </div>
+          </div>
+          {/* your notes, right — own column, own property (Scratch), starts
+              empty; the routine's why-line in Notes is never overwritten */}
+          <aside style={{ width: 300, flexShrink: 0, borderLeft: "1px solid #202020", overflowY: "auto", scrollbarWidth: "none", padding: "16px 18px 24px" }}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.16em", color: "#808080", textTransform: "uppercase", marginBottom: 4 }}>Notes</div>
+            <NotesEditor value={action.scratch || ""} onSave={(v) => onSaveScratch(action.id, v)} />
+          </aside>
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 20px 14px", borderTop: "1px solid #1a1a1a", flexShrink: 0 }}>
           <button onClick={copyPlan} aria-label="Copy this item and its plan to clipboard" style={{
@@ -4053,25 +4056,25 @@ function Dashboard() {
 
   // Drop handler for the Short Term high/normal zones: pull the item into Short
   // Term if it came from Long Term, then set its priority flag.
-  // Notes on a Today item — same Notes property the routine's why-line lives
-  // in, so what you write rides with the row wherever it goes next.
-  const saveActionNotes = async (id: string, notes: string) => {
+  // Personal notes on a Today item — the Scratch property, its own space. The
+  // routine's why-line in Notes is never touched, so the box starts empty.
+  const saveActionScratch = async (id: string, scratch: string) => {
     const a = actions.find(x => x.id === id);
-    if (!a || (a.notes || "") === notes) return;
-    const prev = a.notes || "";
-    setActions(cur => cur.map(x => (x.id === id ? { ...x, notes } : x)));
+    if (!a || (a.scratch || "") === scratch) return;
+    const prev = a.scratch || "";
+    setActions(cur => cur.map(x => (x.id === id ? { ...x, scratch } : x)));
     try {
       const res = await fetch("/api/notion", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "setClientNotes", id, notes }),
+        body: JSON.stringify({ action: "setScratch", id, scratch }),
       });
-      if (!res.ok) { setActions(cur => cur.map(x => (x.id === id ? { ...x, notes: prev } : x))); toast("Couldn’t save the note — reverted"); return; }
+      if (!res.ok) { setActions(cur => cur.map(x => (x.id === id ? { ...x, scratch: prev } : x))); toast("Couldn’t save the note — reverted"); return; }
       pushUndo(`edit notes on “${undoClip(a.title)}”`, async () => {
-        setActions(cur => cur.map(x => (x.id === id ? { ...x, notes: prev } : x)));
-        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setClientNotes", id, notes: prev }) }).catch(() => {});
+        setActions(cur => cur.map(x => (x.id === id ? { ...x, scratch: prev } : x)));
+        await fetch("/api/notion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "setScratch", id, scratch: prev }) }).catch(() => {});
       });
     } catch {
-      setActions(cur => cur.map(x => (x.id === id ? { ...x, notes: prev } : x)));
+      setActions(cur => cur.map(x => (x.id === id ? { ...x, scratch: prev } : x)));
       toast("Couldn’t save the note — reverted");
     }
   };
@@ -5000,7 +5003,7 @@ function Dashboard() {
           action={openAction}
           onClose={() => setOpenActionId(null)}
           onComplete={() => toggleActionDone(openAction.id, !openAction.done)}
-          onSaveNotes={saveActionNotes}
+          onSaveScratch={saveActionScratch}
         />
       )}
 
