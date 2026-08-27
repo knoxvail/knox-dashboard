@@ -1630,7 +1630,7 @@ function ActionPlanModal({ action, onClose, onComplete, onSaveScratch }: {
     <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.62)", backdropFilter: "blur(5px)", WebkitBackdropFilter: "blur(5px)", zIndex: 9000, display: "grid", placeItems: "center", padding: 16, animation: "fadeIn 0.18s ease-out" }}>
       <div role="dialog" aria-modal="true" aria-label={`Plan: ${action.title}`}
-        style={{ width: "min(900px, 94vw)", maxHeight: "88vh", background: "rgba(11,13,17,0.94)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)", border: "1px solid #333", borderRadius: 8, display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 30px 80px rgba(0,0,0,0.75)", animation: "modalIn 0.2s ease-out" }}>
+        style={{ width: "min(2100px, 95vw)", height: "93vh", background: "rgba(11,13,17,0.94)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)", border: "1px solid #333", borderRadius: 8, display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 30px 80px rgba(0,0,0,0.75)", animation: "modalIn 0.2s ease-out" }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "16px 20px 14px", borderBottom: "1px solid #202020", flexShrink: 0 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.16em", color: "#7a7a7a", textTransform: "uppercase", marginBottom: 5 }}>Today · Action</div>
@@ -1666,7 +1666,7 @@ function ActionPlanModal({ action, onClose, onComplete, onSaveScratch }: {
         <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
           {/* the plan, left */}
           <div style={{ flex: 1, minWidth: 0, overflowY: "auto", scrollbarWidth: "none" }}>
-          <div style={{ maxWidth: 680, margin: "0 auto", padding: "22px 30px 40px" }}>
+          <div style={{ maxWidth: 860, margin: "0 auto", padding: "26px 34px 44px" }}>
             {hasPlan ? (
               <div className="notes-edit" style={{ fontFamily: '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif', fontSize: 16, lineHeight: 1.75, color: "#d4d1cb" }}>
                 {blocks.map((b, i) => <div key={i} className={b.cls}>{b.text || " "}</div>)}
@@ -1681,7 +1681,7 @@ function ActionPlanModal({ action, onClose, onComplete, onSaveScratch }: {
           </div>
           {/* your notes, right — own column, own property (Scratch), starts
               empty; the routine's why-line in Notes is never overwritten */}
-          <aside style={{ width: 300, flexShrink: 0, borderLeft: "1px solid #202020", overflowY: "auto", scrollbarWidth: "none", padding: "16px 18px 24px" }}>
+          <aside style={{ width: "min(420px, 32vw)", flexShrink: 0, borderLeft: "1px solid #202020", overflowY: "auto", scrollbarWidth: "none", padding: "18px 22px 26px" }}>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8.5, letterSpacing: "0.16em", color: "#808080", textTransform: "uppercase", marginBottom: 4 }}>Notes</div>
             <NotesEditor value={action.scratch || ""} onSave={(v) => onSaveScratch(action.id, v)} />
           </aside>
