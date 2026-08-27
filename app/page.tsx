@@ -1781,7 +1781,7 @@ function ProgressBar({ pct, height = 4 }: { pct: number | null; height?: number 
 // hatch-filled bar with a notch per goal and the pulsing leading edge, the
 // number. Nothing else; the written Brief lives at the top of the map.
 // Hovering a notch names its goal. Clicking anywhere opens the map.
-const GoalsBanner = memo(function GoalsBanner({ goals, onOpen }: { goals: Goal[]; onOpen: () => void }) {
+const GoalsBanner = memo(function GoalsBanner({ goals, onOpen, panelStyle }: { goals: Goal[]; onOpen: () => void; panelStyle?: React.CSSProperties }) {
   const avg = goals.length ? Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length) : 0;
   if (goals.length === 0) return null;
   return (
@@ -1794,6 +1794,7 @@ const GoalsBanner = memo(function GoalsBanner({ goals, onOpen }: { goals: Goal[]
         background: "rgba(12,14,18,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
         border: "1px solid #2a2a2a", borderRadius: 6, padding: "9px 16px",
         transition: "border-color 0.2s",
+        ...panelStyle,
       }}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4a4a4a")}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
@@ -1823,11 +1824,17 @@ const GoalsBanner = memo(function GoalsBanner({ goals, onOpen }: { goals: Goal[]
   );
 });
 
+// The banner and the mini map dock into one continuous box (module-level so
+// the memoized components keep stable props): banner is the flat top, map the
+// block below, a hairline seam between them.
+const ATTACHED_BANNER_STYLE: React.CSSProperties = { borderRadius: "6px 6px 0 0", borderBottom: "none" };
+const ATTACHED_MAP_STYLE: React.CSSProperties = { width: "100%", height: 236, aspectRatio: "auto", flexShrink: 0, borderRadius: "0 0 6px 6px", borderTop: "1px solid #1e1e1e" };
+
 // The always-on miniature of the map: same graph, same physics, drawn small
 // and auto-fitted in a board panel. No interactions of its own — the whole
 // panel is a button that expands into the full map.
-const MiniMap = memo(function MiniMap({ goals, projects, actions, onExpand }: {
-  goals: Goal[]; projects: Project[]; actions: ActionItem[]; onExpand: () => void;
+const MiniMap = memo(function MiniMap({ goals, projects, actions, onExpand, panelStyle }: {
+  goals: Goal[]; projects: Project[]; actions: ActionItem[]; onExpand: () => void; panelStyle?: React.CSSProperties;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const graphRef = useRef(buildGraph(goals, projects, actions));
@@ -1965,6 +1972,7 @@ const MiniMap = memo(function MiniMap({ goals, projects, actions, onExpand }: {
         background: "rgba(12,14,18,0.5)", backdropFilter: "blur(7px)", WebkitBackdropFilter: "blur(7px)",
         border: "1px solid #2a2a2a", borderRadius: 6, padding: 0,
         transition: "border-color 0.2s",
+        ...panelStyle,
       }}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#4a4a4a")}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#2a2a2a")}
@@ -4491,10 +4499,8 @@ function Dashboard() {
         zIndex: 1,
       }}>
 
-        {/* TODAY — under Projects, across from the map (Soren email left the
-            screen; its data plumbing stays so reconnecting Zoho later is a
-            render change, not a rebuild) */}
-        <Panel style={{ gridColumn: 3, gridRow: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "14px 16px 10px" }}>
+        {/* TODAY — between Up Next and the map column, filling its whole cell */}
+        <Panel style={{ gridColumn: 2, gridRow: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "14px 16px 10px" }}>
           <PanelHeader label="Today" right={
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
               {actions.length > 6 && (
@@ -4543,8 +4549,8 @@ function Dashboard() {
             }}
           >
             {loading ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                {Array.from({ length: 3 }).map((_, i) => (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
+                {Array.from({ length: 4 }).map((_, i) => (
                   <div key={i} className="skeleton" style={{ height: 84, background: "rgba(255,255,255,0.02)", border: "1px solid #2a2a2a", borderRadius: 5 }} />
                 ))}
               </div>
@@ -4556,11 +4562,11 @@ function Dashboard() {
                 </p>
               </div>
             ) : (
-              // three across in the wide slot. Rows grow to their content so
-              // titles always read in full; the panel scrolls if six long
-              // ones outgrow it.
+              // two across in this cell. Rows grow to their content so titles
+              // always read in full; the panel scrolls if six long ones
+              // outgrow it.
               <div style={{
-                display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
+                display: "grid", gridTemplateColumns: "repeat(2, 1fr)",
                 gridAutoRows: "minmax(84px, auto)",
                 gap: 8, alignItems: "stretch",
               }}>
@@ -4645,9 +4651,9 @@ function Dashboard() {
             </Panel>
           </div>
 
-          {/* Projects + the goals banner fill row 1; Today sits in row 2 so it
-              matches Up Next's height exactly (same grid row) */}
-          <div style={{ gridColumn: 3, gridRow: 1, display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
+          {/* Column 3, both rows: Projects on top, then the banner docked onto
+              the mini map — one continuous box, panhandle over the block */}
+          <div style={{ gridColumn: 3, gridRow: "1 / span 2", display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             <Panel style={{ flex: 1.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
               <PanelHeader label="Projects" right={
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
@@ -4686,8 +4692,11 @@ function Dashboard() {
               <AddTaskInput ref={longAddRef} onAdd={addProject} placeholder="New project..." />
             </Panel>
 
-            {/* the state of the big goals — one slim bar; the Brief lives in the map */}
-            <GoalsBanner goals={goals} onOpen={openMap} />
+            {/* the connected unit: banner on top, live map below, no seam gap */}
+            <div style={{ flexShrink: 0, display: "flex", flexDirection: "column" }}>
+              <GoalsBanner goals={goals} onOpen={openMap} panelStyle={ATTACHED_BANNER_STYLE} />
+              <MiniMap goals={goals} projects={longTerm} actions={actions} onExpand={openMap} panelStyle={ATTACHED_MAP_STYLE} />
+            </div>
           </div>
 
         </div>
@@ -4786,11 +4795,8 @@ function Dashboard() {
           </Panel>
         </div>
 
-        {/* Bottom-left region, completely filled: Up Next stretches into all
-            the width it can get; the map keeps its full-height square on the
-            right */}
-        <div style={{ gridColumn: "1 / span 2", gridRow: 2, display: "flex", gap: 12, minHeight: 0, minWidth: 0 }}>
-        <Panel style={{ flex: 1, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
+        {/* Schedule — bottom-left cell, with Today to its right */}
+        <Panel style={{ gridColumn: 1, gridRow: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
               <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
               <div
                 onClick={(e) => { if (e.target === e.currentTarget) scheduleAddRef.current?.open(); }}
@@ -4832,9 +4838,6 @@ function Dashboard() {
               </div>
               <AddEventInput ref={scheduleAddRef} onAdd={addEvent} />
             </Panel>
-          {/* the live mini map — click expands to the full map */}
-          <MiniMap goals={goals} projects={longTerm} actions={actions} onExpand={openMap} />
-        </div>
       </main>
 
       <footer style={{
