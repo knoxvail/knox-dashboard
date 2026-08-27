@@ -1781,7 +1781,7 @@ function ProgressBar({ pct, height = 4 }: { pct: number | null; height?: number 
 // hatch-filled bar with a notch per goal and the pulsing leading edge, the
 // number. Nothing else; the written Brief lives at the top of the map.
 // Hovering a notch names its goal. Clicking anywhere opens the map.
-const GoalsBanner = memo(function GoalsBanner({ goals, onOpen, panelStyle }: { goals: Goal[]; onOpen: () => void; panelStyle?: React.CSSProperties }) {
+const GoalsBanner = memo(function GoalsBanner({ goals, onOpen, panelStyle, seamInsetRight }: { goals: Goal[]; onOpen: () => void; panelStyle?: React.CSSProperties; seamInsetRight?: string }) {
   const avg = goals.length ? Math.round(goals.reduce((n, g) => n + g.percent, 0) / goals.length) : 0;
   if (goals.length === 0) return null;
   return (
@@ -1790,7 +1790,7 @@ const GoalsBanner = memo(function GoalsBanner({ goals, onOpen, panelStyle }: { g
       aria-label={`Big goals: ${avg} percent overall. Open the map`}
       title="The big goals — click for the map"
       style={{
-        display: "block", width: "100%", cursor: "pointer", textAlign: "left", flexShrink: 0,
+        display: "block", width: "100%", cursor: "pointer", textAlign: "left", flexShrink: 0, position: "relative",
         background: "rgba(12,14,18,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
         border: "1px solid #2a2a2a", borderRadius: 6, padding: "9px 16px",
         transition: "border-color 0.2s",
@@ -1820,6 +1820,11 @@ const GoalsBanner = memo(function GoalsBanner({ goals, onOpen, panelStyle }: { g
         </div>
         <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 22, fontWeight: 400, color: "#e8e8e8", lineHeight: 1, flexShrink: 0, minWidth: 48, textAlign: "right" }}>{avg}%</span>
       </div>
+      {/* partial underside: the bubble's bottom edge runs up to where the map
+          merges in, so the bar reads closed while the joint stays seamless */}
+      {seamInsetRight && (
+        <span aria-hidden style={{ position: "absolute", left: 0, right: seamInsetRight, bottom: 0, height: 1, background: "#2a2a2a", pointerEvents: "none" }} />
+      )}
     </button>
   );
 });
@@ -4696,7 +4701,7 @@ function Dashboard() {
 
         {/* the panhandle: the goals bar in its own strip, spanning the map
             column and Today — the map block hangs flush beneath its left end */}
-        <GoalsBanner goals={goals} onOpen={openMap} panelStyle={BANNER_PANHANDLE_STYLE} />
+        <GoalsBanner goals={goals} onOpen={openMap} panelStyle={BANNER_PANHANDLE_STYLE} seamInsetRight="calc((100% - 12px) / 3)" />
         <MiniMap goals={goals} projects={longTerm} actions={actions} onExpand={openMap} panelStyle={MAP_BLOCK_STYLE} />
 
         {/* Right column - Gmail + Spotify (full height, all rows) */}
