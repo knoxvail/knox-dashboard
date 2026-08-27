@@ -1892,13 +1892,22 @@ const MiniMap = memo(function MiniMap({ goals, projects, actions, onExpand }: {
       heatRef.current = Math.max(H * 0.992, 0.015);
     };
 
+    // the slow orbit: a display-only rotation about the root. Physics
+    // coordinates never rotate, and labels are drawn upright at the rotated
+    // positions, so the graph reads normally while gently turning.
+    let orbit = 0;
     const draw = () => {
       const { nodes, edges } = graphRef.current;
-      // auto-fit the whole graph into the panel with a little breathing room
+      orbit += 0.00035; // one full turn in roughly five minutes
+      const co = Math.cos(orbit), so = Math.sin(orbit);
+      const rx = (n: MapNode) => co * n.x - so * n.y;
+      const ry = (n: MapNode) => so * n.x + co * n.y;
+      // auto-fit the ROTATED graph so nothing swings out of frame mid-orbit
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       nodes.forEach(n => {
-        minX = Math.min(minX, n.x - n.r); maxX = Math.max(maxX, n.x + n.r);
-        minY = Math.min(minY, n.y - n.r); maxY = Math.max(maxY, n.y + n.r);
+        const x = rx(n), y = ry(n);
+        minX = Math.min(minX, x - n.r); maxX = Math.max(maxX, x + n.r);
+        minY = Math.min(minY, y - n.r); maxY = Math.max(maxY, y + n.r);
       });
       const bw = Math.max(maxX - minX, 60), bh = Math.max(maxY - minY, 60);
       const scale = Math.min((w * 0.86) / bw, (h * 0.8) / bh, 1);
@@ -1910,25 +1919,26 @@ const MiniMap = memo(function MiniMap({ goals, projects, actions, onExpand }: {
         const a = nodes[e.a], b = nodes[e.b];
         ctx.strokeStyle = "rgba(200,200,200,0.09)";
         ctx.lineWidth = 0.7 / scale;
-        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(rx(a), ry(a)); ctx.lineTo(rx(b), ry(b)); ctx.stroke();
       });
       nodes.forEach(n => {
+        const x = rx(n), y = ry(n);
         if (n.kind === "goal") {
           ctx.strokeStyle = "#3a3a3a"; ctx.lineWidth = 2 / Math.sqrt(scale);
-          ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 3, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.arc(x, y, n.r + 3, 0, Math.PI * 2); ctx.stroke();
           ctx.strokeStyle = "#e8e8e8";
-          ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 3, -Math.PI / 2, -Math.PI / 2 + ((n.pct ?? 0) / 100) * Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.arc(x, y, n.r + 3, -Math.PI / 2, -Math.PI / 2 + ((n.pct ?? 0) / 100) * Math.PI * 2); ctx.stroke();
           ctx.fillStyle = "#b8b8b8";
-          ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x, y, n.r, 0, Math.PI * 2); ctx.fill();
           // tiny label under each goal so the mini map reads at a glance
           ctx.font = `${8 / Math.sqrt(scale)}px 'Courier Prime', monospace`;
           ctx.textAlign = "center"; ctx.fillStyle = "#8a8a8a";
           const lbl = n.label.length > 18 ? n.label.slice(0, 18) + "…" : n.label;
-          ctx.fillText(lbl, n.x, n.y + n.r + 11 / Math.sqrt(scale));
+          ctx.fillText(lbl, x, y + n.r + 11 / Math.sqrt(scale));
         } else {
           const fills: Record<MapNode["kind"], string> = { root: "#f0f0f0", goal: "#cfcfcf", project: "#9a9a9a", action: n.done ? "#4a4a4a" : "#c8c8c8", item: n.done ? "#3a3a3a" : "#6f6f6f" };
           ctx.fillStyle = fills[n.kind];
-          ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x, y, n.r, 0, Math.PI * 2); ctx.fill();
         }
       });
     };
@@ -1946,7 +1956,7 @@ const MiniMap = memo(function MiniMap({ goals, projects, actions, onExpand }: {
       aria-label="Open the map"
       title="The map — click to expand"
       style={{
-        gridColumn: 2, gridRow: 2, aspectRatio: "1 / 1", height: "100%", justifySelf: "start",
+        aspectRatio: "1 / 1", height: "100%", flexShrink: 0,
         minHeight: 0, minWidth: 0,
         position: "relative", overflow: "hidden", cursor: "pointer", textAlign: "left",
         background: "rgba(12,14,18,0.5)", backdropFilter: "blur(7px)", WebkitBackdropFilter: "blur(7px)",
@@ -4677,8 +4687,6 @@ function Dashboard() {
             <GoalsBanner goals={goals} onOpen={openMap} />
           </div>
 
-          {/* the live mini map — Today's old slot; click expands to the full map */}
-          <MiniMap goals={goals} projects={longTerm} actions={actions} onExpand={openMap} />
         </div>
 
         {/* Right column - Gmail + Spotify (full height, both rows) */}
@@ -4775,8 +4783,11 @@ function Dashboard() {
           </Panel>
         </div>
 
-        {/* Schedule — the outer square, bottom-left */}
-        <Panel style={{ gridColumn: 1, gridRow: 2, aspectRatio: "1 / 1", height: "100%", justifySelf: "start", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
+        {/* Bottom-left region, completely filled: Up Next stretches into all
+            the width it can get; the map keeps its full-height square on the
+            right */}
+        <div style={{ gridColumn: "1 / span 2", gridRow: 2, display: "flex", gap: 12, minHeight: 0, minWidth: 0 }}>
+        <Panel style={{ flex: 1, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
               <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
               <div
                 onClick={(e) => { if (e.target === e.currentTarget) scheduleAddRef.current?.open(); }}
@@ -4818,6 +4829,9 @@ function Dashboard() {
               </div>
               <AddEventInput ref={scheduleAddRef} onAdd={addEvent} />
             </Panel>
+          {/* the live mini map — click expands to the full map */}
+          <MiniMap goals={goals} projects={longTerm} actions={actions} onExpand={openMap} />
+        </div>
       </main>
 
       <footer style={{
