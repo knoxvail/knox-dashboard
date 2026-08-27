@@ -1824,11 +1824,12 @@ const GoalsBanner = memo(function GoalsBanner({ goals, onOpen, panelStyle }: { g
   );
 });
 
-// The banner and the mini map dock into one continuous box (module-level so
-// the memoized components keep stable props): banner is the flat top, map the
-// block below, a hairline seam between them.
-const ATTACHED_BANNER_STYLE: React.CSSProperties = { borderRadius: "6px 6px 0 0", borderBottom: "none" };
-const ATTACHED_MAP_STYLE: React.CSSProperties = { width: "100%", height: 236, aspectRatio: "auto", flexShrink: 0, borderRadius: "0 0 6px 6px", borderTop: "1px solid #1e1e1e" };
+// The Oklahoma shape (module-level so the memoized components keep stable
+// props): the banner is the panhandle — its own thin grid row spanning the map
+// column and Today — and the map is the block hanging flush beneath its left
+// end, bridging the grid row gap with a negative top margin.
+const BANNER_PANHANDLE_STYLE: React.CSSProperties = { gridColumn: "2 / span 2", gridRow: 2, borderRadius: "6px 6px 6px 0" };
+const MAP_BLOCK_STYLE: React.CSSProperties = { gridColumn: 2, gridRow: 3, width: "100%", height: "calc(100% + 12px)", marginTop: -12, aspectRatio: "auto", borderRadius: "0 0 6px 6px", borderTop: "none" };
 
 // The always-on miniature of the map: same graph, same physics, drawn small
 // and auto-fitted in a board panel. No interactions of its own — the whole
@@ -4489,9 +4490,8 @@ function Dashboard() {
         // Only cols 1-2 split into rows, so Today takes space from Soren + Short
         // Term while Projects and email keep their full height.
         gridTemplateColumns: "1fr 1fr 2fr 1fr",
-        // row 2 carries Today + Up Next; sized so a compact card fits a fully
-        // wrapped three-line title with nothing cut
-        gridTemplateRows: "1.8fr 1.25fr",
+        // three rows: content, the thin banner strip (the panhandle), content.
+        gridTemplateRows: "1.8fr auto 1.25fr",
         gap: 12,
         padding: "0 24px",
         minHeight: 0,
@@ -4499,8 +4499,8 @@ function Dashboard() {
         zIndex: 1,
       }}>
 
-        {/* TODAY — between Up Next and the map column, filling its whole cell */}
-        <Panel style={{ gridColumn: 2, gridRow: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "14px 16px 10px" }}>
+        {/* TODAY — the wide slot under the panhandle */}
+        <Panel style={{ gridColumn: 3, gridRow: 3, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "14px 16px 10px" }}>
           <PanelHeader label="Today" right={
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
               {actions.length > 6 && (
@@ -4562,11 +4562,11 @@ function Dashboard() {
                 </p>
               </div>
             ) : (
-              // two across in this cell. Rows grow to their content so titles
-              // always read in full; the panel scrolls if six long ones
-              // outgrow it.
+              // three across in the wide slot. Rows grow to their content so
+              // titles always read in full; the panel scrolls if six long
+              // ones outgrow it.
               <div style={{
-                display: "grid", gridTemplateColumns: "repeat(2, 1fr)",
+                display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
                 gridAutoRows: "minmax(84px, auto)",
                 gap: 8, alignItems: "stretch",
               }}>
@@ -4651,9 +4651,9 @@ function Dashboard() {
             </Panel>
           </div>
 
-          {/* Column 3, both rows: Projects on top, then the banner docked onto
-              the mini map — one continuous box, panhandle over the block */}
-          <div style={{ gridColumn: 3, gridRow: "1 / span 2", display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
+          {/* Column 3, row 1: Projects alone — the banner lives in its own
+              strip row below, and the map hangs from it */}
+          <div style={{ gridColumn: 3, gridRow: 1, display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             <Panel style={{ flex: 1.6, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
               <PanelHeader label="Projects" right={
                 <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#808080" }}>
@@ -4692,17 +4692,17 @@ function Dashboard() {
               <AddTaskInput ref={longAddRef} onAdd={addProject} placeholder="New project..." />
             </Panel>
 
-            {/* the connected unit: banner on top, live map below, no seam gap */}
-            <div style={{ flexShrink: 0, display: "flex", flexDirection: "column" }}>
-              <GoalsBanner goals={goals} onOpen={openMap} panelStyle={ATTACHED_BANNER_STYLE} />
-              <MiniMap goals={goals} projects={longTerm} actions={actions} onExpand={openMap} panelStyle={ATTACHED_MAP_STYLE} />
-            </div>
           </div>
 
         </div>
 
-        {/* Right column - Gmail + Spotify (full height, both rows) */}
-        <div style={{ gridColumn: 4, gridRow: "1 / span 2", display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
+        {/* the panhandle: the goals bar in its own strip, spanning the map
+            column and Today — the map block hangs flush beneath its left end */}
+        <GoalsBanner goals={goals} onOpen={openMap} panelStyle={BANNER_PANHANDLE_STYLE} />
+        <MiniMap goals={goals} projects={longTerm} actions={actions} onExpand={openMap} panelStyle={MAP_BLOCK_STYLE} />
+
+        {/* Right column - Gmail + Spotify (full height, all rows) */}
+        <div style={{ gridColumn: 4, gridRow: "1 / span 3", display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
           <Panel style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <PanelHeader label="Triad Email" right={<Tag>GMAIL</Tag>} />
             {!gmailConnected ? (
@@ -4795,8 +4795,8 @@ function Dashboard() {
           </Panel>
         </div>
 
-        {/* Schedule — bottom-left cell, with Today to its right */}
-        <Panel style={{ gridColumn: 1, gridRow: 2, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
+        {/* Schedule — bottom-left cell */}
+        <Panel style={{ gridColumn: 1, gridRow: 3, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0 }}>
               <PanelHeader label="Up Next" right={<Tag>SCHEDULE</Tag>} />
               <div
                 onClick={(e) => { if (e.target === e.currentTarget) scheduleAddRef.current?.open(); }}
