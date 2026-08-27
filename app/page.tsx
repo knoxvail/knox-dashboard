@@ -2106,9 +2106,27 @@ const GoalsMapModal = memo(function GoalsMapModal({ goals, projects, actions, br
     if (!ctx) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     let w = 0, h = 0, raf = 0;
-    const view = { x: 0, y: 0, scale: 1 };           // pan/zoom
+    // pan/zoom with flow: wheel sets targetScale, the loop eases toward it
+    // while pinning the world point that was under the cursor
+    const view = {
+      x: 0, y: 0, scale: 1, targetScale: 1,
+      anchor: null as null | { sx: number; sy: number; wx: number; wy: number },
+    };
     let hoverId: string | null = null;
     let drag: { node?: MapNode; panning?: boolean; sx: number; sy: number } | null = null;
+
+    const easeView = () => {
+      const d = view.targetScale - view.scale;
+      if (Math.abs(d) < 0.001) {
+        if (view.anchor) { view.scale = view.targetScale; view.anchor = null; }
+        return;
+      }
+      view.scale += d * 0.18;
+      if (view.anchor) {
+        view.x = view.anchor.sx - w / 2 - view.anchor.wx * view.scale;
+        view.y = view.anchor.sy - h / 2 - view.anchor.wy * view.scale;
+      }
+    };
 
     const resize = () => {
       const r = canvas.getBoundingClientRect();
@@ -2233,7 +2251,7 @@ const GoalsMapModal = memo(function GoalsMapModal({ goals, projects, actions, br
     };
 
     // paint frame one synchronously — the rAF loop takes over from there
-    const loop = () => { tick(); draw(); raf = requestAnimationFrame(loop); };
+    const loop = () => { tick(); easeView(); draw(); raf = requestAnimationFrame(loop); };
     tick(); draw();
     raf = requestAnimationFrame(loop);
 
@@ -2242,6 +2260,7 @@ const GoalsMapModal = memo(function GoalsMapModal({ goals, projects, actions, br
       const p = pos(e);
       const n = nodeAt(p.x, p.y);
       drag = n ? { node: n, sx: p.x, sy: p.y } : { panning: true, sx: p.x, sy: p.y };
+      if (drag.panning) view.anchor = null; // a pan takes over from any zoom glide
       if (n && n.kind !== "root") heatRef.current = 1; // grabbing reheats the sim
       canvas.setPointerCapture(e.pointerId);
     };
@@ -2296,11 +2315,10 @@ const GoalsMapModal = memo(function GoalsMapModal({ goals, projects, actions, br
       const r = canvas.getBoundingClientRect();
       const cx = e.clientX - r.left, cy = e.clientY - r.top;
       const before = toWorld(cx, cy);
-      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-      view.scale = Math.max(0.35, Math.min(2.8, view.scale * factor));
-      // keep the world point under the cursor fixed, so zoom goes where you point
-      view.x = cx - w / 2 - before.x * view.scale;
-      view.y = cy - h / 2 - before.y * view.scale;
+      const factor = e.deltaY < 0 ? 1.16 : 1 / 1.16;
+      // compound the TARGET so fast wheeling accumulates; the loop glides there
+      view.targetScale = Math.max(0.35, Math.min(2.8, view.targetScale * factor));
+      view.anchor = { sx: cx, sy: cy, wx: before.x, wy: before.y };
     };
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
