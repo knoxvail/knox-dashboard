@@ -1828,8 +1828,8 @@ const GoalsBanner = memo(function GoalsBanner({ goals, onOpen, panelStyle }: { g
 // props): the banner is the panhandle — its own thin grid row spanning the map
 // column and Today — and the map is the block hanging flush beneath its left
 // end, bridging the grid row gap with a negative top margin.
-const BANNER_PANHANDLE_STYLE: React.CSSProperties = { gridColumn: "2 / span 2", gridRow: 2, borderRadius: "6px 6px 6px 0" };
-const MAP_BLOCK_STYLE: React.CSSProperties = { gridColumn: 2, gridRow: 3, width: "100%", height: "calc(100% + 12px)", marginTop: -12, aspectRatio: "auto", borderRadius: "0 0 6px 6px", borderTop: "none" };
+const BANNER_PANHANDLE_STYLE: React.CSSProperties = { gridColumn: "1 / span 3", gridRow: 2, borderRadius: "6px 6px 0 6px" };
+const MAP_BLOCK_STYLE: React.CSSProperties = { gridColumn: 3, gridRow: 3, width: "100%", height: "calc(100% + 12px)", marginTop: -12, aspectRatio: "auto", borderRadius: "0 0 6px 6px", borderTop: "none" };
 
 // The always-on miniature of the map: same graph, same physics, drawn small
 // and auto-fitted in a board panel. No interactions of its own — the whole
@@ -4489,7 +4489,8 @@ function Dashboard() {
         // flat 4-col board (same proportions as the old 1fr/3fr[0.5fr 1fr]/1fr).
         // Only cols 1-2 split into rows, so Today takes space from Soren + Short
         // Term while Projects and email keep their full height.
-        gridTemplateColumns: "1fr 1fr 2fr 1fr",
+        // the wide track sits in the middle now: Up Next | Today (wide) | map
+        gridTemplateColumns: "1fr 2fr 1fr 1fr",
         // three rows: content, the thin banner strip (the panhandle), content.
         gridTemplateRows: "1.8fr auto 1.25fr",
         gap: 12,
@@ -4499,8 +4500,8 @@ function Dashboard() {
         zIndex: 1,
       }}>
 
-        {/* TODAY — the wide slot under the panhandle */}
-        <Panel style={{ gridColumn: 3, gridRow: 3, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "14px 16px 10px" }}>
+        {/* TODAY — the wide middle slot, between Up Next and the map */}
+        <Panel style={{ gridColumn: 2, gridRow: 3, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "14px 16px 10px" }}>
           <PanelHeader label="Today" right={
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
               {actions.length > 6 && (
