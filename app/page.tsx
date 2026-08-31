@@ -286,14 +286,16 @@ img{max-width:100%;height:auto;}table{max-width:100%!important;}blockquote{borde
 }
 
 function useClock() {
-  const [time, setTime] = useState({ h: "", m: "", s: "", date: "", day: "" });
+  const [time, setTime] = useState({ h: "", m: "", s: "", ampm: "", date: "", day: "" });
   useEffect(() => {
     const tick = () => {
       const now = new Date();
       setTime({
-        h: String(now.getHours()).padStart(2, "0"),
+        // 12-hour clock, no leading zero on the hour
+        h: String(now.getHours() % 12 || 12),
         m: String(now.getMinutes()).padStart(2, "0"),
         s: String(now.getSeconds()).padStart(2, "0"),
+        ampm: now.getHours() < 12 ? "AM" : "PM",
         date: now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }),
         day: now.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase(),
       });
@@ -4503,6 +4505,7 @@ function Dashboard() {
           <span>{clock.m}</span>
           <span style={{ color: "#303030", fontWeight: 200 }}>:</span>
           <span style={{ color: "#484848", fontSize: "0.45em", alignSelf: "flex-end", paddingBottom: "0.2em" }}>{clock.s}</span>
+          <span style={{ color: "#484848", fontSize: "0.28em", alignSelf: "flex-end", paddingBottom: "0.32em", letterSpacing: "0.1em" }}>{clock.ampm}</span>
         </div>
       </div>
 
