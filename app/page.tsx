@@ -1486,9 +1486,15 @@ function NotesEditor({ value, onSave }: { value: string; onSave: (v: string) => 
 // is still readable, and the check toggles back off. compact = two-row board.
 // Deliberately spare: number, title, footer. The why-note and the link chips
 // live inside the plan window.
-function ActionCard({ action, index, onOpen, onToggleDone, onReorder, compact = false }: {
+// how many sixths of a Today row one card takes, so any count (one to six)
+// tiles the panel with no hole: 1→6, 2→3, 3→2, 4→3 (two by two),
+// 5→2 for the top three and 3 for the bottom pair, 6→2.
+const todaySpan = (n: number, i: number) =>
+  n <= 3 ? 6 / n : n === 4 ? 3 : n === 5 ? (i < 3 ? 2 : 3) : 2;
+
+function ActionCard({ action, index, onOpen, onToggleDone, onReorder, compact = false, span }: {
   action: ActionItem; index: number; onOpen: () => void; onToggleDone: (done: boolean) => void;
-  onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => void; compact?: boolean;
+  onReorder?: (draggedId: string, targetId: string, placeBefore: boolean) => void; compact?: boolean; span?: number;
 }) {
   const [hover, setHover] = useState(false);
   const [overSide, setOverSide] = useState<null | "left" | "right">(null); // reorder drop indicator
@@ -1527,6 +1533,7 @@ function ActionCard({ action, index, onOpen, onToggleDone, onReorder, compact = 
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       className="reveal-row"
       style={{
+        gridColumn: span ? `span ${span}` : undefined,
         display: "flex", flexDirection: "column", gap: compact ? 3 : 6, minWidth: 0, cursor: "pointer",
         // bounded by the grid row; the title is the part that gives when it's tight
         minHeight: 0, overflow: "hidden",
@@ -4589,16 +4596,20 @@ function Dashboard() {
                 </p>
               </div>
             ) : (
-              // three across in the wide slot. Rows grow to their content so
-              // titles always read in full; the panel scrolls if six long
-              // ones outgrow it.
+              // the cards split the whole panel between them, whatever the
+              // count. Six-column base so one, two, or three per row divides
+              // evenly (todaySpan hands out the widths; five goes three up,
+              // two down). minHeight 100% leaves the spare height for the
+              // default align-content stretch to share among the rows, and
+              // rows still grow past the even split when a long title needs
+              // it, with the panel scrolling if all of them outgrow it.
               <div style={{
-                display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
-                gridAutoRows: "minmax(84px, auto)",
+                display: "grid", gridTemplateColumns: "repeat(6, 1fr)",
+                gridAutoRows: "minmax(84px, auto)", minHeight: "100%",
                 gap: 8, alignItems: "stretch",
               }}>
                 {todayShown.map((a, i) => (
-                  <ActionCard key={a.id} action={a} index={i} compact={todayShown.length > 2} onOpen={() => setOpenActionId(a.id)} onToggleDone={(d) => toggleActionDone(a.id, d)} onReorder={reorderActions} />
+                  <ActionCard key={a.id} action={a} index={i} span={todaySpan(todayShown.length, i)} compact={todayShown.length > 2} onOpen={() => setOpenActionId(a.id)} onToggleDone={(d) => toggleActionDone(a.id, d)} onReorder={reorderActions} />
                 ))}
               </div>
             )}
