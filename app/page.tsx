@@ -3028,6 +3028,291 @@ function htmlToText(html: string): string {
 const isTextField = (el: Element | null): boolean =>
   !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
 
+// A compact live snapshot of the board that rides along with every ask-box
+// question, so answers know what's actually on the plate right now. Same
+// Notion state the morning Cowork run works from, read at ask time.
+function buildBoardDigest(args: {
+  actions: ActionItem[]; shortTerm: Project[]; longTerm: Project[];
+  clients: Task[]; goals: Goal[]; brief: string; events: Event[];
+}): string {
+  const t = (s: string, n = 90) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+  const lines: string[] = [];
+  if (args.actions.length) {
+    lines.push("TODAY:");
+    args.actions.slice(0, 6).forEach((a, i) => lines.push(`${i + 1}. ${t(a.title)}${a.done ? " (done)" : ""}`));
+  }
+  const high = args.shortTerm.filter(p => p.priority);
+  const rest = args.shortTerm.filter(p => !p.priority);
+  if (high.length) lines.push("HIGH PRIORITY: " + high.slice(0, 8).map(p => t(p.title, 60)).join("; "));
+  if (rest.length) lines.push("SHORT TERM: " + rest.slice(0, 12).map(p => t(p.title, 60)).join("; "));
+  if (args.longTerm.length) {
+    lines.push("PROJECTS:");
+    args.longTerm.slice(0, 10).forEach(p => {
+      const done = p.items.filter(i => i.checked).length;
+      lines.push(`- ${t(p.title, 70)}${p.items.length ? ` (${done}/${p.items.length} checked)` : ""}`);
+    });
+  }
+  if (args.clients.length) lines.push("CLIENTS: " + args.clients.slice(0, 10).map(c => t(c.title, 50)).join("; "));
+  if (args.goals.length) {
+    lines.push("BIG GOALS:");
+    args.goals.forEach(g => lines.push(`- ${t(g.title, 60)}: ${g.percent}%${g.notes ? ` (${t(g.notes, 110)})` : ""}`));
+  }
+  if (args.brief) lines.push("HOW IT FITS TOGETHER: " + t(args.brief, 400));
+  if (args.events.length) {
+    lines.push("SCHEDULE:");
+    args.events.slice(0, 8).forEach(e => lines.push(`- ${e.displayDate}${e.displayTime ? " " + e.displayTime : ""}: ${t(e.title, 60)} (${e.type})`));
+  }
+  return lines.join("\n").slice(0, 5500);
+}
+
+type AskMessage = { role: "user" | "claude"; text: string };
+
+// The ask box: a small always-there spark button, bottom right, that opens a
+// chat panel wired to /api/ask. The key comes from the server env when
+// deployed; failing that Knox pastes one once and it stays in localStorage.
+const AskClaude = memo(function AskClaude({ digestRef }: { digestRef: React.MutableRefObject<string> }) {
+  const [open, setOpen] = useState(false);
+  const [msgs, setMsgs] = useState<AskMessage[]>(() => {
+    try { return JSON.parse(sessionStorage.getItem("knox-ask-chat") || "[]"); } catch { return []; }
+  });
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [needKey, setNeedKey] = useState<null | "no_key" | "bad_key">(null);
+  const [keyDraft, setKeyDraft] = useState("");
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    try { sessionStorage.setItem("knox-ask-chat", JSON.stringify(msgs.slice(-40))); } catch {}
+    const sc = scrollRef.current;
+    if (sc) sc.scrollTop = sc.scrollHeight;
+  }, [msgs]);
+
+  useEffect(() => {
+    if (open) taRef.current?.focus();
+  }, [open]);
+
+  // click anywhere off the panel closes it
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const tgt = e.target as Node;
+      if (panelRef.current?.contains(tgt) || btnRef.current?.contains(tgt)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const send = async () => {
+    const q = input.trim();
+    if (!q || busy) return;
+    setInput("");
+    setBusy(true);
+    setNeedKey(null);
+    const base = [...msgs, { role: "user" as const, text: q }];
+    setMsgs([...base, { role: "claude", text: "" }]);
+    const appendLast = (chunk: string) => setMsgs(prev => {
+      const next = prev.slice();
+      const last = next[next.length - 1];
+      if (last?.role === "claude") next[next.length - 1] = { ...last, text: last.text + chunk };
+      return next;
+    });
+    try {
+      let storedKey = "";
+      try { storedKey = localStorage.getItem("knox-ask-key") || ""; } catch {}
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(storedKey ? { "x-ask-key": storedKey } : {}) },
+        body: JSON.stringify({
+          messages: base.slice(-20).map(m => ({ role: m.role === "claude" ? "assistant" : "user", content: m.text })),
+          digest: digestRef.current,
+        }),
+      });
+      if (!res.ok) {
+        let err = "";
+        try { err = (await res.json())?.error || ""; } catch {}
+        if (err === "no_key" || err === "bad_key") {
+          setNeedKey(err);
+          setMsgs(base); // drop the empty slot; the question stays for retry after the key lands
+        } else {
+          appendLast(res.status === 429 ? "Rate limited, give it a few seconds." : "That didn't go through. Try again.");
+        }
+      } else if (res.body) {
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        for (let r = await reader.read(); !r.done; r = await reader.read()) appendLast(dec.decode(r.value, { stream: true }));
+      }
+    } catch {
+      appendLast("That didn't go through. Try again.");
+    } finally {
+      setBusy(false);
+      taRef.current?.focus();
+    }
+  };
+
+  const saveKey = () => {
+    const k = keyDraft.trim();
+    if (!k) return;
+    try { localStorage.setItem("knox-ask-key", k); } catch {}
+    setKeyDraft("");
+    setNeedKey(null);
+    taRef.current?.focus();
+  };
+
+  const mono = "'JetBrains Mono', monospace";
+  return (
+    <>
+      <button
+        ref={btnRef}
+        aria-label={open ? "Close the ask box" : "Ask Claude"}
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+        style={{
+          position: "fixed", right: 18, bottom: 18, width: 38, height: 38, zIndex: 9700,
+          borderRadius: 19, background: open ? "#1c1c1c" : "#141414", cursor: "pointer",
+          border: `1px solid ${open ? "#5a5a5a" : "#2f2f2f"}`, color: "#b8b8b8",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          transition: "border-color 0.15s, background 0.15s",
+        }}
+        onMouseEnter={e => (e.currentTarget.style.borderColor = "#6a6a6a")}
+        onMouseLeave={e => (e.currentTarget.style.borderColor = open ? "#5a5a5a" : "#2f2f2f")}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden>
+          <path d="M12 2 L14.5 9.5 L22 12 L14.5 14.5 L12 22 L9.5 14.5 L2 12 L9.5 9.5 Z" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          ref={panelRef}
+          role="dialog"
+          aria-label="Ask Claude"
+          onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
+          style={{
+            position: "fixed", right: 18, bottom: 64, zIndex: 9700,
+            width: "min(420px, calc(100vw - 36px))", height: "min(540px, 72vh)",
+            display: "flex", flexDirection: "column",
+            background: "#121212", border: "1px solid #2a2a2a", borderRadius: 6,
+            boxShadow: "0 16px 48px rgba(0,0,0,0.6)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", borderBottom: "1px solid #222" }}>
+            <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.2em", color: "#808080" }}>ASK</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button
+                onClick={() => { setNeedKey(k => (k ? null : "no_key")); }}
+                aria-label="Set the API key"
+                style={{ background: "none", border: "none", cursor: "pointer", color: "#5f5f5f", fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", padding: 2 }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+                onMouseLeave={e => (e.currentTarget.style.color = "#5f5f5f")}
+              >KEY</button>
+              {msgs.length > 0 && (
+                <button
+                  onClick={() => setMsgs([])}
+                  aria-label="Clear the conversation"
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#5f5f5f", fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", padding: 2 }}
+                  onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+                  onMouseLeave={e => (e.currentTarget.style.color = "#5f5f5f")}
+                >CLEAR</button>
+              )}
+              <button
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+                style={{ background: "none", border: "none", cursor: "pointer", color: "#808080", fontSize: 14, lineHeight: 1, padding: 2 }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#ddd")}
+                onMouseLeave={e => (e.currentTarget.style.color = "#808080")}
+              >×</button>
+            </div>
+          </div>
+
+          <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: 12, display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
+            {msgs.length === 0 && (
+              <p style={{ color: "#5f5f5f", fontSize: 11.5, lineHeight: 1.6, margin: "auto", textAlign: "center", padding: "0 20px" }}>
+                Ask anything. It can see the board: today, projects, goals, schedule.
+              </p>
+            )}
+            {msgs.map((m, i) => m.role === "user" ? (
+              <div key={i} style={{ alignSelf: "flex-end", maxWidth: "85%", background: "rgba(255,255,255,0.05)", border: "1px solid #2e2e2e", borderRadius: 5, padding: "6px 10px", color: "#cfcfcf", fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                {m.text}
+              </div>
+            ) : (
+              <div key={i} style={{ alignSelf: "stretch", color: "#d6d6d6", fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                {m.text || (busy && i === msgs.length - 1 ? "…" : "")}
+              </div>
+            ))}
+          </div>
+
+          {needKey && (
+            <div style={{ borderTop: "1px solid #222", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 7 }}>
+              <span style={{ fontFamily: mono, fontSize: 9.5, letterSpacing: "0.08em", color: needKey === "bad_key" ? "#d08a8a" : "#808080", lineHeight: 1.5 }}>
+                {needKey === "bad_key" ? "THAT KEY WAS REJECTED. PASTE A GOOD ONE." : "PASTE AN ANTHROPIC API KEY. IT STAYS IN THIS BROWSER ONLY."}
+              </span>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  type="password"
+                  value={keyDraft}
+                  onChange={e => setKeyDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") saveKey(); }}
+                  placeholder="sk-ant-…"
+                  aria-label="Anthropic API key"
+                  style={{ flex: 1, background: "#0f0f0f", border: "1px solid #262626", borderRadius: 4, color: "#ddd", fontSize: 11.5, fontFamily: mono, padding: "6px 9px", outline: "none" }}
+                />
+                <button
+                  onClick={saveKey}
+                  style={{ background: "#1e1e1e", border: "1px solid #505050", borderRadius: 4, color: "#ccc", fontFamily: mono, fontSize: 9.5, letterSpacing: "0.1em", padding: "0 12px", cursor: "pointer" }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = "#8a8a8a")}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = "#505050")}
+                >SAVE</button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ borderTop: "1px solid #222", padding: "10px 12px 7px" }}>
+            <div style={{ display: "flex", gap: 7, alignItems: "flex-end" }}>
+              <textarea
+                ref={taRef}
+                value={input}
+                rows={Math.min(4, Math.max(1, input.split("\n").length))}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+                  if (e.key === "Escape") setOpen(false);
+                }}
+                placeholder="Ask anything…"
+                aria-label="Your question"
+                style={{ flex: 1, background: "#0f0f0f", border: "1px solid #262626", borderRadius: 4, color: "#ddd", fontSize: 12.5, lineHeight: 1.5, padding: "7px 10px", resize: "none", outline: "none", fontFamily: "inherit" }}
+              />
+              <button
+                onClick={send}
+                disabled={busy || !input.trim()}
+                aria-label="Send"
+                style={{
+                  width: 30, height: 30, flexShrink: 0, borderRadius: 4,
+                  background: busy || !input.trim() ? "#161616" : "#1e1e1e",
+                  border: `1px solid ${busy || !input.trim() ? "#262626" : "#505050"}`,
+                  color: busy || !input.trim() ? "#4a4a4a" : "#ccc",
+                  cursor: busy || !input.trim() ? "default" : "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", transition: "border-color 0.15s, color 0.15s",
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M12 19V5M5 12l7-7 7 7" />
+                </svg>
+              </button>
+            </div>
+            <div style={{ textAlign: "center", paddingTop: 6, fontFamily: mono, fontSize: 8, letterSpacing: "0.22em", color: "#454545" }}>
+              POWERED BY CLAUDE
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+});
+
 function Dashboard() {
   const clock = useClock();
   const [shortTerm, setShortTerm] = useState<Project[]>([]);
@@ -3050,6 +3335,8 @@ function Dashboard() {
   const [sorenConnected, setSorenConnected] = useState(false);
   const [events, setEvents] = useState<Event[]>([]);
   const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ connected: false });
+  // live board snapshot for the ask box, rebuilt when board data changes
+  const askDigestRef = useRef("");
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [showPlaylists, setShowPlaylists] = useState(false);
   const [volume, setVolume] = useState(50);
@@ -3062,6 +3349,10 @@ function Dashboard() {
   const [progressOpen, setProgressOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [openEmail, setOpenEmail] = useState<{ source: "gmail" | "zoho"; email: Email } | null>(null);
+
+  useEffect(() => {
+    askDigestRef.current = buildBoardDigest({ actions, shortTerm, longTerm, clients, goals, brief, events });
+  }, [actions, shortTerm, longTerm, clients, goals, brief, events]);
   const [hover, setHover] = useState<{ id: string; rect: DOMRect } | null>(null);
   const [toasts, setToasts] = useState<{ id: number; msg: string; undo?: () => void; actionLabel?: string }[]>([]);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
@@ -5067,6 +5358,8 @@ function Dashboard() {
       {openEmail && (
         <EmailReader source={openEmail.source} email={openEmail.email} onClose={() => setOpenEmail(null)} />
       )}
+
+      <AskClaude digestRef={askDigestRef} />
 
       {/* theme tint: one color-blend layer re-hues the whole monochrome board.
           Portaled last into body so it also covers every portaled modal/toast. */}
