@@ -101,6 +101,12 @@ from the answer). Knox asks from the column's input and reads Blake's answers
 (with his files) in the row's window; Blake's page shows a B side (his asks,
 and Knox's answers to them) and a K side (Knox's asks with an answer box).
 
+Files on Blake rows are links, not Notion uploads: the browser puts the
+file straight into the project's Vercel Blob store (public, permanent URL,
+no practical size cap) and the dashboard attaches it to the page as an
+external file or image block. Removing a file from the shelf deletes the
+blob too; the weekly sweep only archives pages and leaves blobs alone.
+
 One Blake row is not a task at all: "Files from Knox" (`Type = "Files"`).
 Its child blocks are files Knox drops on the Blake column, and Blake's page
 shows them under From Knox. Leave it alone too. A Vercel cron hits

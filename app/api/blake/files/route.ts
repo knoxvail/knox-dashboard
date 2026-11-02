@@ -1,3 +1,4 @@
+import { del } from "@vercel/blob";
 import { NOTION, json, preflight, notionHeaders, getFilesHolder, listFiles, listPageFiles } from "../shared";
 
 // Files Knox dropped for Blake: the child blocks of the "Files from Knox"
@@ -33,8 +34,19 @@ export async function POST(req: Request) {
   try { body = await req.json(); } catch { return json(req, { error: "bad json" }, 400); }
   if (body?.action !== "remove" || !body.id) return json(req, { error: "unknown action" }, 400);
   try {
-    const r = await fetch(`${NOTION}/blocks/${String(body.id)}`, { method: "DELETE", headers: notionHeaders(token) });
+    const id = String(body.id);
+    // a file that lives in the Blob store goes with its block
+    let blobUrl = "";
+    try {
+      const b = await fetch(`${NOTION}/blocks/${id}`, { headers: notionHeaders(token), cache: "no-store" }).then((x) => x.json());
+      const ext = b?.[b?.type]?.external?.url || "";
+      if (/vercel-storage\.com$/i.test(new URL(ext).hostname)) blobUrl = ext;
+    } catch {}
+    const r = await fetch(`${NOTION}/blocks/${id}`, { method: "DELETE", headers: notionHeaders(token) });
     if (!r.ok) return json(req, { error: (await r.json())?.message || "notion" }, r.status);
+    if (blobUrl && process.env.BLOB_READ_WRITE_TOKEN) {
+      try { await del(blobUrl); } catch (e) { console.error("blob del", e); }
+    }
     return json(req, { ok: true });
   } catch (e) {
     console.error("blake files POST", e);

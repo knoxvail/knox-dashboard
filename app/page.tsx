@@ -3073,7 +3073,28 @@ function buildBoardDigest(args: {
   return lines.join("\n").slice(0, 5500);
 }
 
-// photos run big; squeeze images under the 4 MB function limit before upload
+// A file for Blake goes straight from the browser to the Blob store (no size
+// squeeze through a function), then Notion gets a permanent link to it:
+// on the loose shelf (target "files"), on an ask page, or under the answer
+// heading of an ask (section "response").
+async function sendFileForBlake(file: File, where: { target?: "files"; pageId?: string; section?: "response"; by?: "B" | "K" }): Promise<void> {
+  const f = await shrinkImageFile(file);
+  const { upload } = await import("@vercel/blob/client");
+  const blob = await upload(`blake/${f.name}`, f, {
+    access: "public",
+    handleUploadUrl: "/api/blake/blob",
+    multipart: f.size > 8 * 1024 * 1024,
+    contentType: f.type || "application/octet-stream",
+  });
+  const r = await fetch("/api/blake/attach", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: blob.url, name: f.name, contentType: f.type || "", ...where }),
+  });
+  if (!r.ok) throw new Error("attach");
+}
+
+// photos run big; shrinking them keeps the store and transfer allowance sane
 async function shrinkImageFile(file: File): Promise<File> {
   if (!/^image\//.test(file.type) || file.size <= 1.5 * 1024 * 1024) return file;
   try {
@@ -3719,13 +3740,7 @@ function Dashboard() {
     for (let i = 0; i < files.length; i++) {
       setBlakeSending({ done: i, total: files.length });
       try {
-        const f = await shrinkImageFile(files[i]);
-        if (f.size > 4 * 1024 * 1024) { failed.push(`${f.name} (over 4 MB)`); continue; }
-        const fd = new FormData();
-        fd.append("target", "files");
-        fd.append("file", f, f.name);
-        const r = await fetch("/api/blake/upload", { method: "POST", body: fd });
-        if (!r.ok) throw new Error();
+        await sendFileForBlake(files[i], { target: "files" });
         sent++;
         setBlakeFileCount(c => c + 1);
       } catch {
@@ -3749,16 +3764,8 @@ function Dashboard() {
       if (!r.ok) throw new Error();
       const failed: string[] = [];
       for (const file of files) {
-        try {
-          const f = await shrinkImageFile(file);
-          if (f.size > 4 * 1024 * 1024) { failed.push(`${f.name} (over 4 MB)`); continue; }
-          const fd = new FormData();
-          fd.append("pageId", id);
-          fd.append("section", "response");
-          fd.append("file", f, f.name);
-          const u = await fetch("/api/blake/upload", { method: "POST", body: fd });
-          if (!u.ok) throw new Error();
-        } catch { failed.push(file.name); }
+        try { await sendFileForBlake(file, { pageId: id, section: "response", by: "K" }); }
+        catch { failed.push(file.name); }
       }
       setBlakeReply(null);
       toast(justCheck ? "Checked off for Blake" : files.length - failed.length > 0 ? `Replied to Blake with ${files.length - failed.length} file${files.length - failed.length === 1 ? "" : "s"}` : "Replied to Blake");
@@ -3795,16 +3802,8 @@ function Dashboard() {
     let sent = 0;
     const failed: string[] = [];
     for (const file of files) {
-      try {
-        const f = await shrinkImageFile(file);
-        if (f.size > 4 * 1024 * 1024) { failed.push(`${f.name} (over 4 MB)`); continue; }
-        const fd = new FormData();
-        fd.append("pageId", id);
-        fd.append("file", f, f.name);
-        const r = await fetch("/api/blake/upload", { method: "POST", body: fd });
-        if (!r.ok) throw new Error();
-        sent++;
-      } catch { failed.push(file.name); }
+      try { await sendFileForBlake(file, { pageId: id }); sent++; }
+      catch { failed.push(file.name); }
     }
     if (sent) toast(`Attached ${sent} file${sent === 1 ? "" : "s"} to your ask`);
     if (failed.length) toast(`Couldn't attach ${failed.join(", ")}`);
