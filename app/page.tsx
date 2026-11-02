@@ -17,6 +17,8 @@ type ActionItem = { id: string; title: string; notes?: string; plan?: string; li
 // A big goal (Notion row, Type = "Goal"): Percent 0–100 plus a one-line "how
 // it's going" in Notes. Maintained by the morning routine, nudgeable by hand.
 type Goal = { id: string; title: string; notes?: string; percent: number; order?: number | null };
+// one of Blake's items (Dashboard = "Blake" in the tasks DB), added from his app
+type BlakeItem = { id: string; title: string; notes?: string; done: boolean; created?: string };
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
 type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string; editDate?: string; editTime?: string };
@@ -3033,7 +3035,7 @@ const isTextField = (el: Element | null): boolean =>
 // Notion state the morning Cowork run works from, read at ask time.
 function buildBoardDigest(args: {
   actions: ActionItem[]; shortTerm: Project[]; longTerm: Project[];
-  clients: Task[]; goals: Goal[]; brief: string; events: Event[];
+  clients: Task[]; goals: Goal[]; brief: string; events: Event[]; blake?: BlakeItem[];
 }): string {
   const t = (s: string, n = 90) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
   const lines: string[] = [];
@@ -3058,12 +3060,81 @@ function buildBoardDigest(args: {
     args.goals.forEach(g => lines.push(`- ${t(g.title, 60)}: ${g.percent}%${g.notes ? ` (${t(g.notes, 110)})` : ""}`));
   }
   if (args.brief) lines.push("HOW IT FITS TOGETHER: " + t(args.brief, 400));
+  const blakeOpen = (args.blake || []).filter(b => !b.done);
+  if (blakeOpen.length) lines.push("BLAKE'S LIST (things his dad Blake asked for): " + blakeOpen.slice(0, 10).map(b => t(b.title, 60)).join("; "));
   if (args.events.length) {
     lines.push("SCHEDULE:");
     args.events.slice(0, 8).forEach(e => lines.push(`- ${e.displayDate}${e.displayTime ? " " + e.displayTime : ""}: ${t(e.title, 60)} (${e.type})`));
   }
   return lines.join("\n").slice(0, 5500);
 }
+
+// Blake's list on the board: a narrow read-mostly column. He adds and removes
+// from his own app; here Knox can check things off and clear the finished.
+const BlakePanel = memo(function BlakePanel({ items, loading, onToggle, onClearDone }: {
+  items: BlakeItem[]; loading: boolean; onToggle: (id: string, done: boolean) => void; onClearDone: () => void;
+}) {
+  const open = items.filter(i => !i.done);
+  const done = items.filter(i => i.done);
+  const mono = "'JetBrains Mono', monospace";
+  return (
+    <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "18px 14px 12px" }}>
+      <PanelHeader label="Blake" right={
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          {done.length > 0 && (
+            <button
+              onClick={onClearDone}
+              aria-label="Clear the finished items"
+              style={{ background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#5f5f5f" }}
+              onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+              onMouseLeave={e => (e.currentTarget.style.color = "#5f5f5f")}
+            >CLEAR</button>
+          )}
+          <span style={{ fontFamily: mono, fontSize: 10, color: "#808080" }}>{open.length}</span>
+        </div>
+      } />
+      <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none", minHeight: 0, display: "flex", flexDirection: "column", gap: 7 }}>
+        {loading ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="skeleton" style={{ borderLeft: "1px solid #2a2a2a", paddingLeft: 9 }}>
+              <div style={{ height: 9, background: "#1e1e1e", borderRadius: 2, width: `${80 - i * 14}%` }} />
+            </div>
+          ))
+        ) : items.length === 0 ? (
+          <p style={{ margin: 0, color: "#808080", fontSize: 11, fontStyle: "italic", lineHeight: 1.5 }}>Nothing from Blake yet.</p>
+        ) : [...open, ...done].map(i => (
+          <div key={i.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, borderLeft: `1px solid ${i.done ? "#242424" : "#2a2a2a"}`, paddingLeft: 9, opacity: i.done ? 0.55 : 1, transition: "opacity 0.15s" }}>
+            <button
+              onClick={() => onToggle(i.id, !i.done)}
+              aria-label={i.done ? "Reopen this item" : "Mark done"}
+              aria-pressed={i.done}
+              style={{
+                width: 14, height: 14, flexShrink: 0, marginTop: 2, borderRadius: 3, padding: 0, cursor: "pointer",
+                background: i.done ? "#20301f" : "#161616", border: `1px solid ${i.done ? "#3f6f4a" : "#505050"}`,
+                color: "#7bd88f", display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              {i.done && (
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </button>
+            <span title={i.notes || undefined} style={{ fontSize: 12, lineHeight: 1.4, color: i.done ? "#7a7a7a" : "#d0d0d0", textDecoration: i.done ? "line-through" : "none", overflowWrap: "anywhere" }}>
+              {i.title}
+            </span>
+          </div>
+        ))}
+      </div>
+      <a
+        href="https://kmvtesting.vercel.app/blake/" target="_blank" rel="noopener noreferrer"
+        style={{ marginTop: 10, alignSelf: "flex-start", fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#5f5f5f", textDecoration: "none" }}
+        onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+        onMouseLeave={e => (e.currentTarget.style.color = "#5f5f5f")}
+      >OPEN APP ↗</a>
+    </Panel>
+  );
+});
 
 type AskMessage = { role: "user" | "claude"; text: string };
 
@@ -3321,6 +3392,7 @@ function Dashboard() {
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [brief, setBrief] = useState("");
+  const [blakeItems, setBlakeItems] = useState<BlakeItem[]>([]);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [verse, setVerse] = useState<Verse | null>(null);
   const [allVerses, setAllVerses] = useState<Verse[]>([]);
@@ -3351,8 +3423,8 @@ function Dashboard() {
   const [openEmail, setOpenEmail] = useState<{ source: "gmail" | "zoho"; email: Email } | null>(null);
 
   useEffect(() => {
-    askDigestRef.current = buildBoardDigest({ actions, shortTerm, longTerm, clients, goals, brief, events });
-  }, [actions, shortTerm, longTerm, clients, goals, brief, events]);
+    askDigestRef.current = buildBoardDigest({ actions, shortTerm, longTerm, clients, goals, brief, events, blake: blakeItems });
+  }, [actions, shortTerm, longTerm, clients, goals, brief, events, blakeItems]);
   const [hover, setHover] = useState<{ id: string; rect: DOMRect } | null>(null);
   const [toasts, setToasts] = useState<{ id: number; msg: string; undo?: () => void; actionLabel?: string }[]>([]);
   const spotifyInterval = useRef<NodeJS.Timeout | null>(null);
@@ -3378,6 +3450,38 @@ function Dashboard() {
     undoStack.current.push({ label, run });
     if (undoStack.current.length > 40) undoStack.current.shift();
   }, []);
+
+  // Blake's list: check off (undoable) and clear the finished ones
+  const toggleBlake = useCallback(async (id: string, done: boolean) => {
+    const prev = blakeItems;
+    setBlakeItems(prev.map(i => (i.id === id ? { ...i, done } : i)));
+    try {
+      const r = await fetch("/api/blake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "toggle", id, done }) });
+      if (!r.ok) throw new Error();
+      pushUndo(done ? "finish Blake item" : "reopen Blake item", async () => {
+        setBlakeItems(items => items.map(i => (i.id === id ? { ...i, done: !done } : i)));
+        await fetch("/api/blake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "toggle", id, done: !done }) });
+      });
+    } catch {
+      setBlakeItems(prev);
+      toast("Couldn't update Blake's item");
+    }
+  }, [blakeItems, pushUndo, toast]);
+
+  const clearBlakeDone = useCallback(async () => {
+    const prev = blakeItems;
+    const n = prev.filter(i => i.done).length;
+    if (!n) return;
+    setBlakeItems(prev.filter(i => !i.done));
+    try {
+      const r = await fetch("/api/blake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "clearDone" }) });
+      if (!r.ok) throw new Error();
+      toast(`Cleared ${n} from Blake's list`);
+    } catch {
+      setBlakeItems(prev);
+      toast("Couldn't clear Blake's list");
+    }
+  }, [blakeItems, toast]);
   const undoLast = useCallback(async () => {
     const item = undoStack.current.pop();
     if (!item) { toast("Nothing to undo"); return; }
@@ -3420,6 +3524,7 @@ function Dashboard() {
       setActions((data.actions || []).slice().sort(byOrder));
       setGoals(data.goals || []);
       setBrief(data.brief || "");
+      setBlakeItems(data.blake || []);
     } catch {}
   }, []);
 
@@ -4907,9 +5012,10 @@ function Dashboard() {
           </div>
         </Panel>
 
-        {/* Top row runs its OWN two-column grid, decoupled from the bottom
-            tracks — so Today's wide middle track below can't squeeze Projects */}
-        <div style={{ gridColumn: "1 / span 3", gridRow: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, minHeight: 0, minWidth: 0 }}>
+        {/* Top row runs its OWN grid, decoupled from the bottom tracks — so
+            Today's wide middle track below can't squeeze Projects. Blake's
+            narrow column in the middle is carved out of both neighbors. */}
+        <div style={{ gridColumn: "1 / span 3", gridRow: 1, display: "grid", gridTemplateColumns: "1fr 0.42fr 1fr", gap: 12, minHeight: 0, minWidth: 0 }}>
           {/* High Priority + Short Term, left half */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
             {/* HIGH PRIORITY — same darkness as the other panels, framed in a
@@ -4977,6 +5083,9 @@ function Dashboard() {
               <AddTaskInput ref={shortAddRef} onAdd={(title) => addTask(title, "Short Term")} />
             </Panel>
           </div>
+
+          {/* Blake's list, the narrow middle column */}
+          <BlakePanel items={blakeItems} loading={loading} onToggle={toggleBlake} onClearDone={clearBlakeDone} />
 
           {/* Projects, right half — full width again */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
