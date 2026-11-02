@@ -1,7 +1,9 @@
-import { NOTION, json, preflight, notionHeaders, getFilesHolder, listFiles } from "../shared";
+import { NOTION, json, preflight, notionHeaders, getFilesHolder, listFiles, listPageFiles } from "../shared";
 
 // Files Knox dropped for Blake: the child blocks of the "Files from Knox"
 // holder page. GET lists them (fresh signed URLs each time), POST removes one.
+// GET ?page=<id> instead lists one request page's files, split into what
+// Blake attached and what Knox sent back.
 
 export const revalidate = 0;
 
@@ -14,6 +16,8 @@ export async function GET(req: Request) {
   const dbId = process.env.NOTION_DB_ID;
   if (!token || !dbId) return json(req, { error: "not configured" }, 500);
   try {
+    const page = new URL(req.url).searchParams.get("page");
+    if (page) return json(req, await listPageFiles(token, page));
     const holder = await getFilesHolder(token, dbId, false);
     return json(req, { files: holder ? await listFiles(token, holder) : [] });
   } catch (e) {

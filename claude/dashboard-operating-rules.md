@@ -91,6 +91,16 @@ narrow Blake column and Knox checks them off there. Status Short Term /
 Complete is the open/done switch for them. The routine never picks, tags,
 renames, moves, or clears a Blake row.
 
+Blake rows are a two-way ask system. `Side` (select, created on first use)
+says who asked: B = Blake asked Knox, K = Knox asked Blake. The asker's title,
+details, and files live on the row and in its page body. The other side
+answers with a bare check (Status Complete), a written reply (the `Response`
+text property), or files sent back (appended under a "From Knox" or "From
+Blake" heading in the page body, which is how the API tells the asker's files
+from the answer). Knox asks from the column's input and reads Blake's answers
+(with his files) in the row's window; Blake's page shows a B side (his asks,
+and Knox's answers to them) and a K side (Knox's asks with an answer box).
+
 One Blake row is not a task at all: "Files from Knox" (`Type = "Files"`).
 Its child blocks are files Knox drops on the Blake column, and Blake's page
 shows them under From Knox. Leave it alone too. A Vercel cron hits

@@ -17,8 +17,10 @@ type ActionItem = { id: string; title: string; notes?: string; plan?: string; li
 // A big goal (Notion row, Type = "Goal"): Percent 0–100 plus a one-line "how
 // it's going" in Notes. Maintained by the morning routine, nudgeable by hand.
 type Goal = { id: string; title: string; notes?: string; percent: number; order?: number | null };
-// one of Blake's items (Dashboard = "Blake" in the tasks DB), added from his app
-type BlakeItem = { id: string; title: string; notes?: string; done: boolean; created?: string };
+// one of Blake's requests (Dashboard = "Blake" in the tasks DB), added from his
+// app; `response` is Knox's written reply, kept in the row's Response property
+type BlakeItem = { id: string; title: string; notes?: string; done: boolean; response?: string; side?: "B" | "K"; created?: string };
+type BlakeFile = { id: string; name: string; url: string; kind: "image" | "file"; created?: string };
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
 type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string; editDate?: string; editTime?: string };
@@ -3060,8 +3062,10 @@ function buildBoardDigest(args: {
     args.goals.forEach(g => lines.push(`- ${t(g.title, 60)}: ${g.percent}%${g.notes ? ` (${t(g.notes, 110)})` : ""}`));
   }
   if (args.brief) lines.push("HOW IT FITS TOGETHER: " + t(args.brief, 400));
-  const blakeOpen = (args.blake || []).filter(b => !b.done);
-  if (blakeOpen.length) lines.push("BLAKE'S LIST (things his dad Blake asked for): " + blakeOpen.slice(0, 10).map(b => t(b.title, 60)).join("; "));
+  const blakeAsks = (args.blake || []).filter(b => !b.done && b.side !== "K");
+  const knoxAsks = (args.blake || []).filter(b => !b.done && b.side === "K");
+  if (blakeAsks.length) lines.push("BLAKE (his dad) ASKED KNOX FOR: " + blakeAsks.slice(0, 10).map(b => t(b.title, 60)).join("; "));
+  if (knoxAsks.length) lines.push("KNOX IS WAITING ON BLAKE FOR: " + knoxAsks.slice(0, 10).map(b => t(b.title, 60)).join("; "));
   if (args.events.length) {
     lines.push("SCHEDULE:");
     args.events.slice(0, 8).forEach(e => lines.push(`- ${e.displayDate}${e.displayTime ? " " + e.displayTime : ""}: ${t(e.title, 60)} (${e.type})`));
@@ -3088,11 +3092,13 @@ async function shrinkImageFile(file: File): Promise<File> {
 // Blake's list on the board: a narrow read-mostly column. He adds and removes
 // from his own app; here Knox can check things off, clear the finished, and
 // drop files anywhere on the panel to send them to his page.
-const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending, onToggle, onClearDone, onDropFiles }: {
+const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending, onToggle, onOpen, onAsk, onClearDone, onDropFiles }: {
   items: BlakeItem[]; loading: boolean; fileCount: number; sending: { done: number; total: number } | null;
-  onToggle: (id: string, done: boolean) => void; onClearDone: () => void; onDropFiles: (files: File[]) => void;
+  onToggle: (id: string, done: boolean) => void; onOpen: (item: BlakeItem) => void; onAsk: (title: string) => Promise<unknown>;
+  onClearDone: () => void; onDropFiles: (files: File[]) => void;
 }) {
   const [fileDrag, setFileDrag] = useState(false);
+  const askRef = useRef<AddHandle>(null);
   const open = items.filter(i => !i.done);
   const done = items.filter(i => i.done);
   const mono = "'JetBrains Mono', monospace";
@@ -3154,12 +3160,25 @@ const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending
                 </svg>
               )}
             </button>
-            <span title={i.notes || undefined} style={{ fontSize: 12, lineHeight: 1.4, color: i.done ? "#7a7a7a" : "#d0d0d0", textDecoration: i.done ? "line-through" : "none", overflowWrap: "anywhere" }}>
-              {i.title}
+            {/* B = he asked, K = you asked; the title opens the reply window,
+                and an answered item carries a small mark */}
+            <span aria-label={i.side === "K" ? "You asked" : "Blake asked"} style={{ flexShrink: 0, marginTop: 3, fontFamily: mono, fontSize: 8, lineHeight: 1.2, letterSpacing: "0.08em", padding: "1px 3px", borderRadius: 2, border: `1px solid ${i.side === "K" ? "#4a4a4a" : "#2e2e2e"}`, color: i.side === "K" ? "#d0d0d0" : "#7a7a7a" }}>
+              {i.side === "K" ? "K" : "B"}
             </span>
+            <button
+              onClick={() => onOpen(i)}
+              title={i.notes || undefined}
+              style={{ background: "none", border: "none", padding: 0, margin: 0, textAlign: "left", cursor: "pointer", font: "inherit", fontSize: 12, lineHeight: 1.4, color: i.done ? "#7a7a7a" : "#d0d0d0", textDecoration: i.done ? "line-through" : "none", overflowWrap: "anywhere", minWidth: 0 }}
+              onMouseEnter={e => (e.currentTarget.style.color = i.done ? "#9a9a9a" : "#ffffff")}
+              onMouseLeave={e => (e.currentTarget.style.color = i.done ? "#7a7a7a" : "#d0d0d0")}
+            >
+              {i.title}
+              {i.response ? <span aria-label="replied" style={{ marginLeft: 5, fontFamily: mono, fontSize: 9, color: "#7bd88f", textDecoration: "none", display: "inline-block" }}>↩</span> : null}
+            </button>
           </div>
         ))}
       </div>
+      <AddTaskInput ref={askRef} onAdd={onAsk} placeholder="Ask Blake for..." />
       <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
         <span aria-live="polite" style={{
           flex: 1, minWidth: 0, textAlign: "center", padding: "4px 6px", borderRadius: 3,
@@ -3179,6 +3198,156 @@ const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending
     </Panel>
   );
 });
+
+// The window behind one row of the Blake column. B side (he asked): what he
+// sent, a written answer, files to send back, and the two ways to close it.
+// K side (you asked): your attachments, his answer with its files, and a
+// check-off.
+function BlakeReplyModal({ item, onClose, onReply, onAttachAsk, onToggle }: {
+  item: BlakeItem; onClose: () => void;
+  onReply: (id: string, text: string, files: File[], justCheck: boolean) => Promise<void>;
+  onAttachAsk: (id: string, files: File[]) => Promise<void>;
+  onToggle: (id: string, done: boolean) => Promise<void>;
+}) {
+  const kSide = item.side === "K";
+  const [text, setText] = useState(item.response || "");
+  const [queued, setQueued] = useState<File[]>([]);
+  const [theirs, setTheirs] = useState<BlakeFile[] | null>(null);
+  const [sentBefore, setSentBefore] = useState<BlakeFile[]>([]);
+  const [over, setOver] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const pickRef = useRef<HTMLInputElement | null>(null);
+  const mono = "'JetBrains Mono', monospace";
+
+  useEffect(() => {
+    taRef.current?.focus();
+    let live = true;
+    fetch(`/api/blake/files?page=${encodeURIComponent(item.id)}`, { cache: "no-store" })
+      .then(r => r.ok ? r.json() : { files: [], responseFiles: [] })
+      .then(d => { if (live) { setTheirs(d.files || []); setSentBefore(d.responseFiles || []); } })
+      .catch(() => { if (live) setTheirs([]); });
+    return () => { live = false; };
+  }, [item.id]);
+
+  // copy the FileList now: it is live, and the input's value is cleared right
+  // after this, which would empty it before the state updater ever runs
+  const addFiles = (list: FileList | File[]) => { const picked = Array.from(list); setQueued(q => [...q, ...picked]); };
+  const submit = async (justCheck: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (kSide) {
+        if (queued.length) { await onAttachAsk(item.id, queued); setQueued([]); }
+        if (justCheck) await onToggle(item.id, true);
+      } else {
+        await onReply(item.id, justCheck ? (item.response || "") : text.trim(), justCheck ? [] : queued, justCheck);
+      }
+    } finally { setBusy(false); }
+  };
+  const chip = (f: { name: string; url?: string }, i: number, onRemove?: () => void) => (
+    <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid #2e2e2e", borderRadius: 3, padding: "3px 7px", fontSize: 11, color: "#c8c8c8" }}>
+      {f.url ? <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ color: "#c8c8c8", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</a>
+             : <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>}
+      {onRemove && <button onClick={onRemove} aria-label={`Remove ${f.name}`} style={{ background: "none", border: "none", color: "#808080", cursor: "pointer", padding: 0, lineHeight: 1, fontSize: 13 }}>×</button>}
+    </span>
+  );
+
+  return (
+    <div onClick={onClose} role="presentation" style={{ position: "fixed", inset: 0, zIndex: 9000, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div
+        role="dialog" aria-label="Reply to Blake"
+        onClick={e => e.stopPropagation()}
+        onKeyDown={e => { if (e.key === "Escape") onClose(); }}
+        onDragOver={e => { if (!e.dataTransfer.types.includes("Files")) return; e.preventDefault(); if (!over) setOver(true); }}
+        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false); }}
+        onDrop={e => { if (!e.dataTransfer.types.includes("Files")) return; e.preventDefault(); setOver(false); addFiles(e.dataTransfer.files); }}
+        style={{ width: "min(560px, 100%)", maxHeight: "90vh", overflowY: "auto", background: "#121212", border: `1px solid ${over ? "#8a8a8a" : "#2a2a2a"}`, borderRadius: 6, boxShadow: "0 16px 48px rgba(0,0,0,0.6)", padding: "18px 20px 16px", display: "flex", flexDirection: "column", gap: 14, transition: "border-color 0.15s" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.2em", color: "#808080" }}>{kSide ? "K SIDE · YOU ASKED BLAKE" : "B SIDE · BLAKE ASKED YOU"}</span>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "#808080", fontSize: 16, lineHeight: 1, padding: 2 }}>×</button>
+        </div>
+
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: "#eaeaea", lineHeight: 1.35, overflowWrap: "anywhere" }}>{item.title}</div>
+          {item.notes && <p style={{ margin: "6px 0 0", color: "#a8a8a8", fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.notes}</p>}
+          {theirs === null ? (
+            <div style={{ marginTop: 8, fontFamily: mono, fontSize: 9, letterSpacing: "0.12em", color: "#5f5f5f" }}>LOADING FILES</div>
+          ) : theirs.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#5f5f5f", marginBottom: 5 }}>{kSide ? "YOUR FILES" : "HIS FILES"}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{theirs.map((f, i) => chip(f, i))}</div>
+            </div>
+          )}
+        </div>
+
+        {kSide ? (
+          // his answer, if it has come back: the text and the files he sent
+          <div>
+            <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#808080", marginBottom: 6 }}>BLAKE'S ANSWER</div>
+            {item.response || sentBefore.length > 0 ? (
+              <div style={{ borderLeft: "2px solid #3f6f4a", padding: "6px 10px", background: "rgba(123,216,143,0.05)", borderRadius: "0 4px 4px 0" }}>
+                {item.response && <p style={{ margin: 0, color: "#dcdcdc", fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.response}</p>}
+                {sentBefore.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: item.response ? 8 : 0 }}>{sentBefore.map((f, i) => chip(f, i))}</div>}
+              </div>
+            ) : (
+              <p style={{ margin: 0, color: "#6f6f6f", fontSize: 12, fontStyle: "italic" }}>{item.done ? "Checked off, no written answer." : "Nothing back yet."}</p>
+            )}
+          </div>
+        ) : (
+          <div>
+            <label htmlFor="blake-reply-text" style={{ display: "block", fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#808080", marginBottom: 6 }}>WRITTEN REPLY</label>
+            <textarea
+              id="blake-reply-text" ref={taRef} value={text} onChange={e => setText(e.target.value)} rows={4}
+              placeholder="What he needs to know…"
+              style={{ width: "100%", boxSizing: "border-box", background: "#0f0f0f", border: "1px solid #262626", borderRadius: 4, color: "#ddd", fontSize: 13, lineHeight: 1.5, padding: "8px 10px", resize: "vertical", outline: "none", fontFamily: "inherit" }}
+            />
+          </div>
+        )}
+
+        <div>
+          <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#808080", marginBottom: 6 }}>{kSide ? "ADD FILES TO YOUR ASK" : "FILES BACK TO HIM"}</div>
+          {!kSide && sentBefore.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>{sentBefore.map((f, i) => chip(f, i))}</div>}
+          {queued.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>{queued.map((f, i) => chip(f, i, () => setQueued(q => q.filter((_, j) => j !== i))))}</div>}
+          <button
+            onClick={() => pickRef.current?.click()}
+            style={{ width: "100%", background: over ? "rgba(255,255,255,0.04)" : "transparent", border: `1px dashed ${over ? "#8a8a8a" : "#3a3a3a"}`, borderRadius: 4, padding: "10px", cursor: "pointer", color: over ? "#cfcfcf" : "#6f6f6f", fontFamily: mono, fontSize: 9.5, letterSpacing: "0.12em", transition: "border-color 0.15s, color 0.15s" }}
+          >{over ? "DROP TO ATTACH" : "DROP FILES HERE OR CLICK TO PICK"}</button>
+          <input ref={pickRef} type="file" multiple hidden onChange={e => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, marginTop: 2 }}>
+          {kSide ? (
+            <>
+              {!item.done && (
+                <button
+                  onClick={() => submit(true)} disabled={busy}
+                  style={{ background: "transparent", border: "1px solid #3a3a3a", borderRadius: 4, color: "#aaa", fontFamily: mono, fontSize: 9.5, letterSpacing: "0.12em", padding: "8px 12px", cursor: busy ? "default" : "pointer" }}
+                >CHECK OFF</button>
+              )}
+              <button
+                onClick={() => (queued.length ? submit(false) : onClose())} disabled={busy}
+                style={{ background: busy ? "#161616" : "#e8e8e8", border: "1px solid #e8e8e8", borderRadius: 4, color: busy ? "#4a4a4a" : "#111", fontFamily: mono, fontSize: 9.5, letterSpacing: "0.12em", padding: "8px 14px", cursor: busy ? "default" : "pointer", transition: "background 0.15s" }}
+              >{busy ? "SENDING…" : queued.length ? `ATTACH ${queued.length}` : "CLOSE"}</button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => submit(true)} disabled={busy}
+                style={{ background: "transparent", border: "1px solid #3a3a3a", borderRadius: 4, color: "#aaa", fontFamily: mono, fontSize: 9.5, letterSpacing: "0.12em", padding: "8px 12px", cursor: busy ? "default" : "pointer" }}
+              >{item.done ? "SAVE CHECK ONLY" : "JUST CHECK OFF"}</button>
+              <button
+                onClick={() => submit(false)} disabled={busy || (!text.trim() && queued.length === 0)}
+                style={{ background: busy || (!text.trim() && queued.length === 0) ? "#161616" : "#e8e8e8", border: "1px solid #e8e8e8", borderRadius: 4, color: busy || (!text.trim() && queued.length === 0) ? "#4a4a4a" : "#111", fontFamily: mono, fontSize: 9.5, letterSpacing: "0.12em", padding: "8px 14px", cursor: busy || (!text.trim() && queued.length === 0) ? "default" : "pointer", transition: "background 0.15s" }}
+              >{busy ? "SENDING…" : "SEND & COMPLETE"}</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type AskMessage = { role: "user" | "claude"; text: string };
 
@@ -3439,6 +3608,14 @@ function Dashboard() {
   const [blakeItems, setBlakeItems] = useState<BlakeItem[]>([]);
   const [blakeFileCount, setBlakeFileCount] = useState(0);
   const [blakeSending, setBlakeSending] = useState<{ done: number; total: number } | null>(null);
+  const [blakeReply, setBlakeReply] = useState<BlakeItem | null>(null);
+  // Notion's query index lags a write by a few seconds, so a background
+  // refetch right after a check-off can hand back the old state. Edits are
+  // pinned here for a short window and win over server rows in fetchData.
+  const blakeLocal = useRef<Map<string, { done: boolean; response: string; hidden?: boolean; keep?: BlakeItem; until: number }>>(new Map());
+  const pinBlake = useCallback((id: string, patch: { done: boolean; response: string; hidden?: boolean; keep?: BlakeItem }) => {
+    blakeLocal.current.set(id, { ...patch, until: Date.now() + 20000 });
+  }, []);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [verse, setVerse] = useState<Verse | null>(null);
   const [allVerses, setAllVerses] = useState<Verse[]>([]);
@@ -3500,34 +3677,40 @@ function Dashboard() {
   // Blake's list: check off (undoable) and clear the finished ones
   const toggleBlake = useCallback(async (id: string, done: boolean) => {
     const prev = blakeItems;
+    const response = prev.find(i => i.id === id)?.response || "";
+    pinBlake(id, { done, response });
     setBlakeItems(prev.map(i => (i.id === id ? { ...i, done } : i)));
     try {
       const r = await fetch("/api/blake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "toggle", id, done }) });
       if (!r.ok) throw new Error();
       pushUndo(done ? "finish Blake item" : "reopen Blake item", async () => {
+        pinBlake(id, { done: !done, response });
         setBlakeItems(items => items.map(i => (i.id === id ? { ...i, done: !done } : i)));
         await fetch("/api/blake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "toggle", id, done: !done }) });
       });
     } catch {
+      blakeLocal.current.delete(id);
       setBlakeItems(prev);
       toast("Couldn't update Blake's item");
     }
-  }, [blakeItems, pushUndo, toast]);
+  }, [blakeItems, pinBlake, pushUndo, toast]);
 
   const clearBlakeDone = useCallback(async () => {
     const prev = blakeItems;
-    const n = prev.filter(i => i.done).length;
-    if (!n) return;
+    const gone = prev.filter(i => i.done);
+    if (!gone.length) return;
+    gone.forEach(i => pinBlake(i.id, { done: true, response: i.response || "", hidden: true }));
     setBlakeItems(prev.filter(i => !i.done));
     try {
       const r = await fetch("/api/blake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "clearDone" }) });
       if (!r.ok) throw new Error();
-      toast(`Cleared ${n} from Blake's list`);
+      toast(`Cleared ${gone.length} from Blake's list`);
     } catch {
+      gone.forEach(i => blakeLocal.current.delete(i.id));
       setBlakeItems(prev);
       toast("Couldn't clear Blake's list");
     }
-  }, [blakeItems, toast]);
+  }, [blakeItems, pinBlake, toast]);
 
   // files dropped on the Blake column go to his "From Knox" shelf, one at a time
   const sendFilesToBlake = useCallback(async (files: File[]) => {
@@ -3552,6 +3735,79 @@ function Dashboard() {
     setBlakeSending(null);
     if (sent) toast(sent === 1 && files.length === 1 ? `Sent ${files[0].name} to Blake` : `Sent ${sent} file${sent === 1 ? "" : "s"} to Blake`);
     if (failed.length) toast(`Couldn't send ${failed.join(", ")}`);
+  }, [toast]);
+
+  // answer one of his requests: the written reply (or a bare check) goes on
+  // the row and it flips Complete; reply files land under "From Knox"
+  const openBlakeReply = useCallback((item: BlakeItem) => setBlakeReply(item), []);
+  const replyToBlake = useCallback(async (id: string, text: string, files: File[], justCheck: boolean) => {
+    const prev = blakeItems;
+    pinBlake(id, { done: true, response: text });
+    setBlakeItems(prev.map(i => (i.id === id ? { ...i, done: true, response: text } : i)));
+    try {
+      const r = await fetch("/api/blake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "respond", id, text }) });
+      if (!r.ok) throw new Error();
+      const failed: string[] = [];
+      for (const file of files) {
+        try {
+          const f = await shrinkImageFile(file);
+          if (f.size > 4 * 1024 * 1024) { failed.push(`${f.name} (over 4 MB)`); continue; }
+          const fd = new FormData();
+          fd.append("pageId", id);
+          fd.append("section", "response");
+          fd.append("file", f, f.name);
+          const u = await fetch("/api/blake/upload", { method: "POST", body: fd });
+          if (!u.ok) throw new Error();
+        } catch { failed.push(file.name); }
+      }
+      setBlakeReply(null);
+      toast(justCheck ? "Checked off for Blake" : files.length - failed.length > 0 ? `Replied to Blake with ${files.length - failed.length} file${files.length - failed.length === 1 ? "" : "s"}` : "Replied to Blake");
+      if (failed.length) toast(`Couldn't send ${failed.join(", ")}`);
+    } catch {
+      blakeLocal.current.delete(id);
+      setBlakeItems(prev);
+      toast("Couldn't send that to Blake");
+    }
+  }, [blakeItems, pinBlake, toast]);
+
+  // K side: ask him for something from the column's input
+  const askBlake = useCallback(async (title: string) => {
+    const t = title.trim();
+    if (!t) return;
+    const tempId = `temp-${Date.now()}`;
+    setBlakeItems(items => [...items, { id: tempId, title: t, done: false, side: "K" }]);
+    try {
+      const r = await fetch("/api/blake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "add", title: t, side: "K" }) });
+      if (!r.ok) throw new Error();
+      const { item } = await r.json();
+      const real: BlakeItem = { id: item.id, title: item.title, notes: item.notes || "", done: false, response: "", side: "K", created: item.created };
+      pinBlake(real.id, { done: false, response: "", keep: real });
+      setBlakeItems(items => items.map(i => (i.id === tempId ? real : i)));
+      toast(`Asked Blake for: ${t}`);
+    } catch {
+      setBlakeItems(items => items.filter(i => i.id !== tempId));
+      toast("Couldn't send that ask to Blake");
+    }
+  }, [pinBlake, toast]);
+
+  // files added to one of your own asks (no section: they sit with the ask)
+  const attachToBlakeAsk = useCallback(async (id: string, files: File[]) => {
+    let sent = 0;
+    const failed: string[] = [];
+    for (const file of files) {
+      try {
+        const f = await shrinkImageFile(file);
+        if (f.size > 4 * 1024 * 1024) { failed.push(`${f.name} (over 4 MB)`); continue; }
+        const fd = new FormData();
+        fd.append("pageId", id);
+        fd.append("file", f, f.name);
+        const r = await fetch("/api/blake/upload", { method: "POST", body: fd });
+        if (!r.ok) throw new Error();
+        sent++;
+      } catch { failed.push(file.name); }
+    }
+    if (sent) toast(`Attached ${sent} file${sent === 1 ? "" : "s"} to your ask`);
+    if (failed.length) toast(`Couldn't attach ${failed.join(", ")}`);
   }, [toast]);
   const undoLast = useCallback(async () => {
     const item = undoStack.current.pop();
@@ -3595,7 +3851,18 @@ function Dashboard() {
       setActions((data.actions || []).slice().sort(byOrder));
       setGoals(data.goals || []);
       setBrief(data.brief || "");
-      setBlakeItems(data.blake || []);
+      {
+        const now = Date.now();
+        const pins = blakeLocal.current;
+        pins.forEach((v, k) => { if (v.until <= now) pins.delete(k); });
+        const rows = ((data.blake || []) as BlakeItem[])
+          .filter(r => !pins.get(r.id)?.hidden)
+          .map(r => { const p = pins.get(r.id); return p ? { ...r, done: p.done, response: p.response } : r; });
+        // a row created seconds ago may not be in Notion's index yet; keep it
+        const present = new Set(rows.map(r => r.id));
+        pins.forEach((v, k) => { if (v.keep && !present.has(k)) rows.push(v.keep); });
+        setBlakeItems(rows);
+      }
       setBlakeFileCount(data.blakeFiles || 0);
     } catch {}
   }, []);
@@ -5157,7 +5424,7 @@ function Dashboard() {
           </div>
 
           {/* Blake's list, the narrow middle column */}
-          <BlakePanel items={blakeItems} loading={loading} fileCount={blakeFileCount} sending={blakeSending} onToggle={toggleBlake} onClearDone={clearBlakeDone} onDropFiles={sendFilesToBlake} />
+          <BlakePanel items={blakeItems} loading={loading} fileCount={blakeFileCount} sending={blakeSending} onToggle={toggleBlake} onOpen={openBlakeReply} onAsk={askBlake} onClearDone={clearBlakeDone} onDropFiles={sendFilesToBlake} />
 
           {/* Projects, right half — full width again */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
@@ -5538,6 +5805,16 @@ function Dashboard() {
 
       {openEmail && (
         <EmailReader source={openEmail.source} email={openEmail.email} onClose={() => setOpenEmail(null)} />
+      )}
+
+      {blakeReply && (
+        <BlakeReplyModal
+          item={blakeItems.find(i => i.id === blakeReply.id) || blakeReply}
+          onClose={() => setBlakeReply(null)}
+          onReply={replyToBlake}
+          onAttachAsk={attachToBlakeAsk}
+          onToggle={async (id, done) => { await toggleBlake(id, done); setBlakeReply(null); }}
+        />
       )}
 
       <AskClaude digestRef={askDigestRef} />

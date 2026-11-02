@@ -1,10 +1,11 @@
-import { NOTION, json, preflight, richText, getFilesHolder } from "../shared";
+import { NOTION, json, preflight, richText, getFilesHolder, ensureResponseHeading } from "../shared";
 
-// Attach a file to one of Blake's pages, or (target=files) to the "Files from
-// Knox" holder page his app shows under From Knox. Three Notion calls: open a
-// file upload, send the bytes, append the result to the page as an image or
-// file block. Vercel caps a function's request body around 4.5 MB, so both
-// apps downsize photos before sending and anything larger is refused here.
+// Attach a file to one of Blake's pages (section=response puts it under the
+// "From Knox" heading as part of Knox's reply), or (target=files) to the
+// "Files from Knox" holder page his app shows as a shelf. Three Notion calls:
+// open a file upload, send the bytes, append the result to the page as an
+// image or file block. Vercel caps a function's request body around 4.5 MB,
+// so both apps downsize photos before sending and anything larger is refused.
 
 export const revalidate = 0;
 export const maxDuration = 60;
@@ -23,6 +24,8 @@ export async function POST(req: Request) {
   let form: FormData;
   try { form = await req.formData(); } catch { return json(req, { error: "bad form" }, 400); }
   const target = String(form.get("target") || "");
+  const section = String(form.get("section") || "");
+  const by = String(form.get("by") || "K") === "B" ? "B" : "K"; // who is answering
   let pageId = String(form.get("pageId") || "");
   const file = form.get("file");
   if (!(file instanceof File)) return json(req, { error: "file required" }, 400);
@@ -36,6 +39,7 @@ export async function POST(req: Request) {
   try {
     if (target === "files") pageId = (await getFilesHolder(token, dbId, true)) || "";
     if (!pageId) return json(req, { error: "pageId or target required" }, 400);
+    if (section === "response") await ensureResponseHeading(token, pageId, by);
 
     // 1. open the upload
     const open = await fetch(`${NOTION}/file_uploads`, {

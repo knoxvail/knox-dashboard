@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 
 // Shared bits for the Blake routes. His rows live in the main tasks database
-// marked Dashboard = "Blake". One extra row, "Files from Knox" (Type = "Files"),
-// is a holder page whose child blocks are the files Knox drops for him.
+// marked Dashboard = "Blake". Each row is an ask: Side = "B" means Blake asked
+// Knox, Side = "K" means Knox asked Blake. The other party answers with a
+// check, a written reply (the Response property), or files (appended under a
+// "From Knox" or "From Blake" heading in the page body, which is also how a
+// listing tells the asker's attachments from the answer). One extra row,
+// "Files from Knox" (Type = "Files"), is a holder page whose child blocks are
+// loose files Knox drops for him outside any ask.
 
 export const NOTION = "https://api.notion.com/v1";
 export const FILES_HOLDER_TITLE = "Files from Knox";
+export type Side = "B" | "K";
+export const RESPONSE_HEADINGS: Record<Side, string> = { K: "From Knox", B: "From Blake" };
 
 const ALLOWED_ORIGINS = new Set([
   "https://kmvtesting.vercel.app",
@@ -48,29 +55,36 @@ export function richText(s: string) {
   return parts.map((p) => ({ type: "text", text: { content: p } }));
 }
 
-export type BlakeRow = { id: string; title: string; notes: string; done: boolean; created: string; url: string };
+const plain = (rt: any): string => (Array.isArray(rt) ? rt.map((t: any) => t.plain_text).join("") : "");
+
+export type BlakeRow = { id: string; title: string; notes: string; done: boolean; response: string; side: Side; created: string; url: string };
 
 export function isFilesHolder(page: any): boolean {
   return (page?.properties as any)?.["Type"]?.select?.name === "Files";
 }
 
+export function sideOf(page: any): Side {
+  return (page?.properties as any)?.["Side"]?.select?.name === "K" ? "K" : "B";
+}
+
 export function rowFromPage(page: any): BlakeRow | null {
   const titleProp = Object.values(page.properties || {}).find((p: any) => p.type === "title") as any;
-  const title = titleProp?.title?.map((t: any) => t.plain_text).join("") || "";
+  const title = plain(titleProp?.title);
   if (!title) return null;
   const status = (Object.values(page.properties).find((p: any) => p.type === "status") as any)?.status?.name || "";
-  const notes = ((page.properties as any)["Notes"]?.rich_text || []).map((t: any) => t.plain_text).join("");
   return {
     id: page.id,
     title,
-    notes,
+    notes: plain((page.properties as any)["Notes"]?.rich_text),
     done: status === "Complete",
+    response: plain((page.properties as any)["Response"]?.rich_text),
+    side: sideOf(page),
     created: page.created_time || "",
     url: `https://www.notion.so/${String(page.id).replace(/-/g, "")}`,
   };
 }
 
-// every Blake task row, oldest first (the files holder is left out)
+// every ask row, oldest first (the files holder is left out)
 export async function queryBlake(token: string, dbId: string): Promise<BlakeRow[]> {
   const rows: BlakeRow[] = [];
   let cursor: string | undefined;
@@ -98,10 +112,32 @@ export async function queryBlake(token: string, dbId: string): Promise<BlakeRow[
   return rows;
 }
 
-// the holder page for Knox's drops; made on first use. Found by scanning the
-// Blake rows rather than filtering on Type = "Files": Notion rejects a filter
-// on a select option that doesn't exist yet, and creating the page is what
-// brings the option into being.
+// The Response (text) and Side (select B/K) properties are added to the
+// database on first use. Checked once per server instance.
+let fieldsReady = false;
+export async function ensureBlakeFields(token: string, dbId: string): Promise<void> {
+  if (fieldsReady) return;
+  const r = await fetch(`${NOTION}/databases/${dbId}`, { headers: notionHeaders(token), cache: "no-store" });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d?.message || `notion ${r.status}`);
+  const missing: Record<string, unknown> = {};
+  if (!d.properties?.Response) missing.Response = { rich_text: {} };
+  if (!d.properties?.Side) missing.Side = { select: { options: [{ name: "B", color: "blue" }, { name: "K", color: "green" }] } };
+  if (Object.keys(missing).length) {
+    const p = await fetch(`${NOTION}/databases/${dbId}`, {
+      method: "PATCH",
+      headers: notionHeaders(token),
+      body: JSON.stringify({ properties: missing }),
+    });
+    if (!p.ok) throw new Error((await p.json())?.message || `notion ${p.status}`);
+  }
+  fieldsReady = true;
+}
+
+// the holder page for Knox's loose drops; made on first use. Found by scanning
+// the Blake rows rather than filtering on Type = "Files": Notion rejects a
+// filter on a select option that doesn't exist yet, and creating the page is
+// what brings the option into being.
 export async function getFilesHolder(token: string, dbId: string, create: boolean): Promise<string | null> {
   let cursor: string | undefined;
   do {
@@ -141,31 +177,69 @@ export async function getFilesHolder(token: string, dbId: string, create: boolea
 
 export type BlakeFile = { id: string; name: string; url: string; kind: "image" | "file"; created: string };
 
-// the holder page's file and image blocks, newest first. Notion signs the
-// URLs for about an hour, so callers re-fetch rather than cache these.
-export async function listFiles(token: string, holderId: string): Promise<BlakeFile[]> {
-  const out: BlakeFile[] = [];
+function fileFromBlock(b: any): BlakeFile | null {
+  if (b.type !== "image" && b.type !== "file") return null;
+  const inner = b[b.type] || {};
+  const href = inner.file?.url || inner.external?.url || "";
+  if (!href) return null;
+  let name = plain(inner.caption) || inner.name || "";
+  if (!name) {
+    try { name = decodeURIComponent(new URL(href).pathname.split("/").pop() || ""); } catch { name = "file"; }
+  }
+  return { id: b.id, name, url: href, kind: b.type === "image" ? "image" : "file", created: b.created_time || "" };
+}
+
+async function* childBlocks(token: string, pageId: string) {
   let cursor: string | undefined;
   do {
-    const url = new URL(`${NOTION}/blocks/${holderId}/children`);
+    const url = new URL(`${NOTION}/blocks/${pageId}/children`);
     url.searchParams.set("page_size", "100");
     if (cursor) url.searchParams.set("start_cursor", cursor);
     const r = await fetch(url, { headers: notionHeaders(token), cache: "no-store" });
     const d = await r.json();
     if (!r.ok) throw new Error(d?.message || `notion ${r.status}`);
-    for (const b of d.results || []) {
-      if (b.type !== "image" && b.type !== "file") continue;
-      const inner = b[b.type] || {};
-      const href = inner.file?.url || inner.external?.url || "";
-      if (!href) continue;
-      const caption = (inner.caption || []).map((t: any) => t.plain_text).join("");
-      let name = caption || inner.name || "";
-      if (!name) {
-        try { name = decodeURIComponent(new URL(href).pathname.split("/").pop() || ""); } catch { name = "file"; }
-      }
-      out.push({ id: b.id, name, url: href, kind: b.type === "image" ? "image" : "file", created: b.created_time || "" });
-    }
+    for (const b of d.results || []) yield b;
     cursor = d.has_more ? d.next_cursor : undefined;
   } while (cursor);
+}
+
+const HEADING_TEXTS = new Set(Object.values(RESPONSE_HEADINGS));
+const isResponseHeading = (b: any) =>
+  typeof b?.type === "string" && b.type.startsWith("heading_") && HEADING_TEXTS.has(plain(b[b.type]?.rich_text).trim());
+
+// the holder page's file and image blocks, newest first. Notion signs the
+// URLs for about an hour, so callers re-fetch rather than cache these.
+export async function listFiles(token: string, holderId: string): Promise<BlakeFile[]> {
+  const out: BlakeFile[] = [];
+  for await (const b of childBlocks(token, holderId)) {
+    const f = fileFromBlock(b);
+    if (f) out.push(f);
+  }
   return out.reverse();
+}
+
+// An ask page's files, split: what the asker attached (before the answer
+// heading) and what came back (after it). Oldest first in each.
+export type PageFiles = { files: BlakeFile[]; responseFiles: BlakeFile[] };
+export async function listPageFiles(token: string, pageId: string): Promise<PageFiles> {
+  const files: BlakeFile[] = [];
+  const responseFiles: BlakeFile[] = [];
+  let inResponse = false;
+  for await (const b of childBlocks(token, pageId)) {
+    if (isResponseHeading(b)) { inResponse = true; continue; }
+    const f = fileFromBlock(b);
+    if (f) (inResponse ? responseFiles : files).push(f);
+  }
+  return { files, responseFiles };
+}
+
+// make sure the page has its answer heading so reply files land under it
+export async function ensureResponseHeading(token: string, pageId: string, by: Side): Promise<void> {
+  for await (const b of childBlocks(token, pageId)) if (isResponseHeading(b)) return;
+  const r = await fetch(`${NOTION}/blocks/${pageId}/children`, {
+    method: "PATCH",
+    headers: notionHeaders(token),
+    body: JSON.stringify({ children: [{ object: "block", type: "heading_2", heading_2: { rich_text: richText(RESPONSE_HEADINGS[by]) } }] }),
+  });
+  if (!r.ok) throw new Error((await r.json())?.message || `notion ${r.status}`);
 }
