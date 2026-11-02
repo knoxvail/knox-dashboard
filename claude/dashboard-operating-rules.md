@@ -91,6 +91,12 @@ narrow Blake column and Knox checks them off there. Status Short Term /
 Complete is the open/done switch for them. The routine never picks, tags,
 renames, moves, or clears a Blake row.
 
+One Blake row is not a task at all: "Files from Knox" (`Type = "Files"`).
+Its child blocks are files Knox drops on the Blake column, and Blake's page
+shows them under From Knox. Leave it alone too. A Vercel cron hits
+`/api/blake/sweep` every Monday at 12:00 UTC and archives Blake's Complete
+rows, so his Done list resets weekly on its own.
+
 ### Buckets are not tasks
 
 The Long Term rows are buckets: Market Research, UVRC General, UVRC Brand PR,

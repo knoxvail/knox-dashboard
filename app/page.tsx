@@ -321,9 +321,9 @@ function Tag({ children, accent }: { children: React.ReactNode; accent?: boolean
   );
 }
 
-function Panel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+function Panel({ children, style, ...rest }: { children: React.ReactNode; style?: React.CSSProperties } & Omit<React.HTMLAttributes<HTMLDivElement>, "style" | "children">) {
   return (
-    <div style={{
+    <div {...rest} style={{
       // translucent so the lake's glow shows through, with a blur that turns it
       // into a soft fog behind the content rather than a sharp distraction
       background: "rgba(12,14,18,0.5)",
@@ -3069,16 +3069,50 @@ function buildBoardDigest(args: {
   return lines.join("\n").slice(0, 5500);
 }
 
+// photos run big; squeeze images under the 4 MB function limit before upload
+async function shrinkImageFile(file: File): Promise<File> {
+  if (!/^image\//.test(file.type) || file.size <= 1.5 * 1024 * 1024) return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale);
+    c.height = Math.round(bmp.height * scale);
+    c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
+    const blob: Blob | null = await new Promise(res => c.toBlob(res, "image/jpeg", 0.85));
+    if (!blob) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch { return file; }
+}
+
 // Blake's list on the board: a narrow read-mostly column. He adds and removes
-// from his own app; here Knox can check things off and clear the finished.
-const BlakePanel = memo(function BlakePanel({ items, loading, onToggle, onClearDone }: {
-  items: BlakeItem[]; loading: boolean; onToggle: (id: string, done: boolean) => void; onClearDone: () => void;
+// from his own app; here Knox can check things off, clear the finished, and
+// drop files anywhere on the panel to send them to his page.
+const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending, onToggle, onClearDone, onDropFiles }: {
+  items: BlakeItem[]; loading: boolean; fileCount: number; sending: { done: number; total: number } | null;
+  onToggle: (id: string, done: boolean) => void; onClearDone: () => void; onDropFiles: (files: File[]) => void;
 }) {
+  const [fileDrag, setFileDrag] = useState(false);
   const open = items.filter(i => !i.done);
   const done = items.filter(i => i.done);
   const mono = "'JetBrains Mono', monospace";
   return (
-    <Panel style={{ display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "18px 14px 12px" }}>
+    <Panel
+      // only real files light the panel up; task-card drags pass straight through
+      onDragOver={(e) => { if (!e.dataTransfer.types.includes("Files")) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; if (!fileDrag) setFileDrag(true); }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setFileDrag(false); }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault(); setFileDrag(false);
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length) onDropFiles(files);
+      }}
+      style={{
+        display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "18px 14px 12px",
+        outline: fileDrag ? "1px dashed #8a8a8a" : "1px dashed transparent", outlineOffset: -2, transition: "outline-color 0.15s",
+        ...(fileDrag ? { background: "rgba(24,26,30,0.7)" } : {}),
+      }}
+    >
       <PanelHeader label="Blake" right={
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
           {done.length > 0 && (
@@ -3126,12 +3160,22 @@ const BlakePanel = memo(function BlakePanel({ items, loading, onToggle, onClearD
           </div>
         ))}
       </div>
-      <a
-        href="https://kmvtesting.vercel.app/blake/" target="_blank" rel="noopener noreferrer"
-        style={{ marginTop: 10, alignSelf: "flex-start", fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#5f5f5f", textDecoration: "none" }}
-        onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
-        onMouseLeave={e => (e.currentTarget.style.color = "#5f5f5f")}
-      >OPEN APP ↗</a>
+      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
+        <span aria-live="polite" style={{
+          flex: 1, minWidth: 0, textAlign: "center", padding: "4px 6px", borderRadius: 3,
+          border: `1px dashed ${fileDrag ? "#8a8a8a" : "#333"}`, fontFamily: mono, fontSize: 8.5, letterSpacing: "0.12em",
+          color: fileDrag || sending ? "#cfcfcf" : "#5f5f5f", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          transition: "color 0.15s, border-color 0.15s",
+        }}>
+          {sending ? `SENDING ${sending.done + 1}/${sending.total}` : fileDrag ? "DROP TO SEND" : fileCount > 0 ? `${fileCount} FILE${fileCount === 1 ? "" : "S"} SENT` : "DROP FILES"}
+        </span>
+        <a
+          href="https://kmvtesting.vercel.app/blake/" target="_blank" rel="noopener noreferrer"
+          style={{ flexShrink: 0, fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#5f5f5f", textDecoration: "none" }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#aaa")}
+          onMouseLeave={e => (e.currentTarget.style.color = "#5f5f5f")}
+        >APP ↗</a>
+      </div>
     </Panel>
   );
 });
@@ -3393,6 +3437,8 @@ function Dashboard() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [brief, setBrief] = useState("");
   const [blakeItems, setBlakeItems] = useState<BlakeItem[]>([]);
+  const [blakeFileCount, setBlakeFileCount] = useState(0);
+  const [blakeSending, setBlakeSending] = useState<{ done: number; total: number } | null>(null);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [verse, setVerse] = useState<Verse | null>(null);
   const [allVerses, setAllVerses] = useState<Verse[]>([]);
@@ -3482,6 +3528,31 @@ function Dashboard() {
       toast("Couldn't clear Blake's list");
     }
   }, [blakeItems, toast]);
+
+  // files dropped on the Blake column go to his "From Knox" shelf, one at a time
+  const sendFilesToBlake = useCallback(async (files: File[]) => {
+    const failed: string[] = [];
+    let sent = 0;
+    for (let i = 0; i < files.length; i++) {
+      setBlakeSending({ done: i, total: files.length });
+      try {
+        const f = await shrinkImageFile(files[i]);
+        if (f.size > 4 * 1024 * 1024) { failed.push(`${f.name} (over 4 MB)`); continue; }
+        const fd = new FormData();
+        fd.append("target", "files");
+        fd.append("file", f, f.name);
+        const r = await fetch("/api/blake/upload", { method: "POST", body: fd });
+        if (!r.ok) throw new Error();
+        sent++;
+        setBlakeFileCount(c => c + 1);
+      } catch {
+        failed.push(files[i].name);
+      }
+    }
+    setBlakeSending(null);
+    if (sent) toast(sent === 1 && files.length === 1 ? `Sent ${files[0].name} to Blake` : `Sent ${sent} file${sent === 1 ? "" : "s"} to Blake`);
+    if (failed.length) toast(`Couldn't send ${failed.join(", ")}`);
+  }, [toast]);
   const undoLast = useCallback(async () => {
     const item = undoStack.current.pop();
     if (!item) { toast("Nothing to undo"); return; }
@@ -3525,6 +3596,7 @@ function Dashboard() {
       setGoals(data.goals || []);
       setBrief(data.brief || "");
       setBlakeItems(data.blake || []);
+      setBlakeFileCount(data.blakeFiles || 0);
     } catch {}
   }, []);
 
@@ -5085,7 +5157,7 @@ function Dashboard() {
           </div>
 
           {/* Blake's list, the narrow middle column */}
-          <BlakePanel items={blakeItems} loading={loading} onToggle={toggleBlake} onClearDone={clearBlakeDone} />
+          <BlakePanel items={blakeItems} loading={loading} fileCount={blakeFileCount} sending={blakeSending} onToggle={toggleBlake} onClearDone={clearBlakeDone} onDropFiles={sendFilesToBlake} />
 
           {/* Projects, right half — full width again */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>

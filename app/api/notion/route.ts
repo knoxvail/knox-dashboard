@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isFilesHolder, listFiles } from "../blake/shared";
 
 export const revalidate = 0;
 
@@ -129,6 +130,9 @@ export async function GET() {
     // at kmvtesting.vercel.app/blake/. Routed first so they never land in
     // Knox's own buckets whatever their Status or Type.
     const blake: { id: string; title: string; notes: string; done: boolean; created: string }[] = [];
+    // the "Files from Knox" holder page (Type = "Files"); its blocks are the
+    // files Knox dropped for Blake, counted for the column's footer
+    let blakeHolderId: string | null = null;
 
     (data.results || []).forEach((page: any) => {
       const titleProp = Object.values(page.properties).find((p: any) => p.type === "title") as any;
@@ -136,6 +140,7 @@ export async function GET() {
       if (!title) return;
 
       if ((page.properties as any)["Dashboard"]?.select?.name === "Blake") {
+        if (isFilesHolder(page)) { blakeHolderId = page.id; return; }
         const st = (Object.values(page.properties).find((p: any) => p.type === "status") as any)?.status?.name || "";
         const bnotes = ((page.properties as any)["Notes"]?.rich_text || []).map((t: any) => t.plain_text).join("");
         blake.push({ id: page.id, title, notes: bnotes, done: st === "Complete", created: page.created_time || "" });
@@ -195,7 +200,12 @@ export async function GET() {
       Promise.all(actionPages.map(async (a) => ({ ...a, plan: await fetchPlan(token, a.id) }))),
     ]);
 
-    return NextResponse.json({ shortTerm: shortTermFull, longTerm: longTermFull, clients, actions, goals: goals.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity)), brief, blake });
+    let blakeFiles = 0;
+    if (blakeHolderId) {
+      try { blakeFiles = (await listFiles(token, blakeHolderId)).length; } catch {}
+    }
+
+    return NextResponse.json({ shortTerm: shortTermFull, longTerm: longTermFull, clients, actions, goals: goals.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity)), brief, blake, blakeFiles });
   } catch {
     return NextResponse.json({ shortTerm: [], longTerm: [], clients: [] });
   }

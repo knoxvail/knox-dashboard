@@ -1,98 +1,16 @@
-import { NextResponse } from "next/server";
+import { NOTION, json, preflight, notionHeaders, richText, rowFromPage, queryBlake } from "./shared";
 
 // Blake's list. His rows live in the same tasks database as everything else,
 // marked Dashboard = "Blake" so they stay out of Knox's buckets. The static
 // app at kmvtesting.vercel.app/blake/ talks to this route cross-origin, so
 // every response carries CORS headers for that origin (and localhost while
-// developing).
+// developing). Files Knox drops for him live under /api/blake/files, and
+// the weekly sweep of finished items is /api/blake/sweep.
 
 export const revalidate = 0;
 
-const NOTION = "https://api.notion.com/v1";
-const ALLOWED_ORIGINS = new Set([
-  "https://kmvtesting.vercel.app",
-  "http://localhost:4173",
-  "http://127.0.0.1:4173",
-  "http://localhost:3000",
-]);
-
-function corsHeaders(req: Request): Record<string, string> {
-  const origin = req.headers.get("origin") || "";
-  const allow = ALLOWED_ORIGINS.has(origin) ? origin : "https://kmvtesting.vercel.app";
-  return {
-    "Access-Control-Allow-Origin": allow,
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Max-Age": "86400",
-    Vary: "Origin",
-  };
-}
-
-function json(req: Request, body: unknown, status = 200) {
-  return NextResponse.json(body, { status, headers: corsHeaders(req) });
-}
-
-function notionHeaders(token: string) {
-  return {
-    Authorization: `Bearer ${token}`,
-    "Notion-Version": "2022-06-28",
-    "Content-Type": "application/json",
-  };
-}
-
-type BlakeRow = { id: string; title: string; notes: string; done: boolean; created: string; url: string };
-
-function rowFromPage(page: any): BlakeRow | null {
-  const titleProp = Object.values(page.properties || {}).find((p: any) => p.type === "title") as any;
-  const title = titleProp?.title?.map((t: any) => t.plain_text).join("") || "";
-  if (!title) return null;
-  const status = (Object.values(page.properties).find((p: any) => p.type === "status") as any)?.status?.name || "";
-  const notes = ((page.properties as any)["Notes"]?.rich_text || []).map((t: any) => t.plain_text).join("");
-  return {
-    id: page.id,
-    title,
-    notes,
-    done: status === "Complete",
-    created: page.created_time || "",
-    url: `https://www.notion.so/${String(page.id).replace(/-/g, "")}`,
-  };
-}
-
-// every Blake row, oldest first
-async function queryBlake(token: string, dbId: string): Promise<BlakeRow[]> {
-  const rows: BlakeRow[] = [];
-  let cursor: string | undefined;
-  do {
-    const r = await fetch(`${NOTION}/databases/${dbId}/query`, {
-      method: "POST",
-      headers: notionHeaders(token),
-      body: JSON.stringify({
-        filter: { property: "Dashboard", select: { equals: "Blake" } },
-        sorts: [{ timestamp: "created_time", direction: "ascending" }],
-        page_size: 100,
-        ...(cursor ? { start_cursor: cursor } : {}),
-      }),
-      cache: "no-store",
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d?.message || `notion ${r.status}`);
-    for (const p of d.results || []) {
-      const row = rowFromPage(p);
-      if (row) rows.push(row);
-    }
-    cursor = d.has_more ? d.next_cursor : undefined;
-  } while (cursor);
-  return rows;
-}
-
-// Notion caps a rich_text chunk at 2000 chars
-function richText(s: string) {
-  const parts = s.match(/[\s\S]{1,2000}/g) || [];
-  return parts.map((p) => ({ type: "text", text: { content: p } }));
-}
-
 export async function OPTIONS(req: Request) {
-  return new Response(null, { status: 204, headers: corsHeaders(req) });
+  return preflight(req);
 }
 
 export async function GET(req: Request) {

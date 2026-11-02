@@ -1,51 +1,31 @@
-import { NextResponse } from "next/server";
+import { NOTION, json, preflight, richText, getFilesHolder } from "../shared";
 
-// Attach a dropped file to one of Blake's pages. Three Notion calls: open a
+// Attach a file to one of Blake's pages, or (target=files) to the "Files from
+// Knox" holder page his app shows under From Knox. Three Notion calls: open a
 // file upload, send the bytes, append the result to the page as an image or
-// file block. Vercel caps a function's request body around 4.5 MB, so the
-// app downsizes photos before sending and anything larger is refused here.
+// file block. Vercel caps a function's request body around 4.5 MB, so both
+// apps downsize photos before sending and anything larger is refused here.
 
 export const revalidate = 0;
 export const maxDuration = 60;
 
-const NOTION = "https://api.notion.com/v1";
 const MAX_BYTES = 4 * 1024 * 1024;
-const ALLOWED_ORIGINS = new Set([
-  "https://kmvtesting.vercel.app",
-  "http://localhost:4173",
-  "http://127.0.0.1:4173",
-  "http://localhost:3000",
-]);
-
-function corsHeaders(req: Request): Record<string, string> {
-  const origin = req.headers.get("origin") || "";
-  const allow = ALLOWED_ORIGINS.has(origin) ? origin : "https://kmvtesting.vercel.app";
-  return {
-    "Access-Control-Allow-Origin": allow,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Max-Age": "86400",
-    Vary: "Origin",
-  };
-}
-
-function json(req: Request, body: unknown, status = 200) {
-  return NextResponse.json(body, { status, headers: corsHeaders(req) });
-}
 
 export async function OPTIONS(req: Request) {
-  return new Response(null, { status: 204, headers: corsHeaders(req) });
+  return preflight(req);
 }
 
 export async function POST(req: Request) {
   const token = process.env.NOTION_TOKEN;
-  if (!token) return json(req, { error: "not configured" }, 500);
+  const dbId = process.env.NOTION_DB_ID;
+  if (!token || !dbId) return json(req, { error: "not configured" }, 500);
 
   let form: FormData;
   try { form = await req.formData(); } catch { return json(req, { error: "bad form" }, 400); }
-  const pageId = String(form.get("pageId") || "");
+  const target = String(form.get("target") || "");
+  let pageId = String(form.get("pageId") || "");
   const file = form.get("file");
-  if (!pageId || !(file instanceof File)) return json(req, { error: "pageId and file required" }, 400);
+  if (!(file instanceof File)) return json(req, { error: "file required" }, 400);
   if (file.size === 0) return json(req, { error: "empty file" }, 400);
   if (file.size > MAX_BYTES) return json(req, { error: "too large", limit: MAX_BYTES }, 413);
 
@@ -54,6 +34,9 @@ export async function POST(req: Request) {
   const contentType = file.type || "application/octet-stream";
 
   try {
+    if (target === "files") pageId = (await getFilesHolder(token, dbId, true)) || "";
+    if (!pageId) return json(req, { error: "pageId or target required" }, 400);
+
     // 1. open the upload
     const open = await fetch(`${NOTION}/file_uploads`, {
       method: "POST",
@@ -73,11 +56,11 @@ export async function POST(req: Request) {
     });
     if (!send.ok) return json(req, { error: (await send.json())?.message || "notion send" }, send.status);
 
-    // 3. hang it on the page
+    // 3. hang it on the page; the caption carries the name so listings can show it
     const isImage = /^image\/(png|jpe?g|gif|webp|heic|heif|svg\+xml)$/i.test(contentType);
     const block = isImage
-      ? { object: "block", type: "image", image: { type: "file_upload", file_upload: { id: opened.id } } }
-      : { object: "block", type: "file", file: { type: "file_upload", file_upload: { id: opened.id }, name: filename } };
+      ? { object: "block", type: "image", image: { type: "file_upload", file_upload: { id: opened.id }, caption: richText(filename) } }
+      : { object: "block", type: "file", file: { type: "file_upload", file_upload: { id: opened.id }, name: filename, caption: richText(filename) } };
     const attach = await fetch(`${NOTION}/blocks/${pageId}/children`, {
       method: "PATCH",
       headers: { ...auth, "Content-Type": "application/json" },

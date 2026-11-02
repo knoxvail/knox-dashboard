@@ -114,6 +114,7 @@ Notes.
 Rows with Dashboard = "Blake" are Knox's dad's list, added from his own app
 (kmvtesting.vercel.app/blake). They are not Knox's tasks. Never pick one for
 the daily three, never tag, rename, move, or clear one. Leave them alone.
+That includes the row named "Files from Knox", which only holds files.
 
 Goal rows are buckets' cousins, not tasks. Never tag one as Action, never pick
 one as a daily three, never mark one Complete. A finished goal goes to 100 with
