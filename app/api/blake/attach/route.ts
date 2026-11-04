@@ -20,12 +20,20 @@ export async function POST(req: Request) {
 
   let body: any;
   try { body = await req.json(); } catch { return json(req, { error: "bad json" }, 400); }
+  // either a Blob store file ({url, name, contentType}) or a plain web link ({link})
+  const link = String(body?.link || "").trim();
   const url = String(body?.url || "");
-  const name = String(body?.name || "file").slice(0, 120);
+  const name = String(body?.name || (link ? "" : "file")).slice(0, 120);
   const contentType = String(body?.contentType || "");
-  let host = "";
-  try { host = new URL(url).hostname; } catch {}
-  if (!url || !BLOB_HOSTS.test(host)) return json(req, { error: "url must be a Blob store link" }, 400);
+  if (link) {
+    let ok = false;
+    try { ok = /^https?:$/.test(new URL(link).protocol); } catch {}
+    if (!ok) return json(req, { error: "link must be an http(s) URL" }, 400);
+  } else {
+    let host = "";
+    try { host = new URL(url).hostname; } catch {}
+    if (!url || !BLOB_HOSTS.test(host)) return json(req, { error: "url must be a Blob store link" }, 400);
+  }
 
   try {
     let pageId = String(body.pageId || "");
@@ -34,7 +42,9 @@ export async function POST(req: Request) {
     if (body.section === "response") await ensureResponseHeading(token, pageId, body.by === "B" ? "B" : "K");
 
     const isImage = /^image\/(png|jpe?g|gif|webp|svg\+xml)$/i.test(contentType);
-    const block = isImage
+    const block = link
+      ? { object: "block", type: "bookmark", bookmark: { url: link, ...(name ? { caption: richText(name) } : {}) } }
+      : isImage
       ? { object: "block", type: "image", image: { type: "external", external: { url }, caption: richText(name) } }
       : { object: "block", type: "file", file: { type: "external", external: { url }, name, caption: richText(name) } };
     const attach = await fetch(`${NOTION}/blocks/${pageId}/children`, {
@@ -43,7 +53,7 @@ export async function POST(req: Request) {
       body: JSON.stringify({ children: [block] }),
     });
     if (!attach.ok) return json(req, { error: (await attach.json())?.message || "notion attach" }, attach.status);
-    return json(req, { ok: true, name, url });
+    return json(req, { ok: true, name, url: link || url });
   } catch (e) {
     console.error("blake attach", e);
     return json(req, { error: "attach failed" }, 502);

@@ -176,9 +176,19 @@ export async function getFilesHolder(token: string, dbId: string, create: boolea
   return made.id;
 }
 
-export type BlakeFile = { id: string; name: string; url: string; kind: "image" | "file"; created: string };
+export type BlakeFile = { id: string; name: string; url: string; kind: "image" | "file" | "link"; created: string };
 
+// attachments on a page: image and file blocks, plus bookmark blocks for links
 function fileFromBlock(b: any): BlakeFile | null {
+  if (b.type === "bookmark" || b.type === "embed") {
+    const href = b[b.type]?.url || "";
+    if (!href) return null;
+    let name = plain(b[b.type]?.caption) || "";
+    if (!name) {
+      try { const u = new URL(href); name = u.hostname.replace(/^www\./, "") + (u.pathname !== "/" ? u.pathname : "") + (u.search || ""); } catch { name = href; }
+    }
+    return { id: b.id, name: name.slice(0, 80), url: href, kind: "link", created: b.created_time || "" };
+  }
   if (b.type !== "image" && b.type !== "file") return null;
   const inner = b[b.type] || {};
   const href = inner.file?.url || inner.external?.url || "";

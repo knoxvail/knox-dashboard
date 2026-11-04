@@ -20,7 +20,9 @@ type Goal = { id: string; title: string; notes?: string; percent: number; order?
 // one of Blake's requests (Dashboard = "Blake" in the tasks DB), added from his
 // app; `response` is Knox's written reply, kept in the row's Response property
 type BlakeItem = { id: string; title: string; notes?: string; done: boolean; response?: string; side?: "B" | "K"; created?: string };
-type BlakeFile = { id: string; name: string; url: string; kind: "image" | "file"; created?: string };
+type BlakeFile = { id: string; name: string; url: string; kind: "image" | "file" | "link"; created?: string };
+// something queued to go to Blake before it is sent: a picked file or a pasted link
+type Pending = File | { link: string };
 type Verse = { ref: string; text: string };
 type Email = { id: string; from: string; subject: string; date: string; link: string };
 type Event = { id: string; title: string; displayDate: string; displayTime: string; type: string; editDate?: string; editTime?: string };
@@ -3094,6 +3096,27 @@ async function sendFileForBlake(file: File, where: { target?: "files"; pageId?: 
   if (!r.ok) throw new Error("attach");
 }
 
+// a web link for Blake: saved on the Notion page as a bookmark, shown to him
+// as a tappable row (same destinations as files)
+async function sendLinkForBlake(link: string, where: { target?: "files"; pageId?: string; section?: "response"; by?: "B" | "K" }): Promise<void> {
+  let name = link;
+  try { const u = new URL(link); name = u.hostname.replace(/^www\./, "") + (u.pathname !== "/" ? u.pathname : "") + (u.search || ""); } catch {}
+  const r = await fetch("/api/blake/attach", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ link, name: name.slice(0, 80), ...where }),
+  });
+  if (!r.ok) throw new Error("attach link");
+}
+
+// URLs carried by a drag: a dragged link or address bar gives text/uri-list,
+// dragged text gives text/plain. Only http(s) counts.
+function linksFromDrop(dt: DataTransfer): string[] {
+  const raw = dt.getData("text/uri-list") || dt.getData("text/plain") || "";
+  return raw.split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith("#") && /^https?:\/\//i.test(s));
+}
+const dragHasLink = (dt: DataTransfer) => dt.types.includes("text/uri-list");
+
 // photos run big; shrinking them keeps the store and transfer allowance sane
 async function shrinkImageFile(file: File): Promise<File> {
   if (!/^image\//.test(file.type) || file.size <= 1.5 * 1024 * 1024) return file;
@@ -3116,7 +3139,7 @@ async function shrinkImageFile(file: File): Promise<File> {
 const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending, onToggle, onOpen, onAsk, onClearDone, onDropFiles }: {
   items: BlakeItem[]; loading: boolean; fileCount: number; sending: { done: number; total: number } | null;
   onToggle: (id: string, done: boolean) => void; onOpen: (item: BlakeItem) => void; onAsk: (title: string) => Promise<unknown>;
-  onClearDone: () => void; onDropFiles: (files: File[]) => void;
+  onClearDone: () => void; onDropFiles: (files: File[], links: string[]) => void;
 }) {
   const [fileDrag, setFileDrag] = useState(false);
   const askRef = useRef<AddHandle>(null);
@@ -3125,14 +3148,16 @@ const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending
   const mono = "'JetBrains Mono', monospace";
   return (
     <Panel
-      // only real files light the panel up; task-card drags pass straight through
-      onDragOver={(e) => { if (!e.dataTransfer.types.includes("Files")) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; if (!fileDrag) setFileDrag(true); }}
+      // real files and dragged links light the panel up; task-card drags
+      // (plain text ids) pass straight through
+      onDragOver={(e) => { if (!e.dataTransfer.types.includes("Files") && !dragHasLink(e.dataTransfer)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; if (!fileDrag) setFileDrag(true); }}
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setFileDrag(false); }}
       onDrop={(e) => {
-        if (!e.dataTransfer.types.includes("Files")) return;
+        const files = e.dataTransfer.types.includes("Files") ? Array.from(e.dataTransfer.files) : [];
+        const links = files.length ? [] : linksFromDrop(e.dataTransfer);
+        if (!files.length && !links.length) return;
         e.preventDefault(); setFileDrag(false);
-        const files = Array.from(e.dataTransfer.files);
-        if (files.length) onDropFiles(files);
+        onDropFiles(files, links);
       }}
       style={{
         display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0, minWidth: 0, padding: "18px 14px 12px",
@@ -3207,7 +3232,7 @@ const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending
           color: fileDrag || sending ? "#cfcfcf" : "#5f5f5f", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
           transition: "color 0.15s, border-color 0.15s",
         }}>
-          {sending ? `SENDING ${sending.done + 1}/${sending.total}` : fileDrag ? "DROP TO SEND" : fileCount > 0 ? `${fileCount} FILE${fileCount === 1 ? "" : "S"} SENT` : "DROP FILES"}
+          {sending ? `SENDING ${sending.done + 1}/${sending.total}` : fileDrag ? "DROP TO SEND" : fileCount > 0 ? `${fileCount} ON HIS SHELF` : "DROP FILES OR LINKS"}
         </span>
         <a
           href="https://kmvtesting.vercel.app/blake/" target="_blank" rel="noopener noreferrer"
@@ -3226,13 +3251,14 @@ const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending
 // check-off.
 function BlakeReplyModal({ item, onClose, onReply, onAttachAsk, onToggle }: {
   item: BlakeItem; onClose: () => void;
-  onReply: (id: string, text: string, files: File[], justCheck: boolean) => Promise<void>;
-  onAttachAsk: (id: string, files: File[]) => Promise<void>;
+  onReply: (id: string, text: string, files: File[], links: string[], justCheck: boolean) => Promise<void>;
+  onAttachAsk: (id: string, files: File[], links: string[]) => Promise<void>;
   onToggle: (id: string, done: boolean) => Promise<void>;
 }) {
   const kSide = item.side === "K";
   const [text, setText] = useState(item.response || "");
-  const [queued, setQueued] = useState<File[]>([]);
+  const [queued, setQueued] = useState<Pending[]>([]);
+  const [linkDraft, setLinkDraft] = useState("");
   const [theirs, setTheirs] = useState<BlakeFile[] | null>(null);
   const [sentBefore, setSentBefore] = useState<BlakeFile[]>([]);
   const [over, setOver] = useState(false);
@@ -3253,16 +3279,25 @@ function BlakeReplyModal({ item, onClose, onReply, onAttachAsk, onToggle }: {
 
   // copy the FileList now: it is live, and the input's value is cleared right
   // after this, which would empty it before the state updater ever runs
-  const addFiles = (list: FileList | File[]) => { const picked = Array.from(list); setQueued(q => [...q, ...picked]); };
+  const addFiles = (list: FileList | File[]) => { const picked: Pending[] = Array.from(list); setQueued(q => [...q, ...picked]); };
+  const addLinks = (links: string[]) => { if (links.length) setQueued(q => [...q, ...links.map(link => ({ link }))]); };
+  // the paste field: anything that reads as an http(s) address, Enter queues it
+  const addLinkDraft = () => {
+    const l = linkDraft.trim();
+    if (!/^https?:\/\//i.test(l)) return;
+    addLinks([l]); setLinkDraft("");
+  };
+  const queuedFiles = queued.filter((p): p is File => p instanceof File);
+  const queuedLinks = queued.filter((p): p is { link: string } => !(p instanceof File)).map(p => p.link);
   const submit = async (justCheck: boolean) => {
     if (busy) return;
     setBusy(true);
     try {
       if (kSide) {
-        if (queued.length) { await onAttachAsk(item.id, queued); setQueued([]); }
+        if (queued.length) { await onAttachAsk(item.id, queuedFiles, queuedLinks); setQueued([]); }
         if (justCheck) await onToggle(item.id, true);
       } else {
-        await onReply(item.id, justCheck ? (item.response || "") : text.trim(), justCheck ? [] : queued, justCheck);
+        await onReply(item.id, justCheck ? (item.response || "") : text.trim(), justCheck ? [] : queuedFiles, justCheck ? [] : queuedLinks, justCheck);
       }
     } finally { setBusy(false); }
   };
@@ -3280,9 +3315,15 @@ function BlakeReplyModal({ item, onClose, onReply, onAttachAsk, onToggle }: {
         role="dialog" aria-label="Reply to Blake"
         onClick={e => e.stopPropagation()}
         onKeyDown={e => { if (e.key === "Escape") onClose(); }}
-        onDragOver={e => { if (!e.dataTransfer.types.includes("Files")) return; e.preventDefault(); if (!over) setOver(true); }}
+        onDragOver={e => { if (!e.dataTransfer.types.includes("Files") && !dragHasLink(e.dataTransfer)) return; e.preventDefault(); if (!over) setOver(true); }}
         onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false); }}
-        onDrop={e => { if (!e.dataTransfer.types.includes("Files")) return; e.preventDefault(); setOver(false); addFiles(e.dataTransfer.files); }}
+        onDrop={e => {
+          const hasFiles = e.dataTransfer.types.includes("Files");
+          const links = hasFiles ? [] : linksFromDrop(e.dataTransfer);
+          if (!hasFiles && !links.length) return;
+          e.preventDefault(); setOver(false);
+          if (hasFiles) addFiles(e.dataTransfer.files); else addLinks(links);
+        }}
         style={{ width: "min(560px, 100%)", maxHeight: "90vh", overflowY: "auto", background: "#121212", border: `1px solid ${over ? "#8a8a8a" : "#2a2a2a"}`, borderRadius: 6, boxShadow: "0 16px 48px rgba(0,0,0,0.6)", padding: "18px 20px 16px", display: "flex", flexDirection: "column", gap: 14, transition: "border-color 0.15s" }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -3328,14 +3369,32 @@ function BlakeReplyModal({ item, onClose, onReply, onAttachAsk, onToggle }: {
         )}
 
         <div>
-          <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#808080", marginBottom: 6 }}>{kSide ? "ADD FILES TO YOUR ASK" : "FILES BACK TO HIM"}</div>
+          <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#808080", marginBottom: 6 }}>{kSide ? "ADD FILES OR LINKS TO YOUR ASK" : "FILES OR LINKS BACK TO HIM"}</div>
           {!kSide && sentBefore.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>{sentBefore.map((f, i) => chip(f, i))}</div>}
-          {queued.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>{queued.map((f, i) => chip(f, i, () => setQueued(q => q.filter((_, j) => j !== i))))}</div>}
+          {queued.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+              {queued.map((p, i) => chip(p instanceof File ? { name: p.name } : { name: p.link.replace(/^https?:\/\//, ""), url: p.link }, i, () => setQueued(q => q.filter((_, j) => j !== i))))}
+            </div>
+          )}
           <button
             onClick={() => pickRef.current?.click()}
             style={{ width: "100%", background: over ? "rgba(255,255,255,0.04)" : "transparent", border: `1px dashed ${over ? "#8a8a8a" : "#3a3a3a"}`, borderRadius: 4, padding: "10px", cursor: "pointer", color: over ? "#cfcfcf" : "#6f6f6f", fontFamily: mono, fontSize: 9.5, letterSpacing: "0.12em", transition: "border-color 0.15s, color 0.15s" }}
-          >{over ? "DROP TO ATTACH" : "DROP FILES HERE OR CLICK TO PICK"}</button>
+          >{over ? "DROP TO ATTACH" : "DROP FILES OR LINKS HERE, OR CLICK TO PICK FILES"}</button>
           <input ref={pickRef} type="file" multiple hidden onChange={e => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
+          <input
+            value={linkDraft}
+            onChange={e => setLinkDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addLinkDraft(); } }}
+            onBlur={addLinkDraft}
+            onPaste={e => {
+              // a pasted address goes straight to the queue, no Enter needed
+              const t = e.clipboardData.getData("text").trim();
+              if (/^https?:\/\/\S+$/i.test(t)) { e.preventDefault(); addLinks([t]); setLinkDraft(""); }
+            }}
+            placeholder="or paste a link here"
+            aria-label="Paste a link"
+            style={{ width: "100%", boxSizing: "border-box", marginTop: 6, background: "#0f0f0f", border: "1px solid #262626", borderRadius: 4, color: "#ddd", fontSize: 12, padding: "7px 10px", outline: "none", fontFamily: "inherit" }}
+          />
         </div>
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, marginTop: 2 }}>
@@ -3733,29 +3792,29 @@ function Dashboard() {
     }
   }, [blakeItems, pinBlake, toast]);
 
-  // files dropped on the Blake column go to his "From Knox" shelf, one at a time
-  const sendFilesToBlake = useCallback(async (files: File[]) => {
+  // files and links dropped on the Blake column go to his shelf, one at a time
+  const sendFilesToBlake = useCallback(async (files: File[], links: string[]) => {
     const failed: string[] = [];
+    const total = files.length + links.length;
     let sent = 0;
-    for (let i = 0; i < files.length; i++) {
-      setBlakeSending({ done: i, total: files.length });
-      try {
-        await sendFileForBlake(files[i], { target: "files" });
-        sent++;
-        setBlakeFileCount(c => c + 1);
-      } catch {
-        failed.push(files[i].name);
-      }
+    const jobs: { label: string; run: () => Promise<void> }[] = [
+      ...files.map(f => ({ label: f.name, run: () => sendFileForBlake(f, { target: "files" }) })),
+      ...links.map(l => ({ label: l, run: () => sendLinkForBlake(l, { target: "files" }) })),
+    ];
+    for (let i = 0; i < jobs.length; i++) {
+      setBlakeSending({ done: i, total });
+      try { await jobs[i].run(); sent++; setBlakeFileCount(c => c + 1); }
+      catch { failed.push(jobs[i].label); }
     }
     setBlakeSending(null);
-    if (sent) toast(sent === 1 && files.length === 1 ? `Sent ${files[0].name} to Blake` : `Sent ${sent} file${sent === 1 ? "" : "s"} to Blake`);
+    if (sent) toast(total === 1 && sent === 1 ? `Sent ${links.length ? "the link" : files[0].name} to Blake` : `Sent ${sent} to Blake's shelf`);
     if (failed.length) toast(`Couldn't send ${failed.join(", ")}`);
   }, [toast]);
 
   // answer one of his requests: the written reply (or a bare check) goes on
   // the row and it flips Complete; reply files land under "From Knox"
   const openBlakeReply = useCallback((item: BlakeItem) => setBlakeReply(item), []);
-  const replyToBlake = useCallback(async (id: string, text: string, files: File[], justCheck: boolean) => {
+  const replyToBlake = useCallback(async (id: string, text: string, files: File[], links: string[], justCheck: boolean) => {
     const prev = blakeItems;
     pinBlake(id, { done: true, response: text });
     setBlakeItems(prev.map(i => (i.id === id ? { ...i, done: true, response: text } : i)));
@@ -3767,8 +3826,13 @@ function Dashboard() {
         try { await sendFileForBlake(file, { pageId: id, section: "response", by: "K" }); }
         catch { failed.push(file.name); }
       }
+      for (const link of links) {
+        try { await sendLinkForBlake(link, { pageId: id, section: "response", by: "K" }); }
+        catch { failed.push(link); }
+      }
       setBlakeReply(null);
-      toast(justCheck ? "Checked off for Blake" : files.length - failed.length > 0 ? `Replied to Blake with ${files.length - failed.length} file${files.length - failed.length === 1 ? "" : "s"}` : "Replied to Blake");
+      const okCount = files.length + links.length - failed.length;
+      toast(justCheck ? "Checked off for Blake" : okCount > 0 ? `Replied to Blake with ${okCount} attachment${okCount === 1 ? "" : "s"}` : "Replied to Blake");
       if (failed.length) toast(`Couldn't send ${failed.join(", ")}`);
     } catch {
       blakeLocal.current.delete(id);
@@ -3797,15 +3861,19 @@ function Dashboard() {
     }
   }, [pinBlake, toast]);
 
-  // files added to one of your own asks (no section: they sit with the ask)
-  const attachToBlakeAsk = useCallback(async (id: string, files: File[]) => {
+  // files and links added to one of your own asks (no section: they sit with the ask)
+  const attachToBlakeAsk = useCallback(async (id: string, files: File[], links: string[]) => {
     let sent = 0;
     const failed: string[] = [];
     for (const file of files) {
       try { await sendFileForBlake(file, { pageId: id }); sent++; }
       catch { failed.push(file.name); }
     }
-    if (sent) toast(`Attached ${sent} file${sent === 1 ? "" : "s"} to your ask`);
+    for (const link of links) {
+      try { await sendLinkForBlake(link, { pageId: id }); sent++; }
+      catch { failed.push(link); }
+    }
+    if (sent) toast(`Attached ${sent} to your ask`);
     if (failed.length) toast(`Couldn't attach ${failed.join(", ")}`);
   }, [toast]);
   const undoLast = useCallback(async () => {
