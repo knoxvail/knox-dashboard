@@ -57,7 +57,7 @@ export function richText(s: string) {
 
 const plain = (rt: any): string => (Array.isArray(rt) ? rt.map((t: any) => t.plain_text).join("") : "");
 
-export type BlakeRow = { id: string; title: string; notes: string; done: boolean; response: string; side: Side; created: string; url: string };
+export type BlakeRow = { id: string; title: string; notes: string; done: boolean; response: string; side: Side; created: string; edited: string; url: string };
 
 export function isFilesHolder(page: any): boolean {
   return (page?.properties as any)?.["Type"]?.select?.name === "Files";
@@ -80,6 +80,7 @@ export function rowFromPage(page: any): BlakeRow | null {
     response: plain((page.properties as any)["Response"]?.rich_text),
     side: sideOf(page),
     created: page.created_time || "",
+    edited: page.last_edited_time || page.created_time || "",
     url: `https://www.notion.so/${String(page.id).replace(/-/g, "")}`,
   };
 }
