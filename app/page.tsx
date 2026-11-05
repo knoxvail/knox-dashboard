@@ -3136,13 +3136,12 @@ async function shrinkImageFile(file: File): Promise<File> {
 // Blake's list on the board: a narrow read-mostly column. He adds and removes
 // from his own app; here Knox can check things off, clear the finished, and
 // drop files anywhere on the panel to send them to his page.
-const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending, onToggle, onOpen, onAsk, onClearDone, onDropFiles, onOpenShelf }: {
+const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending, onToggle, onOpen, onOpenAsk, onClearDone, onDropFiles, onOpenShelf }: {
   items: BlakeItem[]; loading: boolean; fileCount: number; sending: { done: number; total: number } | null;
-  onToggle: (id: string, done: boolean) => void; onOpen: (item: BlakeItem) => void; onAsk: (title: string) => Promise<unknown>;
+  onToggle: (id: string, done: boolean) => void; onOpen: (item: BlakeItem) => void; onOpenAsk: () => void;
   onClearDone: () => void; onDropFiles: (files: File[], links: string[]) => void; onOpenShelf: () => void;
 }) {
   const [fileDrag, setFileDrag] = useState(false);
-  const askRef = useRef<AddHandle>(null);
   const open = items.filter(i => !i.done);
   const done = items.filter(i => i.done);
   const mono = "'JetBrains Mono', monospace";
@@ -3224,7 +3223,20 @@ const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending
           </div>
         ))}
       </div>
-      <AddTaskInput ref={askRef} onAdd={onAsk} placeholder="Ask Blake for..." />
+      {/* the + opens the compose window (title, details, files, links) */}
+      <button
+        onClick={onOpenAsk} aria-label="Ask Blake for something" title="Ask Blake for something"
+        style={{
+          background: "none", border: "1px solid #2a2a2a", cursor: "pointer",
+          marginTop: 10, width: 26, height: 26, borderRadius: 4, flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "center", color: "#808080",
+          transition: "color 0.2s, border-color 0.2s, background 0.2s",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.color = "#e8e8e8"; e.currentTarget.style.borderColor = "#7a7a7a"; e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+        onMouseLeave={e => { e.currentTarget.style.color = "#808080"; e.currentTarget.style.borderColor = "#2a2a2a"; e.currentTarget.style.background = "none"; }}
+      >
+        <span aria-hidden style={{ fontSize: 16, lineHeight: 1 }}>+</span>
+      </button>
       <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
         {/* the footer doubles as the way into the shelf once something is on it */}
         <button
@@ -3542,6 +3554,135 @@ function BlakeShelfModal({ onClose, onNotice, onRemoved }: { onClose: () => void
   );
 }
 
+// Compose window for asking Blake for something: a title, optional details,
+// and any files or links to go with it, all before it leaves.
+function BlakeAskModal({ onClose, onSend }: {
+  onClose: () => void;
+  onSend: (title: string, notes: string, files: File[], links: string[]) => Promise<boolean>;
+}) {
+  const [title, setTitle] = useState("");
+  const [notes, setNotes] = useState("");
+  const [queued, setQueued] = useState<Pending[]>([]);
+  const [linkDraft, setLinkDraft] = useState("");
+  const [over, setOver] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const titleRef = useRef<HTMLInputElement | null>(null);
+  const pickRef = useRef<HTMLInputElement | null>(null);
+  const mono = "'JetBrains Mono', monospace";
+
+  useEffect(() => { titleRef.current?.focus(); }, []);
+
+  const addFiles = (list: FileList | File[]) => { const picked: Pending[] = Array.from(list); setQueued(q => [...q, ...picked]); };
+  const addLinks = (links: string[]) => { if (links.length) setQueued(q => [...q, ...links.map(link => ({ link }))]); };
+  const addLinkDraft = () => {
+    const l = linkDraft.trim();
+    if (!/^https?:\/\//i.test(l)) return;
+    addLinks([l]); setLinkDraft("");
+  };
+  const canSend = !!title.trim() && !busy;
+  const send = async () => {
+    if (!canSend) return;
+    setBusy(true);
+    try {
+      const files = queued.filter((p): p is File => p instanceof File);
+      const links = queued.filter((p): p is { link: string } => !(p instanceof File)).map(p => p.link);
+      await onSend(title.trim(), notes.trim(), files, links);
+    } finally { setBusy(false); }
+  };
+  const field: React.CSSProperties = { width: "100%", boxSizing: "border-box", background: "#0f0f0f", border: "1px solid #262626", borderRadius: 4, color: "#ddd", fontSize: 13, lineHeight: 1.5, padding: "8px 10px", outline: "none", fontFamily: "inherit" };
+  const label: React.CSSProperties = { display: "block", fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#808080", marginBottom: 6 };
+
+  return (
+    <div onClick={onClose} role="presentation" style={{ position: "fixed", inset: 0, zIndex: 9000, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div
+        role="dialog" aria-label="Ask Blake"
+        onClick={e => e.stopPropagation()}
+        onKeyDown={e => { if (e.key === "Escape") onClose(); }}
+        onDragOver={e => { if (!e.dataTransfer.types.includes("Files") && !dragHasLink(e.dataTransfer)) return; e.preventDefault(); if (!over) setOver(true); }}
+        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false); }}
+        onDrop={e => {
+          const hasFiles = e.dataTransfer.types.includes("Files");
+          const links = hasFiles ? [] : linksFromDrop(e.dataTransfer);
+          if (!hasFiles && !links.length) return;
+          e.preventDefault(); setOver(false);
+          if (hasFiles) addFiles(e.dataTransfer.files); else addLinks(links);
+        }}
+        style={{ width: "min(520px, 100%)", maxHeight: "90vh", overflowY: "auto", background: "#121212", border: `1px solid ${over ? "#8a8a8a" : "#2a2a2a"}`, borderRadius: 6, boxShadow: "0 16px 48px rgba(0,0,0,0.6)", padding: "18px 20px 16px", display: "flex", flexDirection: "column", gap: 14, transition: "border-color 0.15s" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.2em", color: "#808080" }}>ASK BLAKE</span>
+          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "#808080", fontSize: 16, lineHeight: 1, padding: 2 }}>×</button>
+        </div>
+
+        <div>
+          <label htmlFor="blake-ask-title" style={label}>WHAT DO YOU NEED FROM HIM</label>
+          <input
+            id="blake-ask-title" ref={titleRef} value={title} onChange={e => setTitle(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); send(); } }}
+            placeholder="Send me the signed lease"
+            style={{ ...field, fontSize: 14, fontWeight: 600 }}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="blake-ask-notes" style={label}>DETAILS (OPTIONAL)</label>
+          <textarea
+            id="blake-ask-notes" value={notes} onChange={e => setNotes(e.target.value)} rows={3}
+            placeholder="Which one, where it is, by when…"
+            style={{ ...field, resize: "vertical" }}
+          />
+        </div>
+
+        <div>
+          <div style={label}>FILES OR LINKS TO GO WITH IT</div>
+          {queued.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+              {queued.map((p, i) => {
+                const name = p instanceof File ? p.name : p.link.replace(/^https?:\/\//, "");
+                return (
+                  <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid #2e2e2e", borderRadius: 3, padding: "3px 7px", fontSize: 11, color: "#c8c8c8" }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+                    <button onClick={() => setQueued(q => q.filter((_, j) => j !== i))} aria-label={`Remove ${name}`} style={{ background: "none", border: "none", color: "#808080", cursor: "pointer", padding: 0, lineHeight: 1, fontSize: 13 }}>×</button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          <button
+            onClick={() => pickRef.current?.click()}
+            style={{ width: "100%", background: over ? "rgba(255,255,255,0.04)" : "transparent", border: `1px dashed ${over ? "#8a8a8a" : "#3a3a3a"}`, borderRadius: 4, padding: "10px", cursor: "pointer", color: over ? "#cfcfcf" : "#6f6f6f", fontFamily: mono, fontSize: 9.5, letterSpacing: "0.12em", transition: "border-color 0.15s, color 0.15s" }}
+          >{over ? "DROP TO ATTACH" : "DROP FILES OR LINKS HERE, OR CLICK TO PICK FILES"}</button>
+          <input ref={pickRef} type="file" multiple hidden onChange={e => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
+          <input
+            value={linkDraft}
+            onChange={e => setLinkDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addLinkDraft(); } }}
+            onBlur={addLinkDraft}
+            onPaste={e => {
+              const t = e.clipboardData.getData("text").trim();
+              if (/^https?:\/\/\S+$/i.test(t)) { e.preventDefault(); addLinks([t]); setLinkDraft(""); }
+            }}
+            placeholder="or paste a link here"
+            aria-label="Paste a link"
+            style={{ ...field, marginTop: 6, fontSize: 12, padding: "7px 10px" }}
+          />
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, marginTop: 2 }}>
+          <button
+            onClick={onClose} disabled={busy}
+            style={{ background: "transparent", border: "1px solid #3a3a3a", borderRadius: 4, color: "#aaa", fontFamily: mono, fontSize: 9.5, letterSpacing: "0.12em", padding: "8px 12px", cursor: busy ? "default" : "pointer" }}
+          >CANCEL</button>
+          <button
+            onClick={send} disabled={!canSend}
+            style={{ background: canSend ? "#e8e8e8" : "#161616", border: "1px solid #e8e8e8", borderRadius: 4, color: canSend ? "#111" : "#4a4a4a", fontFamily: mono, fontSize: 9.5, letterSpacing: "0.12em", padding: "8px 14px", cursor: canSend ? "pointer" : "default", transition: "background 0.15s" }}
+          >{busy ? "SENDING…" : queued.length ? `SEND WITH ${queued.length}` : "SEND TO BLAKE"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type AskMessage = { role: "user" | "claude"; text: string };
 
 // The ask box: a small always-there spark button, bottom right, that opens a
@@ -3803,6 +3944,7 @@ function Dashboard() {
   const [blakeSending, setBlakeSending] = useState<{ done: number; total: number } | null>(null);
   const [blakeReply, setBlakeReply] = useState<BlakeItem | null>(null);
   const [blakeShelfOpen, setBlakeShelfOpen] = useState(false);
+  const [blakeAskOpen, setBlakeAskOpen] = useState(false);
   // Notion's query index lags a write by a few seconds, so a background
   // refetch right after a check-off can hand back the old state. Edits are
   // pinned here for a short window and win over server rows in fetchData.
@@ -3955,23 +4097,36 @@ function Dashboard() {
     }
   }, [blakeItems, pinBlake, toast]);
 
-  // K side: ask him for something from the column's input
-  const askBlake = useCallback(async (title: string) => {
+  // K side: ask him for something from the compose window. The row is made
+  // first, then any files and links are hung on it; returns whether it sent.
+  const askBlake = useCallback(async (title: string, notes: string, files: File[], links: string[]) => {
     const t = title.trim();
-    if (!t) return;
+    if (!t) return false;
     const tempId = `temp-${Date.now()}`;
-    setBlakeItems(items => [...items, { id: tempId, title: t, done: false, side: "K" }]);
+    setBlakeItems(items => [...items, { id: tempId, title: t, notes, done: false, side: "K" }]);
     try {
-      const r = await fetch("/api/blake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "add", title: t, side: "K" }) });
+      const r = await fetch("/api/blake", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "add", title: t, notes, side: "K" }) });
       if (!r.ok) throw new Error();
       const { item } = await r.json();
       const real: BlakeItem = { id: item.id, title: item.title, notes: item.notes || "", done: false, response: "", side: "K", created: item.created };
       pinBlake(real.id, { done: false, response: "", keep: real });
       setBlakeItems(items => items.map(i => (i.id === tempId ? real : i)));
-      toast(`Asked Blake for: ${t}`);
+      setBlakeAskOpen(false);
+      const failed: string[] = [];
+      for (const file of files) {
+        try { await sendFileForBlake(file, { pageId: real.id }); } catch { failed.push(file.name); }
+      }
+      for (const link of links) {
+        try { await sendLinkForBlake(link, { pageId: real.id }); } catch { failed.push(link); }
+      }
+      const okCount = files.length + links.length - failed.length;
+      toast(okCount > 0 ? `Asked Blake, with ${okCount} attachment${okCount === 1 ? "" : "s"}` : `Asked Blake for: ${t}`);
+      if (failed.length) toast(`Couldn't attach ${failed.join(", ")}`);
+      return true;
     } catch {
       setBlakeItems(items => items.filter(i => i.id !== tempId));
       toast("Couldn't send that ask to Blake");
+      return false;
     }
   }, [pinBlake, toast]);
 
@@ -5605,7 +5760,7 @@ function Dashboard() {
           </div>
 
           {/* Blake's list, the narrow middle column */}
-          <BlakePanel items={blakeItems} loading={loading} fileCount={blakeFileCount} sending={blakeSending} onToggle={toggleBlake} onOpen={openBlakeReply} onAsk={askBlake} onClearDone={clearBlakeDone} onDropFiles={sendFilesToBlake} onOpenShelf={() => setBlakeShelfOpen(true)} />
+          <BlakePanel items={blakeItems} loading={loading} fileCount={blakeFileCount} sending={blakeSending} onToggle={toggleBlake} onOpen={openBlakeReply} onOpenAsk={() => setBlakeAskOpen(true)} onClearDone={clearBlakeDone} onDropFiles={sendFilesToBlake} onOpenShelf={() => setBlakeShelfOpen(true)} />
 
           {/* Projects, right half — full width again */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
@@ -6001,6 +6156,10 @@ function Dashboard() {
 
       {blakeShelfOpen && (
         <BlakeShelfModal onClose={() => setBlakeShelfOpen(false)} onNotice={toast} onRemoved={() => setBlakeFileCount(c => Math.max(0, c - 1))} />
+      )}
+
+      {blakeAskOpen && (
+        <BlakeAskModal onClose={() => setBlakeAskOpen(false)} onSend={askBlake} />
       )}
 
       <AskClaude digestRef={askDigestRef} />
