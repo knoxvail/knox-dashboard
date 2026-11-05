@@ -105,7 +105,10 @@ Files on Blake rows are links, not Notion uploads: the browser puts the
 file straight into the project's Vercel Blob store (public, permanent URL,
 no practical size cap) and the dashboard attaches it to the page as an
 external file or image block. A dropped or pasted web link is saved as a
-bookmark block on the same page and shows up for Blake as a tappable row. Removing a file from the shelf deletes the
+bookmark block on the same page and shows up for Blake as a tappable row.
+Knox can delete any attachment from the row window or the shelf view on
+the dashboard (two clicks: × then SURE?); that removes the block and the
+blob. Removing a file from the shelf deletes the
 blob too; the weekly sweep only archives pages and leaves blobs alone.
 
 One Blake row is not a task at all: "Files from Knox" (`Type = "Files"`).

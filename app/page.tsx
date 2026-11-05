@@ -3136,10 +3136,10 @@ async function shrinkImageFile(file: File): Promise<File> {
 // Blake's list on the board: a narrow read-mostly column. He adds and removes
 // from his own app; here Knox can check things off, clear the finished, and
 // drop files anywhere on the panel to send them to his page.
-const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending, onToggle, onOpen, onAsk, onClearDone, onDropFiles }: {
+const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending, onToggle, onOpen, onAsk, onClearDone, onDropFiles, onOpenShelf }: {
   items: BlakeItem[]; loading: boolean; fileCount: number; sending: { done: number; total: number } | null;
   onToggle: (id: string, done: boolean) => void; onOpen: (item: BlakeItem) => void; onAsk: (title: string) => Promise<unknown>;
-  onClearDone: () => void; onDropFiles: (files: File[], links: string[]) => void;
+  onClearDone: () => void; onDropFiles: (files: File[], links: string[]) => void; onOpenShelf: () => void;
 }) {
   const [fileDrag, setFileDrag] = useState(false);
   const askRef = useRef<AddHandle>(null);
@@ -3226,14 +3226,23 @@ const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending
       </div>
       <AddTaskInput ref={askRef} onAdd={onAsk} placeholder="Ask Blake for..." />
       <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
-        <span aria-live="polite" style={{
-          flex: 1, minWidth: 0, textAlign: "center", padding: "4px 6px", borderRadius: 3,
-          border: `1px dashed ${fileDrag ? "#8a8a8a" : "#333"}`, fontFamily: mono, fontSize: 8.5, letterSpacing: "0.12em",
-          color: fileDrag || sending ? "#cfcfcf" : "#5f5f5f", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-          transition: "color 0.15s, border-color 0.15s",
-        }}>
-          {sending ? `SENDING ${sending.done + 1}/${sending.total}` : fileDrag ? "DROP TO SEND" : fileCount > 0 ? `${fileCount} ON HIS SHELF` : "DROP FILES OR LINKS"}
-        </span>
+        {/* the footer doubles as the way into the shelf once something is on it */}
+        <button
+          type="button"
+          onClick={() => { if (fileCount > 0 && !sending) onOpenShelf(); }}
+          aria-label={fileCount > 0 ? "See what's on Blake's shelf" : "Drop files or links here for Blake"}
+          aria-live="polite"
+          style={{
+            flex: 1, minWidth: 0, textAlign: "center", padding: "4px 6px", borderRadius: 3, background: "none",
+            border: `1px dashed ${fileDrag ? "#8a8a8a" : "#333"}`, fontFamily: mono, fontSize: 8.5, letterSpacing: "0.12em",
+            color: fileDrag || sending ? "#cfcfcf" : "#5f5f5f", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            cursor: fileCount > 0 && !sending ? "pointer" : "default", transition: "color 0.15s, border-color 0.15s",
+          }}
+          onMouseEnter={e => { if (fileCount > 0) e.currentTarget.style.color = "#cfcfcf"; }}
+          onMouseLeave={e => { if (!fileDrag && !sending) e.currentTarget.style.color = "#5f5f5f"; }}
+        >
+          {sending ? `SENDING ${sending.done + 1}/${sending.total}` : fileDrag ? "DROP TO SEND" : fileCount > 0 ? `${fileCount} ON HIS SHELF ›` : "DROP FILES OR LINKS"}
+        </button>
         <a
           href="https://kmvtesting.vercel.app/blake/" target="_blank" rel="noopener noreferrer"
           style={{ flexShrink: 0, fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#5f5f5f", textDecoration: "none" }}
@@ -3249,11 +3258,18 @@ const BlakePanel = memo(function BlakePanel({ items, loading, fileCount, sending
 // sent, a written answer, files to send back, and the two ways to close it.
 // K side (you asked): your attachments, his answer with its files, and a
 // check-off.
-function BlakeReplyModal({ item, onClose, onReply, onAttachAsk, onToggle }: {
+// delete one attachment block (and its blob, if it lives in the store)
+async function removeBlakeAttachment(id: string): Promise<boolean> {
+  const r = await fetch("/api/blake/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "remove", id }) });
+  return r.ok;
+}
+
+function BlakeReplyModal({ item, onClose, onReply, onAttachAsk, onToggle, onNotice }: {
   item: BlakeItem; onClose: () => void;
   onReply: (id: string, text: string, files: File[], links: string[], justCheck: boolean) => Promise<void>;
   onAttachAsk: (id: string, files: File[], links: string[]) => Promise<void>;
   onToggle: (id: string, done: boolean) => Promise<void>;
+  onNotice: (msg: string) => void;
 }) {
   const kSide = item.side === "K";
   const [text, setText] = useState(item.response || "");
@@ -3263,6 +3279,21 @@ function BlakeReplyModal({ item, onClose, onReply, onAttachAsk, onToggle }: {
   const [sentBefore, setSentBefore] = useState<BlakeFile[]>([]);
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
+  // × on an existing attachment arms it for a moment; the second click deletes
+  const [armed, setArmed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(null), 3500);
+    return () => clearTimeout(t);
+  }, [armed]);
+  const deleteExisting = async (f: BlakeFile) => {
+    if (armed !== f.id) { setArmed(f.id); return; }
+    setArmed(null);
+    setTheirs(l => (l || []).filter(x => x.id !== f.id));
+    setSentBefore(l => l.filter(x => x.id !== f.id));
+    if (await removeBlakeAttachment(f.id)) onNotice(`Removed ${f.name}`);
+    else onNotice(`Couldn't remove ${f.name}`);
+  };
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const pickRef = useRef<HTMLInputElement | null>(null);
   const mono = "'JetBrains Mono', monospace";
@@ -3301,13 +3332,20 @@ function BlakeReplyModal({ item, onClose, onReply, onAttachAsk, onToggle }: {
       }
     } finally { setBusy(false); }
   };
-  const chip = (f: { name: string; url?: string }, i: number, onRemove?: () => void) => (
-    <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid #2e2e2e", borderRadius: 3, padding: "3px 7px", fontSize: 11, color: "#c8c8c8" }}>
-      {f.url ? <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ color: "#c8c8c8", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</a>
-             : <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>}
-      {onRemove && <button onClick={onRemove} aria-label={`Remove ${f.name}`} style={{ background: "none", border: "none", color: "#808080", cursor: "pointer", padding: 0, lineHeight: 1, fontSize: 13 }}>×</button>}
-    </span>
-  );
+  const chip = (f: { id?: string; name: string; url?: string }, i: number, onRemove?: () => void) => {
+    const isArmed = !!f.id && armed === f.id;
+    return (
+      <span key={f.id || i} style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: "100%", background: "rgba(255,255,255,0.05)", border: `1px solid ${isArmed ? "#7a4a4a" : "#2e2e2e"}`, borderRadius: 3, padding: "3px 7px", fontSize: 11, color: "#c8c8c8", transition: "border-color 0.15s" }}>
+        {f.url ? <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ color: "#c8c8c8", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</a>
+               : <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>}
+        {onRemove && (
+          <button onClick={onRemove} aria-label={isArmed ? `Confirm removing ${f.name}` : `Remove ${f.name}`} style={{ background: "none", border: "none", color: isArmed ? "#d08a8a" : "#808080", cursor: "pointer", padding: 0, lineHeight: 1, fontSize: isArmed ? 9 : 13, fontFamily: isArmed ? mono : "inherit", letterSpacing: isArmed ? "0.08em" : 0 }}>
+            {isArmed ? "SURE?" : "×"}
+          </button>
+        )}
+      </span>
+    );
+  };
 
   return (
     <div onClick={onClose} role="presentation" style={{ position: "fixed", inset: 0, zIndex: 9000, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
@@ -3339,7 +3377,7 @@ function BlakeReplyModal({ item, onClose, onReply, onAttachAsk, onToggle }: {
           ) : theirs.length > 0 && (
             <div style={{ marginTop: 8 }}>
               <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#5f5f5f", marginBottom: 5 }}>{kSide ? "YOUR FILES" : "HIS FILES"}</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{theirs.map((f, i) => chip(f, i))}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{theirs.map((f, i) => chip(f, i, () => deleteExisting(f)))}</div>
             </div>
           )}
         </div>
@@ -3351,7 +3389,7 @@ function BlakeReplyModal({ item, onClose, onReply, onAttachAsk, onToggle }: {
             {item.response || sentBefore.length > 0 ? (
               <div style={{ borderLeft: "2px solid #3f6f4a", padding: "6px 10px", background: "rgba(123,216,143,0.05)", borderRadius: "0 4px 4px 0" }}>
                 {item.response && <p style={{ margin: 0, color: "#dcdcdc", fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.response}</p>}
-                {sentBefore.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: item.response ? 8 : 0 }}>{sentBefore.map((f, i) => chip(f, i))}</div>}
+                {sentBefore.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: item.response ? 8 : 0 }}>{sentBefore.map((f, i) => chip(f, i, () => deleteExisting(f)))}</div>}
               </div>
             ) : (
               <p style={{ margin: 0, color: "#6f6f6f", fontSize: 12, fontStyle: "italic" }}>{item.done ? "Checked off, no written answer." : "Nothing back yet."}</p>
@@ -3370,7 +3408,7 @@ function BlakeReplyModal({ item, onClose, onReply, onAttachAsk, onToggle }: {
 
         <div>
           <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.14em", color: "#808080", marginBottom: 6 }}>{kSide ? "ADD FILES OR LINKS TO YOUR ASK" : "FILES OR LINKS BACK TO HIM"}</div>
-          {!kSide && sentBefore.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>{sentBefore.map((f, i) => chip(f, i))}</div>}
+          {!kSide && sentBefore.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>{sentBefore.map((f, i) => chip(f, i, () => deleteExisting(f)))}</div>}
           {queued.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
               {queued.map((p, i) => chip(p instanceof File ? { name: p.name } : { name: p.link.replace(/^https?:\/\//, ""), url: p.link }, i, () => setQueued(q => q.filter((_, j) => j !== i))))}
@@ -3424,6 +3462,81 @@ function BlakeReplyModal({ item, onClose, onReply, onAttachAsk, onToggle }: {
             </>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Everything on Blake's loose shelf, with a way to take a wrong upload back.
+function BlakeShelfModal({ onClose, onNotice, onRemoved }: { onClose: () => void; onNotice: (msg: string) => void; onRemoved: () => void }) {
+  const [files, setFiles] = useState<BlakeFile[] | null>(null);
+  const [armed, setArmed] = useState<string | null>(null);
+  const mono = "'JetBrains Mono', monospace";
+  useEffect(() => {
+    let live = true;
+    fetch("/api/blake/files", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : { files: [] })
+      .then(d => { if (live) setFiles(d.files || []); })
+      .catch(() => { if (live) setFiles([]); });
+    return () => { live = false; };
+  }, []);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(null), 3500);
+    return () => clearTimeout(t);
+  }, [armed]);
+  const remove = async (f: BlakeFile) => {
+    if (armed !== f.id) { setArmed(f.id); return; }
+    setArmed(null);
+    setFiles(l => (l || []).filter(x => x.id !== f.id));
+    if (await removeBlakeAttachment(f.id)) { onRemoved(); onNotice(`Removed ${f.name} from Blake's shelf`); }
+    else onNotice(`Couldn't remove ${f.name}`);
+  };
+  const when = (iso?: string) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+  return (
+    <div onClick={onClose} role="presentation" style={{ position: "fixed", inset: 0, zIndex: 9000, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div
+        role="dialog" aria-label="Blake's shelf"
+        onClick={e => e.stopPropagation()}
+        onKeyDown={e => { if (e.key === "Escape") onClose(); }}
+        style={{ width: "min(520px, 100%)", maxHeight: "86vh", overflowY: "auto", background: "#121212", border: "1px solid #2a2a2a", borderRadius: 6, boxShadow: "0 16px 48px rgba(0,0,0,0.6)", padding: "18px 20px 16px", display: "flex", flexDirection: "column", gap: 12 }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontFamily: mono, fontSize: 10, letterSpacing: "0.2em", color: "#808080" }}>BLAKE'S SHELF</span>
+          <button autoFocus onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "#808080", fontSize: 16, lineHeight: 1, padding: 2 }}>×</button>
+        </div>
+        {files === null ? (
+          <div style={{ fontFamily: mono, fontSize: 9, letterSpacing: "0.12em", color: "#5f5f5f" }}>LOADING</div>
+        ) : files.length === 0 ? (
+          <p style={{ margin: 0, color: "#6f6f6f", fontSize: 12, fontStyle: "italic" }}>Nothing on his shelf. Drop files or links on the Blake column to add some.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {files.map(f => {
+              const isArmed = armed === f.id;
+              return (
+                <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", background: "rgba(255,255,255,0.03)", border: `1px solid ${isArmed ? "#7a4a4a" : "#262626"}`, borderRadius: 4, transition: "border-color 0.15s" }}>
+                  {f.kind === "image" ? (
+                    <img src={f.url} alt="" style={{ width: 34, height: 34, objectFit: "cover", borderRadius: 3, flexShrink: 0, background: "#1a1a1a" }} />
+                  ) : (
+                    <span style={{ width: 34, height: 34, flexShrink: 0, borderRadius: 3, background: "#1a1a1a", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: mono, fontSize: 8, letterSpacing: "0.1em", color: "#8a8a8a" }}>{f.kind === "link" ? "LINK" : "FILE"}</span>
+                  )}
+                  <a href={f.url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, minWidth: 0, color: "#d0d0d0", fontSize: 12.5, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</a>
+                  <span style={{ fontFamily: mono, fontSize: 9, color: "#5f5f5f", flexShrink: 0 }}>{when(f.created)}</span>
+                  <button
+                    onClick={() => remove(f)}
+                    aria-label={isArmed ? `Confirm removing ${f.name}` : `Remove ${f.name}`}
+                    style={{ flexShrink: 0, background: "none", border: `1px solid ${isArmed ? "#7a4a4a" : "#3a3a3a"}`, borderRadius: 3, color: isArmed ? "#d08a8a" : "#9a9a9a", cursor: "pointer", padding: "3px 7px", fontFamily: mono, fontSize: 9, letterSpacing: "0.1em", minWidth: 44 }}
+                  >{isArmed ? "SURE?" : "REMOVE"}</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <p style={{ margin: 0, fontFamily: mono, fontSize: 8.5, letterSpacing: "0.1em", color: "#4a4a4a" }}>REMOVING TAKES IT OFF HIS PAGE AND OUT OF STORAGE</p>
       </div>
     </div>
   );
@@ -3689,6 +3802,7 @@ function Dashboard() {
   const [blakeFileCount, setBlakeFileCount] = useState(0);
   const [blakeSending, setBlakeSending] = useState<{ done: number; total: number } | null>(null);
   const [blakeReply, setBlakeReply] = useState<BlakeItem | null>(null);
+  const [blakeShelfOpen, setBlakeShelfOpen] = useState(false);
   // Notion's query index lags a write by a few seconds, so a background
   // refetch right after a check-off can hand back the old state. Edits are
   // pinned here for a short window and win over server rows in fetchData.
@@ -5491,7 +5605,7 @@ function Dashboard() {
           </div>
 
           {/* Blake's list, the narrow middle column */}
-          <BlakePanel items={blakeItems} loading={loading} fileCount={blakeFileCount} sending={blakeSending} onToggle={toggleBlake} onOpen={openBlakeReply} onAsk={askBlake} onClearDone={clearBlakeDone} onDropFiles={sendFilesToBlake} />
+          <BlakePanel items={blakeItems} loading={loading} fileCount={blakeFileCount} sending={blakeSending} onToggle={toggleBlake} onOpen={openBlakeReply} onAsk={askBlake} onClearDone={clearBlakeDone} onDropFiles={sendFilesToBlake} onOpenShelf={() => setBlakeShelfOpen(true)} />
 
           {/* Projects, right half — full width again */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, minWidth: 0 }}>
@@ -5881,7 +5995,12 @@ function Dashboard() {
           onReply={replyToBlake}
           onAttachAsk={attachToBlakeAsk}
           onToggle={async (id, done) => { await toggleBlake(id, done); setBlakeReply(null); }}
+          onNotice={toast}
         />
+      )}
+
+      {blakeShelfOpen && (
+        <BlakeShelfModal onClose={() => setBlakeShelfOpen(false)} onNotice={toast} onRemoved={() => setBlakeFileCount(c => Math.max(0, c - 1))} />
       )}
 
       <AskClaude digestRef={askDigestRef} />
