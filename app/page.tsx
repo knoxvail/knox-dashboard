@@ -3952,6 +3952,61 @@ function Dashboard() {
   const pinBlake = useCallback((id: string, patch: { done: boolean; response: string; hidden?: boolean; keep?: BlakeItem }) => {
     blakeLocal.current.set(id, { ...patch, until: Date.now() + 20000 });
   }, []);
+  // server rows with the pinned local edits laid over them
+  const applyBlakePins = useCallback((serverRows: BlakeItem[]): BlakeItem[] => {
+    const now = Date.now();
+    const pins = blakeLocal.current;
+    pins.forEach((v, k) => { if (v.until <= now) pins.delete(k); });
+    const rows = serverRows
+      .filter(r => !pins.get(r.id)?.hidden)
+      .map(r => { const p = pins.get(r.id); return p ? { ...r, done: p.done, response: p.response } : r; });
+    // a row created seconds ago may not be in Notion's index yet; keep it
+    const present = new Set(rows.map(r => r.id));
+    pins.forEach((v, k) => { if (v.keep && !present.has(k)) rows.push(v.keep); });
+    return rows;
+  }, []);
+  // Blake's side alone, without the whole board: used when his rows change
+  const refreshBlake = useCallback(async () => {
+    try {
+      const [rowsRes, filesRes] = await Promise.all([
+        fetch("/api/blake", { cache: "no-store" }),
+        fetch("/api/blake/files", { cache: "no-store" }),
+      ]);
+      if (rowsRes.ok) {
+        const d = await rowsRes.json();
+        const rows: BlakeItem[] = (d.items || []).map((r: any) => ({
+          id: r.id, title: r.title, notes: r.notes || "", done: !!r.done, response: r.response || "", side: r.side === "K" ? "K" : "B", created: r.created,
+        }));
+        setBlakeItems(applyBlakePins(rows));
+      }
+      if (filesRes.ok) {
+        const f = await filesRes.json();
+        setBlakeFileCount((f.files || []).length);
+      }
+    } catch {}
+  }, [applyBlakePins]);
+  // Heartbeat: every 15 seconds while the tab is visible, ask for the cheap
+  // fingerprint of Blake's rows; pull the rows only when it moved. This is
+  // what makes his sends show up here without a refresh.
+  const blakeVersion = useRef<string | null>(null);
+  useEffect(() => {
+    let stopped = false;
+    const check = async () => {
+      if (stopped || document.visibilityState !== "visible") return;
+      try {
+        const r = await fetch("/api/blake/version", { cache: "no-store" });
+        if (!r.ok) return;
+        const { v } = await r.json();
+        if (blakeVersion.current !== null && v !== blakeVersion.current) refreshBlake();
+        blakeVersion.current = v;
+      } catch {}
+    };
+    check();
+    const id = setInterval(check, 15000);
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stopped = true; clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+  }, [refreshBlake]);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [verse, setVerse] = useState<Verse | null>(null);
   const [allVerses, setAllVerses] = useState<Verse[]>([]);
@@ -4187,18 +4242,7 @@ function Dashboard() {
       setActions((data.actions || []).slice().sort(byOrder));
       setGoals(data.goals || []);
       setBrief(data.brief || "");
-      {
-        const now = Date.now();
-        const pins = blakeLocal.current;
-        pins.forEach((v, k) => { if (v.until <= now) pins.delete(k); });
-        const rows = ((data.blake || []) as BlakeItem[])
-          .filter(r => !pins.get(r.id)?.hidden)
-          .map(r => { const p = pins.get(r.id); return p ? { ...r, done: p.done, response: p.response } : r; });
-        // a row created seconds ago may not be in Notion's index yet; keep it
-        const present = new Set(rows.map(r => r.id));
-        pins.forEach((v, k) => { if (v.keep && !present.has(k)) rows.push(v.keep); });
-        setBlakeItems(rows);
-      }
+      setBlakeItems(applyBlakePins((data.blake || []) as BlakeItem[]));
       setBlakeFileCount(data.blakeFiles || 0);
     } catch {}
   }, []);
