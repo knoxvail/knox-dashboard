@@ -4200,6 +4200,35 @@ function Dashboard() {
     if (sent) toast(`Attached ${sent} to your ask`);
     if (failed.length) toast(`Couldn't attach ${failed.join(", ")}`);
   }, [toast]);
+
+  // Census: while the board is open, pull Carmen's newest Health Center report
+  // out of the Triad inbox and log its daily totals (a few seconds after load,
+  // then every three hours). The first run backfills the year over a few
+  // passes. Quiet unless it actually logged something new.
+  useEffect(() => {
+    let stopped = false;
+    const run = async () => {
+      try {
+        let wrote = 0;
+        for (let pass = 0; pass < 8 && !stopped; pass++) {
+          const r = await fetch("/api/census/sync", { cache: "no-store" });
+          if (!r.ok) return;
+          const d = await r.json();
+          wrote += d.written || 0;
+          if (!d.remaining) {
+            if (wrote > 0 && d.latest) {
+              const when = new Date(`${d.latest.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              toast(`Census logged through ${when}: ${d.latest.total} in the Health Center`);
+            }
+            return;
+          }
+        }
+      } catch {}
+    };
+    const first = setTimeout(run, 8000);
+    const every = setInterval(run, 3 * 60 * 60 * 1000);
+    return () => { stopped = true; clearTimeout(first); clearInterval(every); };
+  }, [toast]);
   const undoLast = useCallback(async () => {
     const item = undoStack.current.pop();
     if (!item) { toast("Nothing to undo"); return; }
