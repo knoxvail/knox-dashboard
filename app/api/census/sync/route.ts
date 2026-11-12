@@ -98,9 +98,11 @@ export async function GET(req: NextRequest) {
 
   if (board) {
     gm = board;
-    // Leave this login with the job. Only when it is a new one, and only after
+    // Keep the job's login current. This never creates one: the owner turns the
+    // saved login on at /api/census/job, and only then does a block with a
+    // login exist here. After that, a new sign-in replaces the old login, once
     // the refresh token has proven by itself that it opens a Triad mailbox.
-    if (!dry && mem && cookieRefresh && savedLogin(mem) !== cookieRefresh) {
+    if (!dry && mem && mem.login.data.login && cookieRefresh && savedLogin(mem) !== cookieRefresh) {
       const fresh = await refreshAccess(cookieRefresh);
       if (fresh.token && BOARD_MAILBOX.test(await mailboxOf(gmailWith(fresh.token, "")))) {
         remembered = await rememberLogin(notionToken, mem, cookieRefresh);
