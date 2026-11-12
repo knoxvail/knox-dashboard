@@ -8,11 +8,15 @@ import crypto from "crypto";
 //                  keeps in its cookie, sealed with AES-256-GCM under a key
 //                  made from two secrets that exist only in the server's
 //                  environment, so the text sitting in Notion is useless on
-//                  its own. Only the signed-in dashboard writes it.
+//                  its own. Only the signed-in dashboard writes it, and
+//                  only once the owner has turned it on.
 //   census-status  When the job last checked, which report it logged, and how
 //                  far the log runs. Every run writes it.
 //
 // Two blocks, not one, so a status write can never undo a fresh login.
+//
+// Keeping a login is the owner's choice. No login is written until they turn
+// it on at /api/census/job, and turning it off there empties that block.
 //
 // Set CENSUS_SAVED_LOGIN=off in the environment to stop the job keeping or
 // using a login at all; the census then only syncs while the dashboard is open.
@@ -20,7 +24,9 @@ import crypto from "crypto";
 const NOTION = "https://api.notion.com/v1";
 
 export const CENSUS_HOLDER = process.env.NOTION_CENSUS_HOLDER_ID || "415c40ab-ce39-81b3-b2c1-ca411566195e";
-export const SAVED_LOGIN_ON = process.env.CENSUS_SAVED_LOGIN !== "off";
+
+// read at call time, so a changed setting needs no code change
+export const savedLoginOn = () => process.env.CENSUS_SAVED_LOGIN !== "off";
 
 export type LoginNote = { kind: "census-login"; login?: string; saved?: string };
 
@@ -137,13 +143,20 @@ async function write(token: string, slot: Slot<LoginNote | StatusNote>): Promise
 
 // the login the job holds, opened; null when there is none it can use
 export function savedLogin(mem: Memory): string | null {
-  return SAVED_LOGIN_ON ? unseal(mem.login.data.login) : null;
+  return savedLoginOn() ? unseal(mem.login.data.login) : null;
 }
 
 export async function rememberLogin(token: string, mem: Memory, refreshToken: string): Promise<boolean> {
-  const box = SAVED_LOGIN_ON ? seal(refreshToken) : null;
+  const box = savedLoginOn() ? seal(refreshToken) : null;
   if (!box) return false;
   mem.login.data = { kind: "census-login", login: box, saved: new Date().toISOString() };
+  return write(token, mem.login);
+}
+
+// keeps the block, empties it: no login, and no standing consent to keep one
+export async function forgetLogin(token: string, mem: Memory): Promise<boolean> {
+  if (!mem.login.id) return true;
+  mem.login.data = { kind: "census-login" };
   return write(token, mem.login);
 }
 

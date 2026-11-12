@@ -137,34 +137,42 @@ Blake asked for those tracked daily so trends show.
   four total rows, and writes new or changed days. No agent is involved; it
   is plain code, so the same report always gives the same numbers. Three
   things call it:
-  1. A Vercel cron, three times a day (`vercel.json`: 14:00, 17:00, and 22:00
-     UTC, each firing somewhere inside its hour). This is what keeps the log
-     current when nobody has anything open.
-  2. Blake's page, when it opens and every ten minutes while it is on screen,
+  1. The dashboard itself, a few seconds after it loads and every three hours.
+     This always works while the board is open and signed in to Gmail.
+  2. A Vercel cron, three times a day (`vercel.json`: 14:00, 17:00, and 22:00
+     UTC, each firing somewhere inside its hour).
+  3. Blake's page, when it opens and every ten minutes while it is on screen,
      so he sees the morning's number without waiting for the next cron.
-  3. The dashboard itself, a few seconds after it loads and every three hours.
-- **Whose login it reads with.** When the dashboard calls, it uses the
+  Callers 2 and 3 only do anything once the census job is switched on (next
+  point). Until then they get "not connected" and the log fills only from 1.
+- **The census job switch.** `/api/census/job` is a small page with an on/off
+  button. It only answers a browser signed in to Triad Gmail on the dashboard.
+  Turning it on is Knox's choice: the dashboard then keeps his Gmail sign-in
+  (the refresh token, sealed with AES-256-GCM under a key made from
+  server-only secrets) in a code block on the holder row, and the cron and
+  Blake's page read Carmen's report with it. Turning it off empties that
+  block. Nothing saves a login without that button being pressed. The same
+  page shows the last check and what stopped it, if anything.
+- **Whose login a call reads with.** A call from the dashboard uses the
   dashboard's own Gmail cookies, but only after Gmail confirms they open a
-  Triad mailbox. On that call it also leaves the login with the job: the
-  refresh token, sealed (AES-256-GCM, key made from server-only secrets), in
-  a code block on the holder row. The cron and Blake's page have no cookies,
-  so the job reads with that saved login. It runs at most once every five
-  minutes for those callers, stops early if Carmen's newest report is already
-  logged, and answers with counts and dates only.
+  Triad mailbox; any other login is treated as a stranger. The cron and
+  Blake's page have no cookies, so they read with the saved login. For them
+  the job runs at most once every five minutes, stops early if Carmen's
+  newest report is already logged, and answers with counts and dates only.
+  While the job is on, a fresh dashboard sign-in replaces the saved login
+  without another button press.
 - **What it remembers.** Two code blocks on the holder row: `census-login`
-  (the sealed login) and `census-status` (last check, which report is logged,
-  how far the log runs, and `note`, which reads "ok" or says what stopped the
-  last run). Leave both alone. Deleting the login block only pauses the cron
-  until the dashboard is opened again.
+  (the sealed login, empty while the job is off) and `census-status` (last
+  check, which report is logged, how far the log runs, and `note`, which
+  reads "ok" or says what stopped the last run). Leave both alone.
 - **When it stops.** If Google rejects the saved login (password change,
   access revoked, or the app's test-mode expiry), `note` reads
-  `gmail_login_rejected` and Blake's card says "No new report since" with the
-  last date once it is four days behind. The fix is to reconnect Triad Gmail
-  on the dashboard; the next load saves the new login. Setting
-  `CENSUS_SAVED_LOGIN=off` in Vercel turns the saved login off entirely, and
-  the census then only syncs while the dashboard is open. Nothing is lost
-  either way: every workbook carries the whole year, so the next good run
-  fills any gap.
+  `gmail_login_rejected`, the job page says so, and Blake's card says "No new
+  report since" with the last date once it is four days behind. The fix is to
+  reconnect Triad Gmail on the dashboard; the next load saves the new login.
+  Setting `CENSUS_SAVED_LOGIN=off` in Vercel turns the saved login off
+  entirely. Nothing is lost either way: every workbook carries the whole
+  year, so the next good run fills any gap.
 - **What it skips.** She pre-fills the rest of the month, so days after the
   report's date are projections and are left out. Resident names, rooms, and
   payer notes are never read into anything.

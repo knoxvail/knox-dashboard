@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { corsHeaders, preflight } from "../../blake/shared";
-import { gmailWith, mailboxOf, refreshAccess, type Gmail } from "../gmail";
+import { boardClient, gmailWith, opensTriadMailbox, type Gmail } from "../gmail";
 import { parseCensusWorkbook } from "../parse";
 import { archiveCensusRow, createCensusDay, loadCensus, sameDay, updateCensusDay, type CensusRow } from "../shared";
 import { readMemory, rememberLogin, savedLogin, saveStatus } from "../vault";
@@ -17,13 +17,14 @@ import { readMemory, rememberLogin, savedLogin, saveStatus } from "../vault";
 //   The board. A request that carries the dashboard's Gmail cookies, once
 //   Gmail itself confirms they open a Triad mailbox. It reads with those
 //   cookies, re-reads the whole year every time, and may ask for ?dry=1
-//   (parse and return the days, write nothing). It also leaves its login
-//   with the job, sealed (see vault.ts), which is what makes the next kind
-//   of caller work.
+//   (parse and return the days, write nothing). If the owner has turned the
+//   saved login on (/api/census/job), a new sign-in also replaces the login
+//   the job holds, sealed (see vault.ts).
 //
 //   Everyone else: the Vercel cron (vercel.json, three times a day), Blake's
 //   page asking for fresh numbers, or a stranger. There are no cookies to
-//   trust, so the job reads with the login the board left behind. It runs at
+//   trust, so the job reads with the saved login, if the owner has turned
+//   one on; otherwise it answers "not connected" and does nothing. It runs at
 //   most once every five minutes, stops early when Carmen's newest report is
 //   one it has already logged (?full=1 re-reads anyway), and only ever
 //   answers with counts and dates.
@@ -35,7 +36,6 @@ export const revalidate = 0;
 export const maxDuration = 60;
 
 const SENDER = "ctyler@uvrc.com";
-const BOARD_MAILBOX = /@triadsl\.com$/;
 const WRITE_LIMIT = 90;
 const CONCURRENCY = 3;
 const JOB_GAP_MS = 5 * 60 * 1000;
@@ -66,17 +66,10 @@ export async function GET(req: NextRequest) {
   if (!notionToken) return NextResponse.json({ error: "not configured" }, { status: 500, headers: cors });
 
   const ask = req.nextUrl.searchParams;
-  const cookieAccess = req.cookies.get("gmail_access_token")?.value || "";
   const cookieRefresh = req.cookies.get("gmail_refresh_token")?.value || "";
 
-  // 0. who is asking. Cookies only count once Gmail says whose mailbox they
-  // open; anyone can send a cookie, and a login for some other mailbox must
-  // never feed this log or become the job's login.
-  let board: Gmail | null = null;
-  if (cookieAccess || cookieRefresh) {
-    const mine = gmailWith(cookieAccess, cookieRefresh);
-    if (BOARD_MAILBOX.test(await mailboxOf(mine))) board = mine;
-  }
+  // 0. who is asking: the signed-in dashboard, or anyone else
+  const board = await boardClient(req);
 
   const reply = (body: Record<string, unknown>, status = 200) => {
     const res = NextResponse.json({ ...body, mode: board ? "board" : "job" }, { status, headers: cors });
@@ -103,10 +96,7 @@ export async function GET(req: NextRequest) {
     // login exist here. After that, a new sign-in replaces the old login, once
     // the refresh token has proven by itself that it opens a Triad mailbox.
     if (!dry && mem && mem.login.data.login && cookieRefresh && savedLogin(mem) !== cookieRefresh) {
-      const fresh = await refreshAccess(cookieRefresh);
-      if (fresh.token && BOARD_MAILBOX.test(await mailboxOf(gmailWith(fresh.token, "")))) {
-        remembered = await rememberLogin(notionToken, mem, cookieRefresh);
-      }
+      if (await opensTriadMailbox(cookieRefresh)) remembered = await rememberLogin(notionToken, mem, cookieRefresh);
     }
   } else {
     if (dry) return reply({ error: "sign_in_first" }, 401);
