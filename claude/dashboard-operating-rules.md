@@ -119,11 +119,12 @@ rows, so his Done list resets weekly on its own.
 
 ### The Health Center census log
 
-Carmen Tyler (ctyler@uvrc.com, University Village billing) emails the Health
-Center census every morning with one attachment, "2026 HC Census.xlsx": a
-sheet per month, a column per day, a row per resident, and four total rows at
-the bottom of each sheet (Total Private Pay, Total Medicaid, Total SNF,
-TOTAL HC). Blake asked for those tracked daily so trends show.
+Carmen Tyler (University Village billing) emails the Health Center census
+every weekday morning, usually between 7 and 11 Central, with one attachment,
+"2026 HC Census.xlsx": a sheet per month, a column per day, a row per
+resident, and four total rows at the bottom of each sheet (Total Private Pay,
+Total Medicaid, Total SNF, TOTAL HC). Monday's workbook fills in the weekend.
+Blake asked for those tracked daily so trends show.
 
 - **Where it lives.** A Notion database, "HC Census Log", one row per day:
   Day (title, YYYY-MM-DD), Date, Total HC, Private Pay, Medicaid, SNF, Source.
@@ -132,11 +133,38 @@ TOTAL HC). Blake asked for those tracked daily so trends show.
   Status Complete, which is what lets the dashboard's integration reach it.
   That row is not a task; nothing should pick, move, or delete it.
 - **How it fills.** `/api/census/sync` on the dashboard finds Carmen's newest
-  message through the Triad Gmail login, reads the workbook in memory, takes
-  only those four total rows, and writes new or changed days. The board calls
-  it a few seconds after it loads and every three hours, so the log stays
-  current whenever the dashboard is open in a browser signed into Gmail. Each
-  run re-reads the whole year, so a day Carmen corrects later gets corrected.
+  message in the Triad inbox, reads the workbook in memory, takes only those
+  four total rows, and writes new or changed days. No agent is involved; it
+  is plain code, so the same report always gives the same numbers. Three
+  things call it:
+  1. A Vercel cron, three times a day (`vercel.json`: 14:00, 17:00, and 22:00
+     UTC, each firing somewhere inside its hour). This is what keeps the log
+     current when nobody has anything open.
+  2. Blake's page, when it opens and every ten minutes while it is on screen,
+     so he sees the morning's number without waiting for the next cron.
+  3. The dashboard itself, a few seconds after it loads and every three hours.
+- **Whose login it reads with.** When the dashboard calls, it uses the
+  dashboard's own Gmail cookies, but only after Gmail confirms they open a
+  Triad mailbox. On that call it also leaves the login with the job: the
+  refresh token, sealed (AES-256-GCM, key made from server-only secrets), in
+  a code block on the holder row. The cron and Blake's page have no cookies,
+  so the job reads with that saved login. It runs at most once every five
+  minutes for those callers, stops early if Carmen's newest report is already
+  logged, and answers with counts and dates only.
+- **What it remembers.** Two code blocks on the holder row: `census-login`
+  (the sealed login) and `census-status` (last check, which report is logged,
+  how far the log runs, and `note`, which reads "ok" or says what stopped the
+  last run). Leave both alone. Deleting the login block only pauses the cron
+  until the dashboard is opened again.
+- **When it stops.** If Google rejects the saved login (password change,
+  access revoked, or the app's test-mode expiry), `note` reads
+  `gmail_login_rejected` and Blake's card says "No new report since" with the
+  last date once it is four days behind. The fix is to reconnect Triad Gmail
+  on the dashboard; the next load saves the new login. Setting
+  `CENSUS_SAVED_LOGIN=off` in Vercel turns the saved login off entirely, and
+  the census then only syncs while the dashboard is open. Nothing is lost
+  either way: every workbook carries the whole year, so the next good run
+  fills any gap.
 - **What it skips.** She pre-fills the rest of the month, so days after the
   report's date are projections and are left out. Resident names, rooms, and
   payer notes are never read into anything.

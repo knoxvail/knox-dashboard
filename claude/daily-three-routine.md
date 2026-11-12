@@ -119,7 +119,8 @@ That includes the row named "Files from Knox", which only holds files.
 One more row to leave alone: "HC Census Log" (Dashboard = "Census", Status
 Complete). It is not a task. It holds the Health Center census database that
 the dashboard fills from Carmen's daily report. Never pick, retag, rename,
-move, or delete it, and never edit the rows inside that database.
+move, or delete it, never edit the rows inside that database, and never
+touch the two code blocks on that row (they are the census job's memory).
 
 Goal rows are buckets' cousins, not tasks. Never tag one as Action, never pick
 one as a daily three, never mark one Complete. A finished goal goes to 100 with

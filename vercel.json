@@ -1,5 +1,8 @@
 {
   "crons": [
-    { "path": "/api/blake/sweep", "schedule": "0 12 * * 1" }
+    { "path": "/api/blake/sweep", "schedule": "0 12 * * 1" },
+    { "path": "/api/census/sync?run=morning", "schedule": "0 14 * * *" },
+    { "path": "/api/census/sync?run=midday", "schedule": "0 17 * * *" },
+    { "path": "/api/census/sync?run=afternoon", "schedule": "0 22 * * *" }
   ]
 }
