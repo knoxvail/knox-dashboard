@@ -116,6 +116,11 @@ Rows with Dashboard = "Blake" are Knox's dad's list, added from his own app
 the daily three, never tag, rename, move, or clear one. Leave them alone.
 That includes the row named "Files from Knox", which only holds files.
 
+One more row to leave alone: "HC Census Log" (Dashboard = "Census", Status
+Complete). It is not a task. It holds the Health Center census database that
+the dashboard fills from Carmen's daily report. Never pick, retag, rename,
+move, or delete it, and never edit the rows inside that database.
+
 Goal rows are buckets' cousins, not tasks. Never tag one as Action, never pick
 one as a daily three, never mark one Complete. A finished goal goes to 100 with
 a closing note. Add a new goal row only when a genuinely new big thread appears;

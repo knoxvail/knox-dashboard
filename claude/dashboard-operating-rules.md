@@ -117,6 +117,33 @@ shows them under From Knox. Leave it alone too. A Vercel cron hits
 `/api/blake/sweep` every Monday at 12:00 UTC and archives Blake's Complete
 rows, so his Done list resets weekly on its own.
 
+### The Health Center census log
+
+Carmen Tyler (ctyler@uvrc.com, University Village billing) emails the Health
+Center census every morning with one attachment, "2026 HC Census.xlsx": a
+sheet per month, a column per day, a row per resident, and four total rows at
+the bottom of each sheet (Total Private Pay, Total Medicaid, Total SNF,
+TOTAL HC). Blake asked for those tracked daily so trends show.
+
+- **Where it lives.** A Notion database, "HC Census Log", one row per day:
+  Day (title, YYYY-MM-DD), Date, Total HC, Private Pay, Medicaid, SNF, Source.
+  It sits inside a holder row of the tasks database named "HC Census Log
+  (holds the census database, do not delete)", `Dashboard = "Census"`,
+  Status Complete, which is what lets the dashboard's integration reach it.
+  That row is not a task; nothing should pick, move, or delete it.
+- **How it fills.** `/api/census/sync` on the dashboard finds Carmen's newest
+  message through the Triad Gmail login, reads the workbook in memory, takes
+  only those four total rows, and writes new or changed days. The board calls
+  it a few seconds after it loads and every three hours, so the log stays
+  current whenever the dashboard is open in a browser signed into Gmail. Each
+  run re-reads the whole year, so a day Carmen corrects later gets corrected.
+- **What it skips.** She pre-fills the rest of the month, so days after the
+  report's date are projections and are left out. Resident names, rooms, and
+  payer notes are never read into anything.
+- **Who reads it.** `/api/census?month=YYYY-MM` serves a month of totals to
+  the census view on Blake's page (kmvtesting.vercel.app/blake). It is public
+  like the rest of that page, which is why it carries counts and nothing else.
+
 ### Buckets are not tasks
 
 The Long Term rows are buckets: Market Research, UVRC General, UVRC Brand PR,
