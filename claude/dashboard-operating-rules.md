@@ -176,9 +176,14 @@ Blake asked for those tracked daily so trends show.
 - **What it skips.** She pre-fills the rest of the month, so days after the
   report's date are projections and are left out. Resident names, rooms, and
   payer notes are never read into anything.
-- **Who reads it.** `/api/census?month=YYYY-MM` serves a month of totals to
-  the census view on Blake's page (kmvtesting.vercel.app/blake). It is public
-  like the rest of that page, which is why it carries counts and nothing else.
+- **Who reads it.** Two pages on kmvtesting. The census tracker
+  (kmvtesting.vercel.app/census) is the full-page view: it loads the whole
+  log with `/api/census?all=1` and draws the flowsheet, the monthly ledger,
+  and the daily log. The census card on Blake's page
+  (kmvtesting.vercel.app/blake) reads one month at a time with
+  `/api/census?month=YYYY-MM`. The kmvtesting pages sit behind a number-pad
+  code, but this API does not: anyone with its address can read it, which is
+  why it carries counts and nothing else.
 
 ### Buckets are not tasks
 
