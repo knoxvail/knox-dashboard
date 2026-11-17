@@ -181,9 +181,10 @@ Blake asked for those tracked daily so trends show.
   log with `/api/census?all=1` and draws the flowsheet, the monthly ledger,
   and the daily log. The census card on Blake's page
   (kmvtesting.vercel.app/blake) reads one month at a time with
-  `/api/census?month=YYYY-MM`. The kmvtesting pages sit behind a number-pad
-  code, but this API does not: anyone with its address can read it, which is
-  why it carries counts and nothing else.
+  `/api/census?month=YYYY-MM`. Both pages open for anyone who has the link
+  (only the kmvtesting hub, the page that lists every project, asks for a
+  code), and so does this API, which is why it carries counts and nothing
+  else.
 
 ### Buckets are not tasks
 
