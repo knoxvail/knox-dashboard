@@ -12,8 +12,9 @@ import { buildDaily, canMail, centralDate, listReports, recipients, reportAt, se
 // The Health Center census workbook is emailed every weekday morning. This
 // route finds the latest message, downloads the .xlsx in memory, reads the
 // four total rows per day, and writes any new or corrected days to the Notion
-// log. The first time it sees a report, it also sends the daily email (see
-// daily.ts and mail.ts): once per report, whoever gets there first.
+// log. The first time it sees a report, on the day that report was sent, it
+// also sends the daily email (see daily.ts and mail.ts): once per report,
+// whoever gets there first.
 //
 // Two kinds of caller:
 //
@@ -78,7 +79,7 @@ async function mailOut(
     const [id, at] = (fresh.status.data.mailing || "").split("@");
     if (id === found.id && Date.now() - (Date.parse(at) || 0) < MAIL_CLAIM_MS) return { result: "skipped", patch: {} };
   }
-  await saveStatus(notionToken, mem, { mailing: `${found.id}@${new Date().toISOString()}` });
+  await saveStatus(notionToken, mem, { mailing: `${found.id}@${new Date(Date.now()).toISOString()}` });
 
   const failed = (why: string) => ({
     result: "failed" as const,
@@ -93,7 +94,7 @@ async function mailOut(
     if (!sent.ok) return failed(`gmail_said_${sent.status}`);
     return {
       result: "sent",
-      patch: { mailed: found.id, mailedAt: new Date().toISOString(), mailedTo: to.length, mailing: "", mailTry: "", mailNote: sent.chart ? "sent" : "sent_without_graph" },
+      patch: { mailed: found.id, mailedAt: new Date(Date.now()).toISOString(), mailedTo: to.length, mailing: "", mailTry: "", mailNote: sent.chart ? "sent" : "sent_without_graph" },
     };
   } catch (e) {
     console.error("census mail", e);
@@ -124,7 +125,7 @@ export async function GET(req: NextRequest) {
   };
 
   const mem = await readMemory(notionToken);
-  const stamp = () => new Date().toISOString();
+  const stamp = () => new Date(Date.now()).toISOString();
   const dry = ask.get("dry") === "1";
   const full = (!!board && ask.get("light") !== "1") || ask.get("full") === "1";
   let remembered = !!(mem && savedLogin(mem));
@@ -182,19 +183,21 @@ export async function GET(req: NextRequest) {
 
     const reportDate = centralDate(found.sent);
 
-    // The daily email goes out once for each report. The first run after the
-    // email was built starts from the report in hand without sending it:
-    // nobody wants this morning's numbers again in the afternoon.
+    // The daily email goes out once for each report, and only on the day the
+    // report was sent. A report first seen on a later day (nothing was running
+    // that day, or every send failed) is noted as handled and not sent:
+    // nobody wants yesterday's count once today's is on its way.
     const status = mem ? mem.status.data : null;
     const mailOn = canMail() && !dry && !!mem && mailIsOn(mem);
-    const mailStart = mailOn && status!.mailed === undefined;
-    const mailDue = mailOn && !mailStart && status!.mailed !== found.id && triesFor(status!, found.id) < MAIL_TRIES;
+    const unsent = mailOn && status!.mailed !== found.id;
+    const mailStale = unsent && reportDate !== centralDate(Date.now());
+    const mailDue = unsent && !mailStale && triesFor(status!, found.id) < MAIL_TRIES;
     const logged = !!status && status.report === found.id;
 
     // nothing new since the last complete run: the log already matches this
     // report, and its email has gone
     if (!full && logged && !mailDue) {
-      await note({ checked: stamp(), by, note: "ok", ...(mailStart ? { mailed: found.id } : {}) });
+      await note({ checked: stamp(), by, note: "ok", ...(mailStale ? { mailed: found.id } : {}) });
       return reply({ ok: true, unchanged: true, reportDate, through: status!.through || null, written: 0, remaining: 0 });
     }
 
@@ -246,7 +249,7 @@ export async function GET(req: NextRequest) {
 
     // 4. the daily email, the first time this report is seen
     let mail: "sent" | "failed" | "skipped" | undefined;
-    let mailPatch: Partial<StatusNote> = mailStart ? { mailed: found.id } : {};
+    let mailPatch: Partial<StatusNote> = mailStale ? { mailed: found.id } : {};
     if (mailDue && mem) {
       const out = await mailOut(gm, notionToken, mem, found, book, list.ids.slice(at + 1));
       mail = out.result;

@@ -194,10 +194,12 @@ Blake asked for those tracked daily so trends show.
     the like in the day's cell) is not a move. A discharge to the hospital
     is a move-out, and the return is a move-in counted as "returning". Names
     are used only to match one line to another and never leave that file.
-  - One email per report. `mailed` in `census-status` is the report it last
-    went out for. A run claims the send first (`mailing`), so two runs at the
-    same moment do not both send. A failed send is retried on the next check,
-    five times at most.
+  - One email per report, and only on the day the report was sent. `mailed`
+    in `census-status` is the report it last went out for. A run claims the
+    send first (`mailing`), so two runs at the same moment do not both send.
+    A failed send is retried on the next check, five times at most. A report
+    first seen on a later day (nothing was running that day) is marked as
+    handled and not sent late.
   - The graph is a PNG drawn on the server (`chart.ts`, with next/og) and
     carried inside the message, so it shows in Gmail without a "show images"
     step. `/api/census/chart` serves the same picture from the log.
