@@ -1,6 +1,6 @@
 import crypto from "crypto";
 
-// What the census job remembers between runs: two small code blocks on the
+// What the census job remembers between runs: three small code blocks on the
 // holder row in Notion (the row that carries the census database).
 //
 //   census-login   The Triad Gmail login the job uses when nobody has the
@@ -10,10 +10,17 @@ import crypto from "crypto";
 //                  environment, so the text sitting in Notion is useless on
 //                  its own. Only the signed-in dashboard writes it, and
 //                  only once the owner has turned it on.
-//   census-status  When the job last checked, which report it logged, and how
-//                  far the log runs. Every run writes it.
+//   census-status  When the job last checked, which report it logged, how far
+//                  the log runs, and which report the daily email last went
+//                  out for. Every run writes it.
+//   census-mail    The daily email's settings: off or on, and who else gets
+//                  it besides the owner. Only the owner writes it, from
+//                  /api/census/job. It does not exist until they change
+//                  something; until then the email is on and goes to the
+//                  owner alone.
 //
-// Two blocks, not one, so a status write can never undo a fresh login.
+// Separate blocks, so a status write can never undo a fresh login or a
+// change to who gets the email.
 //
 // Keeping a login is the owner's choice. No login is written until they turn
 // it on at /api/census/job, and turning it off there empties that block.
@@ -39,15 +46,30 @@ export type StatusNote = {
   reportDate?: string; // the day that report was sent
   through?: string; // newest day in the log
   note?: string; // "ok", or what stopped the last run
+  // the daily email (see daily.ts)
+  mailed?: string; // Gmail id of the newest report the email has gone out for
+  mailedAt?: string;
+  mailedTo?: number; // how many people it went to
+  mailing?: string; // "<report id>@<time>": a run has claimed the send
+  mailTry?: string; // "<report id>#<n>": failed sends for that report; it stops trying at five
+  mailNote?: string; // "sent", or what stopped the last send
+};
+
+export type MailNote = {
+  kind: "census-mail";
+  off?: boolean; // the owner turned the daily email off
+  to?: string[]; // who else gets it; the owner always does
+  changed?: string;
 };
 
 type Slot<T> = { id: string | null; data: T };
-export type Memory = { login: Slot<LoginNote>; status: Slot<StatusNote> };
+export type Memory = { login: Slot<LoginNote>; status: Slot<StatusNote>; mail: Slot<MailNote> };
 
 const CAPTIONS: Record<string, string> = {
   "census-login":
-    "Census job login, sealed. Lets the job read Carmen's report with the dashboard closed. Rewritten when the dashboard signs in to Gmail again.",
+    "Census job login, sealed. Lets the job read the census report with the dashboard closed. Rewritten when the dashboard signs in to Gmail again.",
   "census-status": "Census job status. Rewritten after every check.",
+  "census-mail": "Daily census email settings: on or off, and who else gets it. Changed from the census job page.",
 };
 
 function headers(token: string) {
@@ -92,7 +114,7 @@ export function unseal(box: string | undefined): string | null {
   }
 }
 
-// ---------- the two blocks ----------
+// ---------- the blocks ----------
 
 // null when Notion cannot be read at all
 export async function readMemory(token: string): Promise<Memory | null> {
@@ -102,6 +124,7 @@ export async function readMemory(token: string): Promise<Memory | null> {
     const mem: Memory = {
       login: { id: null, data: { kind: "census-login" } },
       status: { id: null, data: { kind: "census-status" } },
+      mail: { id: null, data: { kind: "census-mail" } },
     };
     for (const b of (await r.json()).results || []) {
       if (b?.type !== "code") continue;
@@ -110,6 +133,7 @@ export async function readMemory(token: string): Promise<Memory | null> {
       try { data = JSON.parse(text); } catch { continue; }
       if (data?.kind === "census-login" && !mem.login.id) mem.login = { id: b.id, data };
       else if (data?.kind === "census-status" && !mem.status.id) mem.status = { id: b.id, data };
+      else if (data?.kind === "census-mail" && !mem.mail.id) mem.mail = { id: b.id, data };
     }
     return mem;
   } catch {
@@ -117,7 +141,7 @@ export async function readMemory(token: string): Promise<Memory | null> {
   }
 }
 
-async function write(token: string, slot: Slot<LoginNote | StatusNote>): Promise<boolean> {
+async function write(token: string, slot: Slot<LoginNote | StatusNote | MailNote>): Promise<boolean> {
   const code = {
     language: "json",
     rich_text: [{ type: "text", text: { content: JSON.stringify(slot.data, null, 2) } }],
@@ -163,4 +187,41 @@ export async function forgetLogin(token: string, mem: Memory): Promise<boolean> 
 export async function saveStatus(token: string, mem: Memory, patch: Partial<StatusNote>): Promise<boolean> {
   mem.status.data = { ...mem.status.data, ...patch, kind: "census-status" };
   return write(token, mem.status);
+}
+
+// The same, on top of what is in Notion right now instead of what this run
+// read when it started. A run can take ten seconds, and another may have
+// written in the meantime, most importantly that it sent the daily email.
+// Writing an old copy back over that would send the email twice.
+export async function saveStatusFresh(token: string, mem: Memory, patch: Partial<StatusNote>): Promise<boolean> {
+  const now = await readMemory(token);
+  if (now && now.status.id) mem.status = now.status;
+  return saveStatus(token, mem, patch);
+}
+
+// ---------- the daily email's settings ----------
+
+const ADDRESS = /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+
+// "a@x.com, B@y.com; c@z.com" -> a clean list, or null if any piece is not an address
+export function addressList(text: string): string[] | null {
+  const out: string[] = [];
+  for (const piece of text.split(/[\s,;]+/)) {
+    const a = piece.trim().toLowerCase();
+    if (!a) continue;
+    if (!ADDRESS.test(a) || a.length > 120) return null;
+    if (!out.includes(a)) out.push(a);
+  }
+  return out.length > 12 ? null : out;
+}
+
+// who else gets the email; anything in the block that is not an address is dropped
+export const mailExtras = (mem: Memory): string[] =>
+  (Array.isArray(mem.mail.data.to) ? mem.mail.data.to : []).filter((a) => typeof a === "string" && ADDRESS.test(a)).slice(0, 12);
+
+export const mailIsOn = (mem: Memory): boolean => mem.mail.data.off !== true;
+
+export async function saveMail(token: string, mem: Memory, patch: Partial<MailNote>): Promise<boolean> {
+  mem.mail.data = { ...mem.mail.data, ...patch, kind: "census-mail", changed: new Date().toISOString() };
+  return write(token, mem.mail);
 }

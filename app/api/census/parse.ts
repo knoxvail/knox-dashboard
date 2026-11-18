@@ -1,16 +1,23 @@
 import { unzipSync, strFromU8 } from "fflate";
 
-// Reads Carmen's "HC Census" workbook (one sheet per month, one column per
-// day) and returns only the four summary rows she computes at the bottom of
+// Reads the "HC Census" workbook (one sheet per month, one column per day).
+//
+// censusDays() returns only the four summary rows computed at the bottom of
 // each sheet: Total Private Pay, Total Medicaid, Total SNF, TOTAL HC.
-// Resident rows are never read into the output; nothing with a name on it
-// leaves this function.
+// Resident rows are never read into its output; nothing with a name on it
+// leaves that function. moves.ts reads the resident rows, in memory, to count
+// move-ins and move-outs, and it hands back counts only.
 //
 // An .xlsx is a zip of XML. Formula cells carry their last computed value in
 // <v>, so the totals are there without evaluating anything.
 
 export type CensusDay = { date: string; total: number; private: number | null; medicaid: number | null; snf: number | null };
 export type ParsedSheet = { name: string; month: string | null; days: number; found: string[]; dayColumn: number | null };
+
+export type Cell = { col: number; num: number | null; str: string | null };
+// one month, as it sits in the workbook. This still holds resident rows: keep
+// it inside the request that read it, and never return or log it.
+export type Sheet = { name: string; ym: { y: number; m: number } | null; rows: Cell[][]; dayColumn: number | null };
 
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
@@ -62,8 +69,6 @@ function sharedStrings(xml: string): string[] {
   }
   return out;
 }
-
-type Cell = { col: number; num: number | null; str: string | null };
 
 function readRows(xml: string, strings: string[]): Cell[][] {
   const rows: Cell[][] = [];
@@ -126,12 +131,9 @@ function findDayColumn(rows: Cell[][]): number | null {
   return null;
 }
 
-/**
- * @param bytes  the .xlsx file
- * @param cutoff YYYY-MM-DD, the day the report was sent. Carmen pre-fills the
- *               rest of the month, so later days are projections, not census.
- */
-export function parseCensusWorkbook(bytes: Uint8Array, cutoff: string): { days: CensusDay[]; sheets: ParsedSheet[] } {
+// Opens the .xlsx once: every month sheet with its rows. Sheets that are not a
+// month ("Notes", a chart sheet) come back with no rows.
+export function readWorkbook(bytes: Uint8Array): Sheet[] {
   const files = unzipSync(bytes, {
     filter: (f) => /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|sharedStrings\.xml|worksheets\/[^/]+\.xml)$/.test(f.name),
   });
@@ -149,21 +151,35 @@ export function parseCensusWorkbook(bytes: Uint8Array, cutoff: string): { days: 
     if (id && target) rels[id] = "xl/" + target.replace(/^\/?(xl\/)?/, "");
   }
 
-  const days: CensusDay[] = [];
-  const sheets: ParsedSheet[] = [];
+  const out: Sheet[] = [];
   const sheetRe = /<sheet\b[^>]*>/g;
   const wbXml = text("xl/workbook.xml");
   while ((m = sheetRe.exec(wbXml))) {
     const name = attr(m[0], "name") || "";
-    const rid = attr(m[0], "r:id") || "";
     const ym = monthOf(name);
-    const xml = text(rels[rid] || "");
+    const xml = ym ? text(rels[attr(m[0], "r:id") || ""] || "") : "";
+    const rows = xml ? readRows(xml, strings) : [];
+    // column E when the header can't be found
+    out.push({ name, ym, rows, dayColumn: rows.length ? findDayColumn(rows) ?? 5 : null });
+  }
+  return out;
+}
+
+/**
+ * The four totals for each day.
+ * @param cutoff YYYY-MM-DD, the day the report was sent. The rest of the
+ *               month is pre-filled, so later days are projections, not census.
+ */
+export function censusDays(workbook: Sheet[], cutoff: string): { days: CensusDay[]; sheets: ParsedSheet[] } {
+  const days: CensusDay[] = [];
+  const sheets: ParsedSheet[] = [];
+  for (const sheet of workbook) {
+    const { name, ym, rows } = sheet;
     const info: ParsedSheet = { name, month: ym ? `${ym.y}-${pad(ym.m)}` : null, days: 0, found: [], dayColumn: null };
     sheets.push(info);
-    if (!ym || !xml) continue;
+    if (!ym || !rows.length) continue;
 
-    const rows = readRows(xml, strings);
-    const day1 = findDayColumn(rows) ?? 5; // column E when the header can't be found
+    const day1 = sheet.dayColumn ?? 5;
     info.dayColumn = day1;
 
     // last matching row wins: the summary block sits at the bottom of the sheet
@@ -198,4 +214,9 @@ export function parseCensusWorkbook(bytes: Uint8Array, cutoff: string): { days: 
 
   days.sort((a, b) => a.date.localeCompare(b.date));
   return { days, sheets };
+}
+
+/** @param bytes the .xlsx file */
+export function parseCensusWorkbook(bytes: Uint8Array, cutoff: string): { days: CensusDay[]; sheets: ParsedSheet[] } {
+  return censusDays(readWorkbook(bytes), cutoff);
 }

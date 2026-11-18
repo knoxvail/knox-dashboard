@@ -1,8 +1,13 @@
 {
   "crons": [
     { "path": "/api/blake/sweep", "schedule": "0 12 * * 1" },
-    { "path": "/api/census/sync?run=morning", "schedule": "0 14 * * *" },
-    { "path": "/api/census/sync?run=midday", "schedule": "0 17 * * *" },
-    { "path": "/api/census/sync?run=afternoon", "schedule": "0 22 * * *" }
+    { "path": "/api/census/sync?run=h12", "schedule": "0 12 * * *" },
+    { "path": "/api/census/sync?run=h13", "schedule": "0 13 * * *" },
+    { "path": "/api/census/sync?run=h14", "schedule": "0 14 * * *" },
+    { "path": "/api/census/sync?run=h15", "schedule": "0 15 * * *" },
+    { "path": "/api/census/sync?run=h16", "schedule": "0 16 * * *" },
+    { "path": "/api/census/sync?run=h17", "schedule": "0 17 * * *" },
+    { "path": "/api/census/sync?run=h18", "schedule": "0 18 * * *" },
+    { "path": "/api/census/sync?run=h22", "schedule": "0 22 * * *" }
   ]
 }

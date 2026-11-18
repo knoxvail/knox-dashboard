@@ -1,33 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { corsHeaders, preflight } from "../../blake/shared";
 import { boardClient, gmailWith, opensTriadMailbox, type Gmail } from "../gmail";
-import { parseCensusWorkbook } from "../parse";
+import { censusDays, readWorkbook, type Sheet } from "../parse";
 import { archiveCensusRow, createCensusDay, loadCensus, sameDay, updateCensusDay, type CensusRow } from "../shared";
-import { readMemory, rememberLogin, savedLogin, saveStatus } from "../vault";
+import { mailExtras, mailIsOn, readMemory, rememberLogin, savedLogin, saveStatus, saveStatusFresh, type Memory, type StatusNote } from "../vault";
+import { buildDaily, canMail, centralDate, listReports, recipients, reportAt, sendDaily, workbookOf, type ReportRef } from "../daily";
 
-// Pulls the newest census report out of the Triad inbox and logs it.
+// Pulls the newest census report out of the Triad inbox, logs it, and sends
+// the daily census email for it.
 //
-// Carmen Tyler emails the Health Center census workbook every weekday
-// morning. This route finds her latest message, downloads the .xlsx in
-// memory, reads the four total rows per day, and writes any new or corrected
-// days to the Notion log.
+// The Health Center census workbook is emailed every weekday morning. This
+// route finds the latest message, downloads the .xlsx in memory, reads the
+// four total rows per day, and writes any new or corrected days to the Notion
+// log. The first time it sees a report, it also sends the daily email (see
+// daily.ts and mail.ts): once per report, whoever gets there first.
 //
 // Two kinds of caller:
 //
 //   The board. A request that carries the dashboard's Gmail cookies, once
 //   Gmail itself confirms they open a Triad mailbox. It reads with those
-//   cookies, re-reads the whole year every time, and may ask for ?dry=1
-//   (parse and return the days, write nothing). If the owner has turned the
-//   saved login on (/api/census/job), a new sign-in also replaces the login
-//   the job holds, sealed (see vault.ts).
+//   cookies and re-reads the whole year every time, unless it asks for
+//   ?light=1 (its ten-minute morning look, which stops early like the job
+//   does). It may ask for ?dry=1 (parse and return the days, write nothing,
+//   send nothing). If the owner has turned the saved login on
+//   (/api/census/job), a new sign-in also replaces the login the job holds,
+//   sealed (see vault.ts).
 //
-//   Everyone else: the Vercel cron (vercel.json, three times a day), Blake's
-//   page asking for fresh numbers, or a stranger. There are no cookies to
-//   trust, so the job reads with the saved login, if the owner has turned
-//   one on; otherwise it answers "not connected" and does nothing. It runs at
-//   most once every five minutes, stops early when Carmen's newest report is
-//   one it has already logged (?full=1 re-reads anyway), and only ever
-//   answers with counts and dates.
+//   Everyone else: the Vercel cron (vercel.json), the GitHub Action that
+//   knocks every ten minutes on weekday mornings, Blake's page asking for
+//   fresh numbers, or a stranger. There are no cookies to trust, so the job
+//   reads with the saved login, if the owner has turned one on; otherwise it
+//   answers "not connected" and does nothing. It runs at most once every five
+//   minutes, stops early when the newest report is one it has already logged
+//   and mailed (?full=1 re-reads anyway), and only ever answers with counts
+//   and dates.
 //
 // Writes are capped per call to stay inside the function time limit;
 // `remaining` says whether to call again.
@@ -35,29 +41,64 @@ import { readMemory, rememberLogin, savedLogin, saveStatus } from "../vault";
 export const revalidate = 0;
 export const maxDuration = 60;
 
-const SENDER = "ctyler@uvrc.com";
 const WRITE_LIMIT = 90;
 const CONCURRENCY = 3;
 const JOB_GAP_MS = 5 * 60 * 1000;
-
-type Part = { filename?: string; body?: { attachmentId?: string }; parts?: Part[] };
-
-function findCensusPart(p: Part | undefined): Part | null {
-  if (!p) return null;
-  if (p.filename && /census/i.test(p.filename) && /\.xlsx$/i.test(p.filename) && p.body?.attachmentId) return p;
-  for (const c of p.parts || []) {
-    const hit = findCensusPart(c);
-    if (hit) return hit;
-  }
-  return null;
-}
-
-// University Village is in Tulsa; a report sent at 8am Central is dated that day
-const centralDate = (ms: number) =>
-  new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+const MAIL_CLAIM_MS = 10 * 60 * 1000;
+const MAIL_TRIES = 5;
 
 export async function OPTIONS(req: Request) {
   return preflight(req);
+}
+
+// "<report id>#<n>": how many times the email for this report has failed
+const triesFor = (status: StatusNote, id: string) => {
+  const [of, n] = (status.mailTry || "").split("#");
+  return of === id ? Number(n) || 0 : 0;
+};
+
+// Sends the daily email for one report, unless another run already has.
+// Returns what happened and what to write down about it.
+async function mailOut(
+  gm: Gmail,
+  notionToken: string,
+  mem: Memory,
+  found: ReportRef,
+  book: Sheet[],
+  olderIds: string[]
+): Promise<{ result: "sent" | "failed" | "skipped"; patch: Partial<StatusNote> }> {
+  // The checks and the log writes above took a while. Look again, so two runs
+  // that started together do not both send, and so this run's last write does
+  // not put back an old note over a newer one.
+  const fresh = await readMemory(notionToken);
+  if (fresh) {
+    mem.status = fresh.status;
+    mem.mail = fresh.mail;
+    if (!mailIsOn(fresh) || fresh.status.data.mailed === found.id) return { result: "skipped", patch: {} };
+    const [id, at] = (fresh.status.data.mailing || "").split("@");
+    if (id === found.id && Date.now() - (Date.parse(at) || 0) < MAIL_CLAIM_MS) return { result: "skipped", patch: {} };
+  }
+  await saveStatus(notionToken, mem, { mailing: `${found.id}@${new Date().toISOString()}` });
+
+  const failed = (why: string) => ({
+    result: "failed" as const,
+    patch: { mailing: "", mailNote: why, mailTry: `${found.id}#${triesFor(mem.status.data, found.id) + 1}` },
+  });
+  try {
+    const report = await buildDaily(gm, found, book, olderIds);
+    if (!report) return failed("nothing_to_send");
+    const to = await recipients(gm, mailExtras(mem));
+    if (!to.length) return failed("no_mailbox");
+    const sent = await sendDaily(gm, report, to);
+    if (!sent.ok) return failed(`gmail_said_${sent.status}`);
+    return {
+      result: "sent",
+      patch: { mailed: found.id, mailedAt: new Date().toISOString(), mailedTo: to.length, mailing: "", mailTry: "", mailNote: sent.chart ? "sent" : "sent_without_graph" },
+    };
+  } catch (e) {
+    console.error("census mail", e);
+    return failed("mail_failed");
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -85,7 +126,7 @@ export async function GET(req: NextRequest) {
   const mem = await readMemory(notionToken);
   const stamp = () => new Date().toISOString();
   const dry = ask.get("dry") === "1";
-  const full = !!board || ask.get("full") === "1";
+  const full = (!!board && ask.get("light") !== "1") || ask.get("full") === "1";
   let remembered = !!(mem && savedLogin(mem));
   let gm: Gmail;
 
@@ -112,28 +153,25 @@ export async function GET(req: NextRequest) {
 
   const by = board ? "board" : "job";
   const note = async (patch: Parameters<typeof saveStatus>[2]) => {
-    if (mem && !dry) await saveStatus(notionToken, mem, patch);
+    if (mem && !dry) await saveStatusFresh(notionToken, mem, patch);
   };
 
   try {
-    // 1. her newest message that carries the census workbook
-    const q = encodeURIComponent(`from:${SENDER} has:attachment filename:xlsx`);
-    const list = await gm.get(`/users/me/messages?maxResults=8&q=${q}`);
+    // 1. the newest message that carries the census workbook
+    const list = await listReports(gm);
     if (list.status === 401) {
       if (!board) await note({ note: gm.denied() ? "gmail_login_rejected" : "gmail_unreachable" });
       return reply({ error: "gmail_not_connected" }, 401);
     }
-    if (!list.ok) return reply({ error: "gmail_list_failed" }, 502);
-    const ids: string[] = ((await list.json()).messages || []).map((m: { id: string }) => m.id);
+    if (list.status !== 200) return reply({ error: "gmail_list_failed" }, 502);
 
-    let found: { id: string; sent: number; attachmentId: string; filename: string } | null = null;
-    for (const id of ids) {
-      const r = await gm.get(`/users/me/messages/${id}?format=full`);
-      if (!r.ok) continue;
-      const msg = await r.json();
-      const part = findCensusPart(msg.payload);
-      if (part) {
-        found = { id, sent: Number(msg.internalDate), attachmentId: part.body!.attachmentId!, filename: part.filename! };
+    let found: ReportRef | null = null;
+    let at = -1;
+    for (let i = 0; i < list.ids.length; i++) {
+      const ref = await reportAt(gm, list.ids[i]);
+      if (ref) {
+        found = ref;
+        at = i;
         break;
       }
     }
@@ -144,19 +182,27 @@ export async function GET(req: NextRequest) {
 
     const reportDate = centralDate(found.sent);
 
-    // nothing new since the last complete run: the log already matches this report
-    if (!full && mem && mem.status.data.report === found.id) {
-      await note({ checked: stamp(), by, note: "ok" });
-      return reply({ ok: true, unchanged: true, reportDate, through: mem.status.data.through || null, written: 0, remaining: 0 });
+    // The daily email goes out once for each report. The first run after the
+    // email was built starts from the report in hand without sending it:
+    // nobody wants this morning's numbers again in the afternoon.
+    const status = mem ? mem.status.data : null;
+    const mailOn = canMail() && !dry && !!mem && mailIsOn(mem);
+    const mailStart = mailOn && status!.mailed === undefined;
+    const mailDue = mailOn && !mailStart && status!.mailed !== found.id && triesFor(status!, found.id) < MAIL_TRIES;
+    const logged = !!status && status.report === found.id;
+
+    // nothing new since the last complete run: the log already matches this
+    // report, and its email has gone
+    if (!full && logged && !mailDue) {
+      await note({ checked: stamp(), by, note: "ok", ...(mailStart ? { mailed: found.id } : {}) });
+      return reply({ ok: true, unchanged: true, reportDate, through: status!.through || null, written: 0, remaining: 0 });
     }
 
     // 2. the workbook, in memory only
-    const att = await gm.get(`/users/me/messages/${found.id}/attachments/${found.attachmentId}`);
-    if (!att.ok) return reply({ error: "attachment_failed" }, 502);
-    const data: string = (await att.json()).data || "";
-    const bytes = new Uint8Array(Buffer.from(data.replace(/-/g, "+").replace(/_/g, "/"), "base64"));
-
-    const parsed = parseCensusWorkbook(bytes, reportDate);
+    const bytes = await workbookOf(gm, found);
+    if (!bytes) return reply({ error: "attachment_failed" }, 502);
+    const book = readWorkbook(bytes);
+    const parsed = censusDays(book, reportDate);
     const latest = parsed.days[parsed.days.length - 1] || null;
 
     if (dry) return reply({ dry: true, reportDate, filename: found.filename, sheets: parsed.sheets, days: parsed.days });
@@ -165,35 +211,48 @@ export async function GET(req: NextRequest) {
       return reply({ error: "nothing_parsed", reportDate, sheets: parsed.sheets }, 422);
     }
 
-    // 3. write what is new or changed
-    const existing = new Map<string, CensusRow>();
-    const extras: string[] = [];
-    for (const r of await loadCensus(notionToken)) {
-      if (existing.has(r.date)) extras.push(r.id); else existing.set(r.date, r);
-    }
-    await Promise.all(extras.slice(0, 20).map((id) => archiveCensusRow(notionToken, id)));
-    const todo = parsed.days.filter((d) => {
-      const e = existing.get(d.date);
-      return !e || !sameDay(e, d);
-    });
-    const batch = todo.slice(0, WRITE_LIMIT);
-    const source = `Carmen Tyler report of ${reportDate}`;
-
+    // 3. write what is new or changed, unless this report is already in the
+    // log and the only thing left to do is the email
     let written = 0;
     let failed = 0;
-    let next = 0;
-    const worker = async () => {
-      while (next < batch.length) {
-        const day = batch[next++];
-        const e = existing.get(day.date);
-        const ok = e ? await updateCensusDay(notionToken, e.id, day, source) : await createCensusDay(notionToken, day, source);
-        if (ok) written++; else failed++;
+    let remaining = 0;
+    if (full || !logged) {
+      const existing = new Map<string, CensusRow>();
+      const extras: string[] = [];
+      for (const r of await loadCensus(notionToken)) {
+        if (existing.has(r.date)) extras.push(r.id); else existing.set(r.date, r);
       }
-    };
-    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+      await Promise.all(extras.slice(0, 20).map((id) => archiveCensusRow(notionToken, id)));
+      const todo = parsed.days.filter((d) => {
+        const e = existing.get(d.date);
+        return !e || !sameDay(e, d);
+      });
+      const batch = todo.slice(0, WRITE_LIMIT);
+      const source = `Census report of ${reportDate}`;
 
-    const remaining = Math.max(0, todo.length - written - failed);
+      let next = 0;
+      const worker = async () => {
+        while (next < batch.length) {
+          const day = batch[next++];
+          const e = existing.get(day.date);
+          const ok = e ? await updateCensusDay(notionToken, e.id, day, source) : await createCensusDay(notionToken, day, source);
+          if (ok) written++; else failed++;
+        }
+      };
+      await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+      remaining = Math.max(0, todo.length - written - failed);
+    }
     const complete = failed === 0 && remaining === 0;
+
+    // 4. the daily email, the first time this report is seen
+    let mail: "sent" | "failed" | "skipped" | undefined;
+    let mailPatch: Partial<StatusNote> = mailStart ? { mailed: found.id } : {};
+    if (mailDue && mem) {
+      const out = await mailOut(gm, notionToken, mem, found, book, list.ids.slice(at + 1));
+      mail = out.result;
+      mailPatch = out.patch;
+    }
+
     await note({
       checked: stamp(),
       by,
@@ -202,6 +261,7 @@ export async function GET(req: NextRequest) {
       reportDate,
       through: latest?.date,
       note: complete ? "ok" : failed ? "some_days_failed_to_write" : "more_days_to_write",
+      ...mailPatch,
     });
 
     return reply({
@@ -213,6 +273,7 @@ export async function GET(req: NextRequest) {
       remaining,
       latest,
       through: latest?.date || null,
+      ...(mail ? { mail } : {}),
       ...(board ? { remembered } : {}),
     });
   } catch (e) {

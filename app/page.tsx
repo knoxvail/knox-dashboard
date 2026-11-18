@@ -4201,33 +4201,44 @@ function Dashboard() {
     if (failed.length) toast(`Couldn't attach ${failed.join(", ")}`);
   }, [toast]);
 
-  // Census: while the board is open, pull Carmen's newest Health Center report
-  // out of the Triad inbox and log its daily totals (a few seconds after load,
+  // Census: while the board is open, pull the newest Health Center report out
+  // of the Triad inbox and log its daily totals (a few seconds after load,
   // then every three hours). The first run backfills the year over a few
-  // passes. Quiet unless it actually logged something new.
+  // passes. Quiet unless it actually logged something new. The report lands
+  // on weekday mornings, so through the morning in Tulsa it also takes a
+  // light look every ten minutes: that is what gets the day's count in, and
+  // the daily census email out, soon after the report arrives.
   useEffect(() => {
     let stopped = false;
-    const run = async () => {
+    let busy = false;
+    const run = async (light = false) => {
+      if (busy) return;
+      busy = true;
       try {
         let wrote = 0;
+        let mailed = false;
         for (let pass = 0; pass < 8 && !stopped; pass++) {
-          const r = await fetch("/api/census/sync", { cache: "no-store" });
+          const r = await fetch(light ? "/api/census/sync?light=1" : "/api/census/sync", { cache: "no-store" });
           if (!r.ok) return;
           const d = await r.json();
           wrote += d.written || 0;
+          mailed = mailed || d.mail === "sent";
           if (!d.remaining) {
             if (wrote > 0 && d.latest) {
               const when = new Date(`${d.latest.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
               toast(`Census logged through ${when}: ${d.latest.total} in the Health Center`);
             }
+            if (mailed) toast("Daily census email sent");
             return;
           }
         }
-      } catch {}
+      } catch {} finally { busy = false; }
     };
-    const first = setTimeout(run, 8000);
-    const every = setInterval(run, 3 * 60 * 60 * 1000);
-    return () => { stopped = true; clearTimeout(first); clearInterval(every); };
+    const tulsaHour = () => Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hourCycle: "h23" }).format(new Date()));
+    const first = setTimeout(() => run(), 8000);
+    const every = setInterval(() => run(), 3 * 60 * 60 * 1000);
+    const mornings = setInterval(() => { const h = tulsaHour(); if (h >= 6 && h < 13) run(true); }, 10 * 60 * 1000);
+    return () => { stopped = true; clearTimeout(first); clearInterval(every); clearInterval(mornings); };
   }, [toast]);
   const undoLast = useCallback(async () => {
     const item = undoStack.current.pop();

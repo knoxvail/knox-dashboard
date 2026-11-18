@@ -135,15 +135,21 @@ Blake asked for those tracked daily so trends show.
 - **How it fills.** `/api/census/sync` on the dashboard finds Carmen's newest
   message in the Triad inbox, reads the workbook in memory, takes only those
   four total rows, and writes new or changed days. No agent is involved; it
-  is plain code, so the same report always gives the same numbers. Three
+  is plain code, so the same report always gives the same numbers. Four
   things call it:
-  1. The dashboard itself, a few seconds after it loads and every three hours.
-     This always works while the board is open and signed in to Gmail.
-  2. A Vercel cron, three times a day (`vercel.json`: 14:00, 17:00, and 22:00
-     UTC, each firing somewhere inside its hour).
-  3. Blake's page, when it opens and every ten minutes while it is on screen,
-     so he sees the morning's number without waiting for the next cron.
-  Callers 2 and 3 only do anything once the census job is switched on (next
+  1. The dashboard itself, a few seconds after it loads and every three hours,
+     plus a light look every ten minutes through the morning in Tulsa (6am to
+     1pm Central). This always works while the board is open and signed in to
+     Gmail.
+  2. A Vercel cron, once an hour from 12:00 to 18:00 UTC and again at 22:00
+     (`vercel.json`; each fires somewhere inside its hour).
+  3. A GitHub Action (`.github/workflows/census-check.yml`), every ten minutes
+     on weekday mornings, 12:00 to 18:59 UTC. It carries no secret. It asks
+     the same public address Blake's page asks. GitHub pauses a scheduled
+     workflow after 60 days with no commits to the repo; a push wakes it.
+  4. Blake's page and the census tracker, when they open and every ten minutes
+     while they are on screen.
+  Callers 2, 3 and 4 only do anything once the census job is switched on (next
   point). Until then they get "not connected" and the log fills only from 1.
 - **The census job switch.** `/api/census/job` is a small page with an on/off
   button. It only answers a browser signed in to Triad Gmail on the dashboard.
@@ -152,7 +158,9 @@ Blake asked for those tracked daily so trends show.
   server-only secrets) in a code block on the holder row, and the cron and
   Blake's page read Carmen's report with it. Turning it off empties that
   block. Nothing saves a login without that button being pressed. The same
-  page shows the last check and what stopped it, if anything.
+  page shows the last check and what stopped it, if anything. With the job
+  on, the only thing it ever sends from that mailbox is the daily census
+  email described below.
 - **Whose login a call reads with.** A call from the dashboard uses the
   dashboard's own Gmail cookies, but only after Gmail confirms they open a
   Triad mailbox; any other login is treated as a stranger. The cron and
@@ -161,10 +169,40 @@ Blake asked for those tracked daily so trends show.
   newest report is already logged, and answers with counts and dates only.
   While the job is on, a fresh dashboard sign-in replaces the saved login
   without another button press.
-- **What it remembers.** Two code blocks on the holder row: `census-login`
-  (the sealed login, empty while the job is off) and `census-status` (last
-  check, which report is logged, how far the log runs, and `note`, which
-  reads "ok" or says what stopped the last run). Leave both alone.
+- **What it remembers.** Three code blocks on the holder row: `census-login`
+  (the sealed login, empty while the job is off), `census-status` (last
+  check, which report is logged, how far the log runs, which report the
+  daily email last went out for, and `note`, which reads "ok" or says what
+  stopped the last run), and `census-mail` (the daily email's settings,
+  which only exists once Knox changes something). Leave all three alone.
+- **The daily census email.** The first time any caller sees a new report,
+  the same run sends one email from the Triad mailbox that read it: the
+  count in house, a 30-day graph, the payer split, and the move-ins and
+  move-outs. It is on from the start and goes to Knox alone. Who else gets
+  it, turning it off, and a "Send me one now" button are all on
+  `/api/census/job`; the addresses live in the `census-mail` block, never in
+  the code. Details that matter:
+  - It compares two reports, the new one and the one before it. A morning
+    report shows last night's count carried forward, and the day's arrivals
+    and departures are only written in by the next morning. So the change
+    in the headline is against the number in the last email, and the moves
+    are whatever the new workbook has that the last one did not.
+  - Moves are counted from the resident rows, in memory, in
+    `app/api/census/moves.ts`. A move-in is someone in the building today
+    who was not yesterday; a move-out is the reverse. A change of payer the
+    same day is not a move. A hospital stay with the bed held (SFH, LOA and
+    the like in the day's cell) is not a move. A discharge to the hospital
+    is a move-out, and the return is a move-in counted as "returning". Names
+    are used only to match one line to another and never leave that file.
+  - One email per report. `mailed` in `census-status` is the report it last
+    went out for. A run claims the send first (`mailing`), so two runs at the
+    same moment do not both send. A failed send is retried on the next check,
+    five times at most.
+  - The graph is a PNG drawn on the server (`chart.ts`, with next/og) and
+    carried inside the message, so it shows in Gmail without a "show images"
+    step. `/api/census/chart` serves the same picture from the log.
+  - Only the live site sends. A dev server or a preview build never does.
+    `CENSUS_MAIL=off` in Vercel stops it everywhere.
 - **When it stops.** If Google rejects the saved login (password change,
   access revoked, or the app's test-mode expiry), `note` reads
   `gmail_login_rejected`, the job page says so, and Blake's card says "No new

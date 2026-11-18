@@ -4,7 +4,8 @@ import type { NextRequest } from "next/server";
 // own cookies when the board is calling (the same ones /api/gmail uses), or
 // the login the census job keeps for itself (see vault.ts). It refreshes the
 // access token on a 401 and remembers the new one, so a cookie caller can
-// have it put back.
+// have it put back. It reads the census report and sends the daily census
+// email; nothing else in the mailbox is touched.
 
 // denied = Google said this refresh token is revoked or expired, as opposed
 // to a passing network problem
@@ -36,8 +37,12 @@ export function gmailWith(accessToken: string, refreshToken: string) {
   let refreshed: string | null = null;
   let denied = false;
 
-  const call = (path: string, t: string) =>
-    fetch(`https://gmail.googleapis.com/gmail/v1${path}`, { headers: { Authorization: `Bearer ${t}` }, cache: "no-store" });
+  const call = (path: string, t: string, body?: unknown) =>
+    fetch(`https://gmail.googleapis.com/gmail/v1${path}`, {
+      ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }),
+      headers: { Authorization: `Bearer ${t}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      cache: "no-store",
+    });
 
   async function renew(): Promise<boolean> {
     const r = await refreshAccess(refreshToken);
@@ -48,16 +53,18 @@ export function gmailWith(accessToken: string, refreshToken: string) {
     return true;
   }
 
-  async function get(path: string): Promise<Response> {
+  async function ask(path: string, body?: unknown): Promise<Response> {
     if (!token && refreshToken) await renew();
     if (!token) return new Response(null, { status: 401 });
-    let r = await call(path, token);
-    if (r.status === 401 && refreshToken && (await renew())) r = await call(path, token);
+    let r = await call(path, token, body);
+    if (r.status === 401 && refreshToken && (await renew())) r = await call(path, token, body);
     return r;
   }
 
   return {
-    get,
+    get: (path: string) => ask(path),
+    // the one thing the census ever posts: the daily email (see mail.ts)
+    post: (path: string, body: unknown) => ask(path, body),
     connected: () => !!(token || refreshToken),
     refreshedToken: () => refreshed,
     denied: () => denied,

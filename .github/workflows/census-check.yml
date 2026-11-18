@@ -1,0 +1,37 @@
+# Knocks on the dashboard's census check every ten minutes on weekday mornings.
+#
+# The Health Center census report is emailed between about 7 and 11 in the
+# morning, Tulsa time. The dashboard's own schedule (vercel.json) can only run
+# once an hour on its plan, so this is what gets the day's count logged, and
+# the daily census email sent, within a few minutes of the report arriving.
+#
+# It carries no secret and sends nothing: it asks the same public address
+# Blake's page asks. The check does something only while the owner has the
+# census job switched on (/api/census/job); otherwise it answers "not
+# connected" and this ends quietly. 12:00 to 18:59 UTC covers 6am to 1pm in
+# Tulsa in both winter and summer.
+#
+# To stop it: delete this file, or turn the workflow off in the Actions tab.
+name: Census check
+
+on:
+  schedule:
+    - cron: "*/10 12-18 * * 1-5"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: census-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ask the dashboard to look for a new report
+        run: |
+          code=$(curl -s -o /tmp/out.json -m 90 -w "%{http_code}" "https://knox-dashboard-pnsj.vercel.app/api/census/sync?run=actions" || true)
+          echo "answer: ${code:-none}"
+          head -c 400 /tmp/out.json 2>/dev/null || true
