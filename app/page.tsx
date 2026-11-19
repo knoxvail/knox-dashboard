@@ -4234,10 +4234,21 @@ function Dashboard() {
         }
       } catch {} finally { busy = false; }
     };
+    // Two tabs of the board (or one that was asleep) fire their timers in the
+    // same instant, and each would log the day and send the email. The browser
+    // hands out one lock per name across tabs, so only one of them syncs; the
+    // rest sit this round out. The server guards against the same thing from
+    // two different devices.
+    const sync = (light = false) => {
+      const locks = (navigator as unknown as { locks?: { request: (name: string, opts: { ifAvailable: boolean }, cb: (lock: unknown) => unknown) => Promise<unknown> } }).locks;
+      if (locks && typeof locks.request === "function") {
+        locks.request("census-sync", { ifAvailable: true }, (lock) => (lock ? run(light) : undefined)).catch(() => {});
+      } else run(light);
+    };
     const tulsaHour = () => Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", hourCycle: "h23" }).format(new Date()));
-    const first = setTimeout(() => run(), 8000);
-    const every = setInterval(() => run(), 3 * 60 * 60 * 1000);
-    const mornings = setInterval(() => { const h = tulsaHour(); if (h >= 6 && h < 13) run(true); }, 10 * 60 * 1000);
+    const first = setTimeout(() => sync(), 8000);
+    const every = setInterval(() => sync(), 3 * 60 * 60 * 1000);
+    const mornings = setInterval(() => { const h = tulsaHour(); if (h >= 6 && h < 13) sync(true); }, 10 * 60 * 1000);
     return () => { stopped = true; clearTimeout(first); clearInterval(every); clearInterval(mornings); };
   }, [toast]);
   const undoLast = useCallback(async () => {

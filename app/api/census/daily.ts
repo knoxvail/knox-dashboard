@@ -122,9 +122,35 @@ export async function recipients(gm: Gmail, extras: string[]): Promise<string[]>
   return self ? [self, ...extras.filter((a) => a !== self)] : [];
 }
 
-export async function sendDaily(gm: Gmail, report: DailyReport, to: string[]): Promise<{ ok: boolean; status: number; chart: boolean }> {
+export type Draft = { subject: string; text: string; html: string; png: Uint8Array | null };
+
+// the finished email, graph and all, not yet sent
+export async function draftDaily(report: DailyReport): Promise<Draft> {
   const png = await censusChartPng(report.series);
-  const mail = composeDaily(report, { chartCid: png ? CHART_CID : null });
-  const sent = await sendMail(gm, { to, ...mail, png });
-  return { ...sent, chart: !!png };
+  return { ...composeDaily(report, { chartCid: png ? CHART_CID : null }), png };
+}
+
+// Has an email with exactly this subject already gone out from this mailbox?
+// The subject carries the day and the count, so it is one per report. The
+// Sent folder is the one record that cannot be wrong about what was sent: it
+// catches a send that worked but was never written down, and a second run
+// that slipped past the claim in sync/route.ts.
+export async function sentAlready(gm: Gmail, subject: string): Promise<boolean> {
+  try {
+    const q = encodeURIComponent(`in:sent newer_than:2d subject:"${subject.replace(/"/g, "")}"`);
+    const list = await gm.get(`/users/me/messages?maxResults=5&q=${q}`);
+    if (!list.ok) return false;
+    for (const m of ((await list.json()).messages || []) as { id: string }[]) {
+      const one = await gm.get(`/users/me/messages/${m.id}?format=metadata&metadataHeaders=Subject`);
+      if (!one.ok) continue;
+      const headers = ((await one.json()).payload?.headers || []) as { name: string; value: string }[];
+      if (headers.some((h) => h.name.toLowerCase() === "subject" && h.value.trim() === subject)) return true;
+    }
+  } catch {}
+  return false;
+}
+
+export async function sendDraft(gm: Gmail, draft: Draft, to: string[]): Promise<{ ok: boolean; status: number; chart: boolean }> {
+  const sent = await sendMail(gm, { to, ...draft });
+  return { ...sent, chart: !!draft.png };
 }

@@ -4,7 +4,7 @@ import { boardClient, gmailWith, opensTriadMailbox, type Gmail } from "../gmail"
 import { censusDays, readWorkbook, type Sheet } from "../parse";
 import { archiveCensusRow, createCensusDay, loadCensus, sameDay, updateCensusDay, type CensusRow } from "../shared";
 import { mailExtras, mailIsOn, readMemory, rememberLogin, savedLogin, saveStatus, saveStatusFresh, type Memory, type StatusNote } from "../vault";
-import { buildDaily, canMail, centralDate, listReports, recipients, reportAt, sendDaily, workbookOf, type ReportRef } from "../daily";
+import { buildDaily, canMail, centralDate, draftDaily, listReports, recipients, reportAt, sendDraft, sentAlready, workbookOf, type ReportRef } from "../daily";
 
 // Pulls the newest census report out of the Triad inbox, logs it, and sends
 // the daily census email for it.
@@ -27,9 +27,9 @@ import { buildDaily, canMail, centralDate, listReports, recipients, reportAt, se
 //   (/api/census/job), a new sign-in also replaces the login the job holds,
 //   sealed (see vault.ts).
 //
-//   Everyone else: the Vercel cron (vercel.json), the GitHub Action that
-//   knocks every ten minutes on weekday mornings, Blake's page asking for
-//   fresh numbers, or a stranger. There are no cookies to trust, so the job
+//   Everyone else: the Vercel cron (vercel.json, a few times an hour through
+//   the morning), Blake's page or the census tracker asking for fresh
+//   numbers, or a stranger. There are no cookies to trust, so the job
 //   reads with the saved login, if the owner has turned one on; otherwise it
 //   answers "not connected" and does nothing. It runs at most once every five
 //   minutes, stops early when the newest report is one it has already logged
@@ -58,8 +58,32 @@ const triesFor = (status: StatusNote, id: string) => {
   return of === id ? Number(n) || 0 : 0;
 };
 
+// "<report id>@<time>#<run>": which run has claimed the send for a report
+const claimOf = (s?: string) => {
+  const m = (s || "").match(/^([^@]+)@([^#]+)(?:#(.*))?$/);
+  return m ? { id: m[1], at: Date.parse(m[2]) || 0, run: m[3] || "" } : null;
+};
+
+// how long a run waits for a rival's claim to land before it reads its own back
+const settleMs = () => Number(process.env.CENSUS_MAIL_SETTLE_MS || 3000);
+
 // Sends the daily email for one report, unless another run already has.
 // Returns what happened and what to write down about it.
+//
+// Two dashboards open at once (two tabs, a laptop and a phone) wake up and
+// sync in the same second, and both see a report nobody has emailed yet. The
+// first version of this checked for a claim, then wrote one; both runs
+// checked before either wrote, and the email went out twice. Notion has no
+// "write only if unchanged", so the guard is in three parts:
+//
+//   1. Each run writes its own claim, waits a few seconds, and reads the
+//      note back. Notion keeps whichever claim was written last, so every
+//      run but one finds a stranger's claim there and stands down.
+//   2. Before sending, the run asks Gmail whether this exact subject has
+//      already left this mailbox. The Sent folder is the record that cannot
+//      be wrong, and it also heals a note that was overwritten.
+//   3. The dashboard itself lets only one tab in a browser sync at a time
+//      (see page.tsx).
 async function mailOut(
   gm: Gmail,
   notionToken: string,
@@ -68,18 +92,25 @@ async function mailOut(
   book: Sheet[],
   olderIds: string[]
 ): Promise<{ result: "sent" | "failed" | "skipped"; patch: Partial<StatusNote> }> {
-  // The checks and the log writes above took a while. Look again, so two runs
-  // that started together do not both send, and so this run's last write does
-  // not put back an old note over a newer one.
+  const skipped = (patch: Partial<StatusNote> = {}) => ({ result: "skipped" as const, patch });
+
+  // The checks and the log writes above took a while. Look again. Without a
+  // fresh look there is no telling what another run is doing, so do not send.
   const fresh = await readMemory(notionToken);
-  if (fresh) {
-    mem.status = fresh.status;
-    mem.mail = fresh.mail;
-    if (!mailIsOn(fresh) || fresh.status.data.mailed === found.id) return { result: "skipped", patch: {} };
-    const [id, at] = (fresh.status.data.mailing || "").split("@");
-    if (id === found.id && Date.now() - (Date.parse(at) || 0) < MAIL_CLAIM_MS) return { result: "skipped", patch: {} };
-  }
-  await saveStatus(notionToken, mem, { mailing: `${found.id}@${new Date(Date.now()).toISOString()}` });
+  if (!fresh) return skipped();
+  mem.status = fresh.status;
+  mem.mail = fresh.mail;
+  if (!mailIsOn(fresh) || fresh.status.data.mailed === found.id) return skipped();
+  const rival = claimOf(fresh.status.data.mailing);
+  if (rival && rival.id === found.id && Date.now() - rival.at < MAIL_CLAIM_MS) return skipped();
+
+  const claim = `${found.id}@${new Date(Date.now()).toISOString()}#${Math.random().toString(36).slice(2, 10)}`;
+  await saveStatus(notionToken, mem, { mailing: claim });
+  await new Promise((r) => setTimeout(r, settleMs()));
+  const settled = await readMemory(notionToken);
+  if (!settled || settled.status.data.mailing !== claim || settled.status.data.mailed === found.id) return skipped();
+  mem.status = settled.status;
+  mem.mail = settled.mail;
 
   const failed = (why: string) => ({
     result: "failed" as const,
@@ -90,7 +121,10 @@ async function mailOut(
     if (!report) return failed("nothing_to_send");
     const to = await recipients(gm, mailExtras(mem));
     if (!to.length) return failed("no_mailbox");
-    const sent = await sendDaily(gm, report, to);
+    const draft = await draftDaily(report);
+    // already in Sent: it went out, whatever the note says. Write that down.
+    if (await sentAlready(gm, draft.subject)) return skipped({ mailed: found.id, mailing: "", mailTry: "" });
+    const sent = await sendDraft(gm, draft, to);
     if (!sent.ok) return failed(`gmail_said_${sent.status}`);
     return {
       result: "sent",

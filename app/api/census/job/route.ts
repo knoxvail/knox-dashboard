@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { boardClient, mailboxOf, opensTriadMailbox, type Gmail } from "../gmail";
 import { readWorkbook } from "../parse";
-import { buildDaily, canMail, listReports, reportAt, sendDaily, workbookOf } from "../daily";
+import { buildDaily, canMail, draftDaily, listReports, reportAt, sendDraft, workbookOf } from "../daily";
 import { addressList, forgetLogin, mailExtras, mailIsOn, readMemory, rememberLogin, savedLogin, savedLoginOn, saveMail, type StatusNote } from "../vault";
 
 // The owner's page for the census job: the switch for its saved login, the
@@ -102,7 +102,9 @@ function mailSection(v: View, jobOn: boolean): string {
     const bad = mailTrouble(s.mailNote);
     body =
       `<p>On. When a new census report comes in, an email with the count, the graph, the payer split, and the move-ins and move-outs goes to ${who}.</p>` +
-      (jobOn ? "" : "<p>The census job is off, so for now it only goes out while your dashboard is open.</p>") +
+      (jobOn
+        ? "<p>With your dashboard open and awake it goes out within ten minutes of the report. With it closed, usually within the hour.</p>"
+        : "<p>The census job is off, so it only goes out while your dashboard is open: within ten minutes of the report in the morning, or the moment you open the dashboard later in the day.</p>") +
       `<p>${sent ? `Last sent ${esc(sent)}${s.mailedTo ? `, to ${s.mailedTo} ${s.mailedTo === 1 ? "person" : "people"}` : ""}.` : "None sent yet. The first one goes out with the next new report."}</p>` +
       (bad ? `<p class="did">${esc(bad)}</p>` : "") +
       `<form method="post" action="/api/census/job" class="field">` +
@@ -146,7 +148,7 @@ function page(v: View): string {
       : "It has not run by itself yet. The first check comes with the next scheduled run, or the next time Blake's page is opened.";
     const bad = trouble(s.note);
     body =
-      "<p>The dashboard checks for the census report by itself: every ten minutes on weekday mornings, a few more times through the day, and whenever Blake's page is opened. Your dashboard does not need to be open.</p>" +
+      "<p>The dashboard checks for the census report by itself: about once an hour through the morning, once in the afternoon, and whenever Blake's page or the census tracker is opened. Your dashboard does not need to be open.</p>" +
       `<p>${line}</p>` +
       (bad ? `<p class="did">${esc(bad)}</p>` : "") +
       `<div class="row">${button("off", "Turn off", false)}${home}</div>`;
@@ -156,7 +158,7 @@ function page(v: View): string {
       (v.on
         ? "<p>A sign-in was saved before, but the server can no longer open it. Turn it on again to save a fresh one.</p>"
         : "<p>Right now the census only updates while your dashboard is open.</p>") +
-      "<p>Turn it on and the dashboard keeps your Triad Gmail sign-in, encrypted, so it can check for the census report with everything closed: every ten minutes on weekday mornings, a few more times through the day, and whenever Blake's page is opened. It runs one fixed search for the census attachment, reads nothing else, and sends nothing but the daily census email below. You can turn it off here at any time.</p>" +
+      "<p>Turn it on and the dashboard keeps your Triad Gmail sign-in, encrypted, so it can check for the census report with everything closed: about once an hour through the morning, once in the afternoon, and whenever Blake's page or the census tracker is opened. It runs one fixed search for the census attachment, reads nothing else, and sends nothing but the daily census email below. You can turn it off here at any time.</p>" +
       `<div class="row">${button("on", "Turn on", true)}${home}</div>`;
   }
 
@@ -249,7 +251,9 @@ export async function GET(req: NextRequest) {
   return res;
 }
 
-// today's email, to the owner alone, without touching what the job remembers
+// Today's email, to the owner alone, without touching what the job remembers.
+// The subject says "Test", so the real one for the day still goes out: the
+// job looks in Sent for the day's exact subject before it sends (daily.ts).
 async function sendTest(board: Gmail): Promise<boolean> {
   const list = await listReports(board);
   for (let i = 0; i < list.ids.length; i++) {
@@ -260,7 +264,8 @@ async function sendTest(board: Gmail): Promise<boolean> {
     const report = await buildDaily(board, ref, readWorkbook(bytes), list.ids.slice(i + 1));
     const self = await mailboxOf(board);
     if (!report || !self) return false;
-    return (await sendDaily(board, report, [self])).ok;
+    const draft = await draftDaily(report);
+    return (await sendDraft(board, { ...draft, subject: `Test: ${draft.subject}` }, [self])).ok;
   }
   return false;
 }

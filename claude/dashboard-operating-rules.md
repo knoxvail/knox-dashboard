@@ -135,22 +135,26 @@ Blake asked for those tracked daily so trends show.
 - **How it fills.** `/api/census/sync` on the dashboard finds Carmen's newest
   message in the Triad inbox, reads the workbook in memory, takes only those
   four total rows, and writes new or changed days. No agent is involved; it
-  is plain code, so the same report always gives the same numbers. Four
+  is plain code, so the same report always gives the same numbers. Three
   things call it:
   1. The dashboard itself, a few seconds after it loads and every three hours,
      plus a light look every ten minutes through the morning in Tulsa (6am to
      1pm Central). This always works while the board is open and signed in to
      Gmail.
-  2. A Vercel cron, once an hour from 12:00 to 18:00 UTC and again at 22:00
-     (`vercel.json`; each fires somewhere inside its hour).
-  3. A GitHub Action (`.github/workflows/census-check.yml`), every ten minutes
-     on weekday mornings, 12:00 to 18:59 UTC. It carries no secret. It asks
-     the same public address Blake's page asks. GitHub pauses a scheduled
-     workflow after 60 days with no commits to the repo; a push wakes it.
-  4. Blake's page and the census tracker, when they open and every ten minutes
+     Only one tab in a browser syncs at a time (a browser lock in `page.tsx`).
+  2. Vercel crons, three an hour from 12:00 to 18:00 UTC and one at 22:00
+     (`vercel.json`). On this plan each cron runs once a day and fires
+     somewhere inside its hour, so the three may land close together. Count
+     on one check an hour, not three.
+  3. Blake's page and the census tracker, when they open and every ten minutes
      while they are on screen.
-  Callers 2, 3 and 4 only do anything once the census job is switched on (next
+  Callers 2 and 3 only do anything once the census job is switched on (next
   point). Until then they get "not connected" and the log fills only from 1.
+  A GitHub Action on a ten-minute schedule was tried on 2026-11-18 and
+  removed the next day: GitHub ran it once in two mornings, five hours late.
+  A check within minutes of the report, with the dashboard closed, would
+  need Gmail push notifications (a Google Cloud Pub/Sub topic), which is
+  not set up.
 - **The census job switch.** `/api/census/job` is a small page with an on/off
   button. It only answers a browser signed in to Triad Gmail on the dashboard.
   Turning it on is Knox's choice: the dashboard then keeps his Gmail sign-in
@@ -195,11 +199,19 @@ Blake asked for those tracked daily so trends show.
     is a move-out, and the return is a move-in counted as "returning". Names
     are used only to match one line to another and never leave that file.
   - One email per report, and only on the day the report was sent. `mailed`
-    in `census-status` is the report it last went out for. A run claims the
-    send first (`mailing`), so two runs at the same moment do not both send.
-    A failed send is retried on the next check, five times at most. A report
-    first seen on a later day (nothing was running that day) is marked as
-    handled and not sent late.
+    in `census-status` is the report it last went out for. A failed send is
+    retried on the next check, five times at most. A report first seen on a
+    later day (nothing was running that day) is marked as handled and not
+    sent late.
+  - Two runs at the same moment are normal here: two tabs of the board wake
+    up together. On 2026-11-19 that sent the first automatic email twice.
+    Notion cannot do "write only if unchanged", so each run writes its own
+    claim (`mailing`), waits three seconds, and reads it back; Notion keeps
+    the last claim written, so all but one run stand down. Then, before
+    sending, the run asks Gmail whether that exact subject is already in
+    Sent. The subject carries the day and the count, so it is one per
+    report. The "Send me one now" button puts "Test:" in front of the
+    subject so it never counts as the day's email.
   - The graph is a PNG drawn on the server (`chart.ts`, with next/og) and
     carried inside the message, so it shows in Gmail without a "show images"
     step. `/api/census/chart` serves the same picture from the log.
