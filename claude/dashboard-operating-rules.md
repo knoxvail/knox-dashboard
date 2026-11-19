@@ -142,10 +142,11 @@ Blake asked for those tracked daily so trends show.
      1pm Central). This always works while the board is open and signed in to
      Gmail.
      Only one tab in a browser syncs at a time (a browser lock in `page.tsx`).
-  2. Vercel crons, three an hour from 12:00 to 18:00 UTC and one at 22:00
-     (`vercel.json`). On this plan each cron runs once a day and fires
-     somewhere inside its hour, so the three may land close together. Count
-     on one check an hour, not three.
+  2. Vercel crons, three an hour from 12:00 to 18:00 UTC and one an hour from
+     then to 22:00 (`vercel.json`). On this plan each cron runs once a day and
+     fires somewhere inside its hour, so the three may land close together.
+     Count on one check an hour, not three. That is 6am to 5pm in Tulsa in
+     winter, 7am to 6pm in summer.
   3. Blake's page and the census tracker, when they open and every ten minutes
      while they are on screen.
   Callers 2 and 3 only do anything once the census job is switched on (next

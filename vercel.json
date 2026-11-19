@@ -20,6 +20,9 @@
     { "path": "/api/census/sync?run=h17b", "schedule": "25 17 * * *" },
     { "path": "/api/census/sync?run=h17c", "schedule": "45 17 * * *" },
     { "path": "/api/census/sync?run=h18", "schedule": "5 18 * * *" },
-    { "path": "/api/census/sync?run=h22", "schedule": "0 22 * * *" }
+    { "path": "/api/census/sync?run=h19", "schedule": "5 19 * * *" },
+    { "path": "/api/census/sync?run=h20", "schedule": "5 20 * * *" },
+    { "path": "/api/census/sync?run=h21", "schedule": "5 21 * * *" },
+    { "path": "/api/census/sync?run=h22", "schedule": "5 22 * * *" }
   ]
 }
