@@ -1,25 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { boardClient, mailboxOf, opensTriadMailbox, type Gmail } from "../gmail";
 import { readWorkbook } from "../parse";
-import { buildDaily, canMail, draftDaily, listReports, reportAt, sendDraft, workbookOf } from "../daily";
-import { addressList, forgetLogin, mailExtras, mailIsOn, readMemory, rememberLogin, savedLogin, savedLoginOn, saveMail, type StatusNote } from "../vault";
+import { buildFor, canMail, draftDaily, listReports, reportAt, sendDraft, workbookOf } from "../daily";
+import { forgetLogin, mailIsOn, mailPlan, planFrom, readMemory, rememberLogin, savedLogin, savedLoginOn, saveMail, type Every, type StatusNote } from "../vault";
 
 // The owner's page for the census job: the switch for its saved login, the
-// daily email's settings, and a look at how both are doing.
+// census email's settings, and a look at how both are doing.
 //
 // The census can only sync by itself (the cron, Blake's page) if the job
 // holds a Gmail login to read the report with. Keeping one is the owner's
 // choice, made here, from a browser signed in to Triad Gmail on the
-// dashboard. The daily email is on from the start and goes to the owner
-// alone; who else gets it is also decided here, and nowhere in the code.
+// dashboard. The email is on from the start and goes to the owner alone, with
+// every report; who else gets it, and how often, is also decided here and
+// nowhere in the code.
 //
 //   GET  /api/census/job                 where things stand, with the buttons
 //   POST /api/census/job  turn=on        keep this browser's Gmail login for the job
 //   POST /api/census/job  turn=off       forget it
-//   POST /api/census/job  turn=mail-on   send the daily email
+//   POST /api/census/job  turn=mail-on   send the census email
 //   POST /api/census/job  turn=mail-off  stop sending it
-//   POST /api/census/job  turn=mail-to   to=a@x.com, b@y.com   who else gets it
-//   POST /api/census/job  turn=mail-test send today's email to the owner alone, now
+//   POST /api/census/job  turn=mail-to   to=a@x.com every=week, to=b@y.com every=day, ...
+//                                        who else gets it and how often, a pair per person
+//   POST /api/census/job  turn=mail-test every=day|week|month
+//                                        that schedule's email, to the owner alone, now
 //
 // Every change is a POST so a link on some other site cannot make it: the
 // dashboard's cookies are SameSite=Lax and do not ride along on a cross-site
@@ -36,7 +39,7 @@ type View = {
   blocked: boolean; // CENSUS_SAVED_LOGIN=off
   status: StatusNote | null;
   did: string; // what the last button press did
-  mail?: { on: boolean; extras: string[]; self: string; here: boolean };
+  mail?: { on: boolean; plan: { address: string; every: Every }[]; self: string; here: boolean };
   error?: string;
 };
 
@@ -57,8 +60,8 @@ const DID: Record<string, string> = {
   "needs-login": "Google would not renew this browser's Gmail sign-in. Reconnect Triad Gmail on the dashboard, then try again.",
   blocked: "The saved sign-in is switched off in the server settings (CENSUS_SAVED_LOGIN=off).",
   failed: "Notion did not take the change. Try again in a minute.",
-  "mail-on": "Done. The daily email is on.",
-  "mail-off": "Done. The daily email is off.",
+  "mail-on": "Done. The census email is on.",
+  "mail-off": "Done. The census email is off.",
   "mail-to": "Saved.",
   "bad-address": "One of those does not look like an email address. Nothing was changed.",
   "mail-test": "Sent. It should be in your inbox now.",
@@ -79,9 +82,18 @@ function trouble(note?: string): string {
 function mailTrouble(note?: string): string {
   if (!note || note === "sent") return "";
   if (note === "sent_without_graph") return "The last email went out without its graph. The numbers were all there.";
-  if (/^gmail_said_40[13]$/.test(note)) return "Gmail refused the last send. Reconnect Triad Gmail on the dashboard, then use the button below to send one now.";
+  if (/^((weekly|monthly)_)?gmail_said_40[13]$/.test(note)) return "Gmail refused the last send. Reconnect Triad Gmail on the dashboard, then use the button below to send one now.";
   return `The last email did not send (${note}). It tries again on the next check.`;
 }
+
+const EVERY: { value: Every; label: string }[] = [
+  { value: "day", label: "Every report" },
+  { value: "week", label: "Fridays" },
+  { value: "month", label: "1st of the month" },
+];
+
+const options = (picked: Every) =>
+  EVERY.map((e) => `<option value="${e.value}"${e.value === picked ? " selected" : ""}>${e.label}</option>`).join("");
 
 function mailSection(v: View, jobOn: boolean): string {
   const m = v.mail;
@@ -96,27 +108,44 @@ function mailSection(v: View, jobOn: boolean): string {
   } else if (!m.on) {
     body = `<p>Off. Nothing is sent.</p><div class="row">${button("mail-on", "Turn on", true)}</div>`;
   } else {
-    const others = m.extras.length;
-    const who = `${esc(m.self || "you")}${others ? ` and ${others} other${others === 1 ? "" : "s"}` : ""}`;
     const sent = centralTime(s.mailedAt);
     const bad = mailTrouble(s.mailNote);
+    const has = (e: Every) => m.plan.some((p) => p.every === e);
+    const slow = [
+      has("week") && s.weeklyAt ? `The Friday email last went out ${esc(centralTime(s.weeklyAt))}.` : "",
+      has("month") && s.monthlyAt ? `The monthly email last went out ${esc(centralTime(s.monthlyAt))}.` : "",
+    ].filter(Boolean);
+    // everyone on the list, then one empty row to add someone
+    const rows = [...m.plan, ...(m.plan.length < 12 ? [{ address: "", every: "day" as Every }] : [])];
+    const row = (p: { address: string; every: Every }, i: number) =>
+      `<div class="who-row">` +
+      `<input name="to" type="email" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Email address ${i + 1}" value="${esc(p.address)}"${p.address ? "" : ' placeholder="Add an email address"'}>` +
+      `<select name="every" aria-label="How often email address ${i + 1} gets it">${options(p.every)}</select>` +
+      `</div>`;
     body =
-      `<p>On. When a new census report comes in, an email with the count, the graph, the payer split, and the move-ins and move-outs goes to ${who}.</p>` +
+      `<p>On. Each new census report sends an email with the count, the graph, the payer split, and the move-ins and move-outs. You get every one, at ${esc(m.self || "your Triad address")}.</p>` +
       (jobOn
         ? "<p>With your dashboard open and awake it goes out within ten minutes of the report. With it closed, usually within the hour.</p>"
         : "<p>The census job is off, so it only goes out while your dashboard is open: within ten minutes of the report in the morning, or the moment you open the dashboard later in the day.</p>") +
-      `<p>${sent ? `Last sent ${esc(sent)}${s.mailedTo ? `, to ${s.mailedTo} ${s.mailedTo === 1 ? "person" : "people"}` : ""}.` : "None sent yet. The first one goes out with the next new report."}</p>` +
+      `<p>${sent ? `Last sent ${esc(sent)}${s.mailedTo ? `, to ${s.mailedTo} ${s.mailedTo === 1 ? "person" : "people"}` : ""}.` : "None sent yet. The first one goes out with the next new report."}${slow.length ? ` ${slow.join(" ")}` : ""}</p>` +
       (bad ? `<p class="did">${esc(bad)}</p>` : "") +
       `<form method="post" action="/api/census/job" class="field">` +
       `<input type="hidden" name="turn" value="mail-to">` +
-      `<label for="to">Also send it to</label>` +
-      `<input id="to" name="to" type="text" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(m.extras.join(", "))}" placeholder="name@example.com, another@example.com">` +
-      `<p class="hint">Separate addresses with commas. Leave it empty and it goes to you alone.</p>` +
+      `<fieldset><legend>Who else gets it</legend>` +
+      `<div class="who-head" aria-hidden="true"><span>Email</span><span>How often</span></div>` +
+      rows.map(row).join("") +
+      `</fieldset>` +
+      `<p class="hint">Fridays: the week since the Friday before. 1st of the month: the month since the last one, sent with the month's first report. To take someone off, clear their address and save.</p>` +
       `<button type="submit">Save</button>` +
       `</form>` +
-      `<div class="row">${button("mail-test", "Send me one now")}${button("mail-off", "Turn off")}</div>`;
+      `<form method="post" action="/api/census/job" class="field">` +
+      `<input type="hidden" name="turn" value="mail-test">` +
+      `<label for="test-every">Send yourself a test</label>` +
+      `<div class="pair"><select id="test-every" name="every">${options("day")}</select><button type="submit">Send me one now</button></div>` +
+      `</form>` +
+      `<div class="row">${button("mail-off", "Turn off")}</div>`;
   }
-  return `<section><h2>Daily census email</h2>${body}</section>`;
+  return `<section><h2>Census email</h2>${body}</section>`;
 }
 
 function page(v: View): string {
@@ -182,12 +211,24 @@ function page(v: View): string {
   form { margin: 0; }
   .field { margin-top: 22px; }
   label { display: block; font-weight: 600; margin-bottom: 6px; }
-  input[type="text"] { box-sizing: border-box; width: 100%; font: inherit; min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
+  input[type="text"], input[type="email"], select { box-sizing: border-box; width: 100%; font: inherit; min-height: 44px; padding: 8px 12px; border-radius: 10px; border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
+  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  legend { font-weight: 600; padding: 0; margin-bottom: 6px; }
+  .who-head, .who-row { display: grid; grid-template-columns: minmax(0, 1fr) 11.5rem; gap: 10px; }
+  .who-head { color: GrayText; margin-bottom: 4px; }
+  .who-row + .who-row { margin-top: 10px; }
+  .pair { display: flex; flex-wrap: wrap; gap: 10px; }
+  .pair select { width: 11.5rem; flex: 0 1 auto; }
+  @media (max-width: 30rem) {
+    .who-head { display: none; }
+    .who-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .who-row + .who-row { margin-top: 18px; }
+  }
   .hint { color: GrayText; margin: 8px 0 12px; }
   button { font: inherit; font-weight: 600; min-height: 44px; padding: 0 20px; border-radius: 10px; border: 1px solid CanvasText; background: Canvas; color: CanvasText; cursor: pointer; }
   button.primary { background: CanvasText; color: Canvas; }
   a { color: LinkText; }
-  button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid Highlight; outline-offset: 3px; }
 </style>
 </head>
 <body>
@@ -213,7 +254,18 @@ function show(req: NextRequest, v: View, status: number) {
       signedIn: v.signedIn,
       on: v.on && v.usable && !v.blocked,
       ...(v.signedIn && s ? { checked: s.checked || null, by: s.by || null, through: s.through || null, reportDate: s.reportDate || null, note: s.note || null } : {}),
-      ...(v.signedIn && v.mail ? { mail: { on: v.mail.on && v.mail.here, others: v.mail.extras.length, sent: s?.mailedAt || null, note: s?.mailNote || null } } : {}),
+      ...(v.signedIn && v.mail
+        ? {
+            mail: {
+              on: v.mail.on && v.mail.here,
+              others: v.mail.plan.length,
+              weekly: v.mail.plan.filter((p) => p.every === "week").length,
+              monthly: v.mail.plan.filter((p) => p.every === "month").length,
+              sent: s?.mailedAt || null,
+              note: s?.mailNote || null,
+            },
+          }
+        : {}),
       ...(v.error ? { error: v.error } : {}),
     },
     { status, headers: { "Cache-Control": "no-store" } }
@@ -240,7 +292,7 @@ export async function GET(req: NextRequest) {
       blocked: !savedLoginOn(),
       status: mem.status.data,
       did,
-      mail: { on: mailIsOn(mem), extras: mailExtras(mem), self: await mailboxOf(board), here: canMail() },
+      mail: { on: mailIsOn(mem), plan: mailPlan(mem), self: await mailboxOf(board), here: canMail() },
     },
     200
   );
@@ -251,20 +303,21 @@ export async function GET(req: NextRequest) {
   return res;
 }
 
-// Today's email, to the owner alone, without touching what the job remembers.
-// The subject says "Test", so the real one for the day still goes out: the
-// job looks in Sent for the day's exact subject before it sends (daily.ts).
-async function sendTest(board: Gmail): Promise<boolean> {
+// One schedule's email as it would go out now, to the owner alone, without
+// touching what the job remembers. The subject says "Test", so the real one
+// for the day still goes out: the job looks in Sent for the day's exact
+// subject before it sends (daily.ts).
+async function sendTest(board: Gmail, every: Every): Promise<boolean> {
   const list = await listReports(board);
   for (let i = 0; i < list.ids.length; i++) {
     const ref = await reportAt(board, list.ids[i]);
     if (!ref) continue;
     const bytes = await workbookOf(board, ref);
     if (!bytes) return false;
-    const report = await buildDaily(board, ref, readWorkbook(bytes), list.ids.slice(i + 1));
+    const report = await buildFor(board, every, ref, readWorkbook(bytes), list.ids.slice(i + 1), true);
     const self = await mailboxOf(board);
     if (!report || !self) return false;
-    const draft = await draftDaily(report);
+    const draft = await draftDaily(report, { every });
     return (await sendDraft(board, { ...draft, subject: `Test: ${draft.subject}` }, [self])).ok;
   }
   return false;
@@ -285,18 +338,23 @@ export async function POST(req: NextRequest) {
     if (host !== req.nextUrl.host) return NextResponse.json({ error: "wrong_origin" }, { status: 403 });
   }
 
+  // to and every come in pairs, one pair per row of the list
   let turn = "";
-  let to = "";
+  let to: string[] = [];
+  let every: string[] = [];
+  const many = (v: unknown) => (Array.isArray(v) ? v : v === undefined || v === null ? [] : [v]).map((x) => String(x));
   try {
     const type = req.headers.get("content-type") || "";
     if (type.includes("application/json")) {
       const body = await req.json();
       turn = String(body?.turn || "");
-      to = String(body?.to || "");
+      to = many(body?.to);
+      every = many(body?.every);
     } else {
       const form = await req.formData();
       turn = String(form.get("turn") || "");
-      to = String(form.get("to") || "");
+      to = many(form.getAll("to"));
+      every = many(form.getAll("every"));
     }
   } catch {}
 
@@ -319,14 +377,15 @@ export async function POST(req: NextRequest) {
     return (await saveMail(notionToken!, mem, { off: turn === "mail-off" })) ? done(turn) : done("failed", 502);
   }
   if (turn === "mail-to") {
-    const list = addressList(to);
-    if (!list) return done("bad-address", 400);
-    return (await saveMail(notionToken!, mem, { to: list })) ? done("mail-to") : done("failed", 502);
+    const plan = planFrom(to, every);
+    if (!plan) return done("bad-address", 400);
+    return (await saveMail(notionToken!, mem, plan)) ? done("mail-to") : done("failed", 502);
   }
   if (turn === "mail-test") {
     if (!canMail()) return done("mail-not-here", 409);
+    const which: Every = every[0] === "week" || every[0] === "month" ? every[0] : "day";
     try {
-      return (await sendTest(board)) ? done("mail-test") : done("mail-test-failed", 502);
+      return (await sendTest(board, which)) ? done("mail-test") : done("mail-test-failed", 502);
     } catch (e) {
       console.error("census mail test", e);
       return done("mail-test-failed", 502);

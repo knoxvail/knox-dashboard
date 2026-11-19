@@ -1,10 +1,12 @@
 import type { CensusDay } from "./parse";
 import type { MoveCount } from "./moves";
 import type { Gmail } from "./gmail";
+import type { Every } from "./vault";
 import { chartAlt, shortDay } from "./chart";
 
-// The daily census email: what it says, how it is laid out, and how it is
-// handed to Gmail.
+// The census email: what it says, how it is laid out, and how it is handed
+// to Gmail. The weekly and monthly ones are the same email compared with an
+// older report (see daily.ts); only the name and the span change.
 //
 // Laid out for mail programs, which are far behind browsers: tables for
 // structure, every style written on the element, no scripts, no web fonts.
@@ -44,10 +46,17 @@ const daysApart = (a: string, b: string) => Math.round((utc(b).getTime() - utc(a
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
 
+// what each schedule's email is called: in the subject, and over the count
+const NAMED: Record<Every, { subject: string; title: string }> = {
+  day: { subject: "HC census", title: "Health Center census" },
+  week: { subject: "Weekly HC census", title: "Weekly HC census" },
+  month: { subject: "Monthly HC census", title: "Monthly HC census" },
+};
+
 const change = (n: number) => (n === 0 ? "no change" : n > 0 ? `up ${n}` : `down ${-n}`);
 const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-// "yesterday's report", "Friday's report", "the Nov 6 report"
+// "yesterday's report", "Friday's report", "last Friday's report", "the Nov 6 report"
 function since(r: DailyReport): string {
   if (!r.before) return "";
   if (!r.before.fromReport) return "the day before";
@@ -55,15 +64,17 @@ function since(r: DailyReport): string {
   if (gap <= 0) return "the earlier report today";
   if (gap === 1) return "yesterday's report";
   if (gap <= 6) return `${WEEKDAY_LONG[utc(r.before.date).getUTCDay()]}'s report`;
+  if (gap === 7) return `last ${WEEKDAY_LONG[utc(r.before.date).getUTCDay()]}'s report`;
   return `the ${shortDay(r.before.date)} report`;
 }
 
-// when the moves happened: "Tue, Nov 17", or "Fri 1, Sun 2" across several days
-function when(days: { date: string; n: number }[], reportDate: string): string {
+// when the moves happened: "Tue, Nov 17", or "Fri 1, Sun 2" across several
+// days of the last week, or "Nov 6: 2, Nov 12: 1" further back. `near` is
+// decided once per email, so the move-ins and move-outs read the same way.
+function when(days: { date: string; n: number }[], near: boolean): string {
   const hit = days.filter((d) => d.n > 0);
   if (!hit.length) return "";
   if (hit.length === 1) return dated(hit[0].date);
-  const near = hit.every((d) => daysApart(d.date, reportDate) <= 6);
   return hit.map((d) => (near ? `${weekday(d.date)} ${d.n}` : `${shortDay(d.date)}: ${d.n}`)).join(", ");
 }
 
@@ -72,8 +83,11 @@ const sentTime = (ms: number) =>
 
 type Line = { label: string; value: number; note: string; note2?: string };
 
-function parts(r: DailyReport) {
+function parts(r: DailyReport, every: Every) {
   const { now, before, moves } = r;
+  // a month of moves day by day is a wall of dates; the monthly gives totals
+  const near = moves.days.every((d) => daysApart(d.date, r.reportDate) <= 6);
+  const byDay = (days: { date: string; n: number }[]) => (every === "month" ? "" : when(days, near));
   const delta = before ? now.total - before.day.total : null;
   const from = since(r);
 
@@ -92,10 +106,10 @@ function parts(r: DailyReport) {
     {
       label: "Move-ins",
       value: moves.ins,
-      note: when(moves.days.map((d) => ({ date: d.date, n: d.ins })), r.reportDate),
+      note: byDay(moves.days.map((d) => ({ date: d.date, n: d.ins }))),
       note2: moves.back ? `${moves.back} returning` : "",
     },
-    { label: "Move-outs", value: moves.outs, note: when(moves.days.map((d) => ({ date: d.date, n: d.outs })), r.reportDate) },
+    { label: "Move-outs", value: moves.outs, note: byDay(moves.days.map((d) => ({ date: d.date, n: d.outs }))) },
   ];
 
   // the count can move without anyone moving, and the reader will do the sum
@@ -115,11 +129,13 @@ function parts(r: DailyReport) {
   };
 }
 
-export function composeDaily(r: DailyReport, opts: { chartCid: string | null }): { subject: string; text: string; html: string } {
-  const p = parts(r);
+export function composeDaily(r: DailyReport, opts: { chartCid: string | null; every?: Every }): { subject: string; text: string; html: string } {
+  const every = opts.every || "day";
+  const name = NAMED[every];
+  const p = parts(r, every);
   const { now, moves } = r;
 
-  const subject = `HC census: ${now.total} in house${p.delta === null ? "" : `, ${change(p.delta)}`} (${dated(now.date)})`;
+  const subject = `${name.subject}: ${now.total} in house${p.delta === null ? "" : `, ${change(p.delta)}`} (${dated(now.date)})`;
 
   const preheader =
     p.payers.map((l) => `${l.value} ${l.label.toLowerCase().replace("medicaid", "Medicaid")}`).join(", ") +
@@ -132,7 +148,7 @@ export function composeDaily(r: DailyReport, opts: { chartCid: string | null }):
     return `${l.label.padEnd(width)}  ${String(l.value).padStart(3)}${extra ? `   ${extra}` : ""}`;
   };
   const text = [
-    `Health Center census, ${p.day}`,
+    `${name.title}, ${p.day}`,
     "",
     `${now.total} ${p.headline}`,
     "",
@@ -183,7 +199,7 @@ export function composeDaily(r: DailyReport, opts: { chartCid: string | null }):
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
 <tr><td style="border-top:2px solid ${INK};padding:10px 0 0;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-<td align="left" style="${cap}color:${INK};">Health Center census</td>
+<td align="left" style="${cap}color:${INK};">${esc(name.title)}</td>
 <td align="right" style="${cap}color:${MUTED};">${esc(p.day)}</td>
 </tr></table>
 </td></tr>

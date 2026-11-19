@@ -3,18 +3,19 @@ import { corsHeaders, preflight } from "../../blake/shared";
 import { boardClient, gmailWith, opensTriadMailbox, type Gmail } from "../gmail";
 import { censusDays, readWorkbook, type Sheet } from "../parse";
 import { archiveCensusRow, createCensusDay, loadCensus, sameDay, updateCensusDay, type CensusRow } from "../shared";
-import { mailExtras, mailIsOn, readMemory, rememberLogin, savedLogin, saveStatus, saveStatusFresh, type Memory, type StatusNote } from "../vault";
-import { buildDaily, canMail, centralDate, draftDaily, listReports, recipients, reportAt, sendDraft, sentAlready, workbookOf, type ReportRef } from "../daily";
+import { mailIsOn, mailPlan, readMemory, rememberLogin, savedLogin, saveStatus, saveStatusFresh, type Memory, type StatusNote } from "../vault";
+import { buildDaily, buildFor, canMail, centralDate, draftDaily, isDue, listReports, periodOf, recipients, reportAt, sendDraft, sentAlready, workbookOf, type ReportRef } from "../daily";
 
 // Pulls the newest census report out of the Triad inbox, logs it, and sends
-// the daily census email for it.
+// the census email for it: the one that goes with every report, and the
+// weekly or monthly one when the report opens a new week or month.
 //
 // The Health Center census workbook is emailed every weekday morning. This
 // route finds the latest message, downloads the .xlsx in memory, reads the
 // four total rows per day, and writes any new or corrected days to the Notion
 // log. The first time it sees a report, on the day that report was sent, it
-// also sends the daily email (see daily.ts and mail.ts): once per report,
-// whoever gets there first.
+// also sends the emails (see daily.ts and mail.ts): once per report, whoever
+// gets there first.
 //
 // Two kinds of caller:
 //
@@ -67,8 +68,12 @@ const claimOf = (s?: string) => {
 // how long a run waits for a rival's claim to land before it reads its own back
 const settleMs = () => Number(process.env.CENSUS_MAIL_SETTLE_MS || 3000);
 
-// Sends the daily email for one report, unless another run already has.
-// Returns what happened and what to write down about it.
+// Sends the emails for one report, unless another run already has: the one
+// that goes with every report, then the weekly and the monthly when this
+// report opens a new week or month (see daily.ts). Returns what happened and
+// what to write down about it. A failure part way leaves the report unmailed,
+// so the next run tries again; whatever already went out is in Sent by then,
+// and is not sent twice.
 //
 // Two dashboards open at once (two tabs, a laptop and a phone) wake up and
 // sync in the same second, and both see a report nobody has emailed yet. The
@@ -116,23 +121,67 @@ async function mailOut(
     result: "failed" as const,
     patch: { mailing: "", mailNote: why, mailTry: `${found.id}#${triesFor(mem.status.data, found.id) + 1}` },
   });
+  // the weekly and monthly emails that are finished, kept even when a later step fails
+  const done: Partial<StatusNote> = {};
+  const failedPart = (why: string) => {
+    const f = failed(why);
+    return { ...f, patch: { ...done, ...f.patch } };
+  };
   try {
-    const report = await buildDaily(gm, found, book, olderIds);
-    if (!report) return failed("nothing_to_send");
-    const to = await recipients(gm, mailExtras(mem));
+    const daily = await buildDaily(gm, found, book, olderIds);
+    if (!daily) return failed("nothing_to_send");
+    const plan = mailPlan(mem);
+    const to = await recipients(gm, plan.filter((p) => p.every === "day").map((p) => p.address));
     if (!to.length) return failed("no_mailbox");
-    const draft = await draftDaily(report);
-    // already in Sent: it went out, whatever the note says. Write that down.
-    if (await sentAlready(gm, draft.subject)) return skipped({ mailed: found.id, mailing: "", mailTry: "" });
-    const sent = await sendDraft(gm, draft, to);
-    if (!sent.ok) return failed(`gmail_said_${sent.status}`);
+    const draft = await draftDaily(daily);
+    let sent = 0;
+    let graph = true;
+
+    // 1. the email that goes with every report. Already in Sent: it went
+    // out, whatever the note says.
+    if (!(await sentAlready(gm, draft.subject))) {
+      const out = await sendDraft(gm, draft, to);
+      if (!out.ok) return failed(`gmail_said_${out.status}`);
+      sent++;
+      graph = out.chart;
+    }
+
+    // 2. the weekly and the monthly, if this report opens a new week or month
+    const status = mem.status.data;
+    const lastDate = daily.before?.fromReport ? daily.before.date : null;
+    const mailedOn = status.mailedAt ? centralDate(Date.parse(status.mailedAt)) : null;
+    for (const every of ["week", "month"] as const) {
+      const key = every === "week" ? "weekly" : "monthly";
+      const period = periodOf(every, daily.reportDate);
+      if (!isDue(every, daily.reportDate, status[key], lastDate, mailedOn)) {
+        if (!status[key]) done[key] = period; // the record starts here
+        continue;
+      }
+      const people = plan.filter((p) => p.every === every).map((p) => p.address);
+      if (people.length) {
+        const report = await buildFor(gm, every, found, book, olderIds);
+        if (!report) return failedPart("nothing_to_send");
+        const slow = await draftDaily(report, { every, png: draft.png });
+        if (!(await sentAlready(gm, slow.subject))) {
+          const out = await sendDraft(gm, slow, people);
+          if (!out.ok) return failedPart(`${key}_gmail_said_${out.status}`);
+          sent++;
+          done[every === "week" ? "weeklyAt" : "monthlyAt"] = new Date(Date.now()).toISOString();
+        }
+      }
+      // done for this period, sent or with nobody on that schedule
+      done[key] = period;
+    }
+
+    const finished = { ...done, mailed: found.id, mailing: "", mailTry: "" };
+    if (!sent) return skipped(finished);
     return {
       result: "sent",
-      patch: { mailed: found.id, mailedAt: new Date(Date.now()).toISOString(), mailedTo: to.length, mailing: "", mailTry: "", mailNote: sent.chart ? "sent" : "sent_without_graph" },
+      patch: { ...finished, mailedAt: new Date(Date.now()).toISOString(), mailedTo: to.length, mailNote: graph ? "sent" : "sent_without_graph" },
     };
   } catch (e) {
     console.error("census mail", e);
-    return failed("mail_failed");
+    return failedPart("mail_failed");
   }
 }
 
@@ -217,10 +266,11 @@ export async function GET(req: NextRequest) {
 
     const reportDate = centralDate(found.sent);
 
-    // The daily email goes out once for each report, and only on the day the
-    // report was sent. A report first seen on a later day (nothing was running
-    // that day, or every send failed) is noted as handled and not sent:
-    // nobody wants yesterday's count once today's is on its way.
+    // The emails go out once for each report, and only on the day the report
+    // was sent. A report first seen on a later day (nothing was running that
+    // day, or every send failed) is noted as handled and not sent: nobody
+    // wants yesterday's count once today's is on its way. A weekly or monthly
+    // email it would have carried goes with the next report instead.
     const status = mem ? mem.status.data : null;
     const mailOn = canMail() && !dry && !!mem && mailIsOn(mem);
     const unsent = mailOn && status!.mailed !== found.id;
@@ -281,7 +331,7 @@ export async function GET(req: NextRequest) {
     }
     const complete = failed === 0 && remaining === 0;
 
-    // 4. the daily email, the first time this report is seen
+    // 4. the emails, the first time this report is seen
     let mail: "sent" | "failed" | "skipped" | undefined;
     let mailPatch: Partial<StatusNote> = mailStale ? { mailed: found.id } : {};
     if (mailDue && mem) {

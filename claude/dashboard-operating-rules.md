@@ -180,13 +180,14 @@ Blake asked for those tracked daily so trends show.
   daily email last went out for, and `note`, which reads "ok" or says what
   stopped the last run), and `census-mail` (the daily email's settings,
   which only exists once Knox changes something). Leave all three alone.
-- **The daily census email.** The first time any caller sees a new report,
-  the same run sends one email from the Triad mailbox that read it: the
-  count in house, a 30-day graph, the payer split, and the move-ins and
-  move-outs. It is on from the start and goes to Knox alone. Who else gets
-  it, turning it off, and a "Send me one now" button are all on
-  `/api/census/job`; the addresses live in the `census-mail` block, never in
-  the code. Details that matter:
+- **The census email.** The first time any caller sees a new report, the
+  same run sends one email from the Triad mailbox that read it: the count in
+  house, a 30-day graph, the payer split, and the move-ins and move-outs. It
+  is on from the start and goes to Knox with every report. Who else gets it
+  and how often (every report, Fridays, or the 1st of the month), turning it
+  off, and a "Send me one now" button for each version are all on
+  `/api/census/job`; the addresses and schedules live in the `census-mail`
+  block, never in the code. Details that matter:
   - It compares two reports, the new one and the one before it. A morning
     report shows last night's count carried forward, and the day's arrivals
     and departures are only written in by the next morning. So the change
@@ -204,14 +205,27 @@ Blake asked for those tracked daily so trends show.
     retried on the next check, five times at most. A report first seen on a
     later day (nothing was running that day) is marked as handled and not
     sent late.
+  - The Friday and monthly versions are the same email compared with an
+    older report: the Friday one with the first report of the week before
+    (normally last Friday's), the monthly one with the first report of the
+    month before. Each goes out once per week or month, with the first
+    report of the period that is seen on its own day: Friday's report, or
+    the next one when a Friday has no report or it was seen too late; the
+    1st's report, or the next weekday's. `weekly` and `monthly` in
+    `census-status` say which week and month are done. Someone on a slower
+    schedule never gets the every-report email, and Knox gets only the
+    every-report one unless he lists himself. If the every-report email
+    goes out and a slower one fails, the report stays unmailed and the next
+    check sends only what is missing (the Sent folder check skips the rest).
   - Two runs at the same moment are normal here: two tabs of the board wake
     up together. On 2026-11-19 that sent the first automatic email twice.
     Notion cannot do "write only if unchanged", so each run writes its own
     claim (`mailing`), waits three seconds, and reads it back; Notion keeps
     the last claim written, so all but one run stand down. Then, before
     sending, the run asks Gmail whether that exact subject is already in
-    Sent. The subject carries the day and the count, so it is one per
-    report. The "Send me one now" button puts "Test:" in front of the
+    Sent. The subject carries the schedule ("HC census", "Weekly HC census",
+    "Monthly HC census"), the day and the count, so it is one per report and
+    schedule. The "Send me one now" button puts "Test:" in front of the
     subject so it never counts as the day's email.
   - The graph is a PNG drawn on the server (`chart.ts`, with next/og) and
     carried inside the message, so it shows in Gmail without a "show images"

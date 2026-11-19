@@ -13,11 +13,12 @@ import crypto from "crypto";
 //   census-status  When the job last checked, which report it logged, how far
 //                  the log runs, and which report the daily email last went
 //                  out for. Every run writes it.
-//   census-mail    The daily email's settings: off or on, and who else gets
-//                  it besides the owner. Only the owner writes it, from
-//                  /api/census/job. It does not exist until they change
-//                  something; until then the email is on and goes to the
-//                  owner alone.
+//   census-mail    The census email's settings: off or on, who else gets it
+//                  besides the owner, and how often each of them does (every
+//                  report, Fridays, or the first report of the month). Only
+//                  the owner writes it, from /api/census/job. It does not
+//                  exist until they change something; until then the email
+//                  is on and goes to the owner alone.
 //
 // Separate blocks, so a status write can never undo a fresh login or a
 // change to who gets the email.
@@ -53,12 +54,22 @@ export type StatusNote = {
   mailing?: string; // "<report id>@<time>": a run has claimed the send
   mailTry?: string; // "<report id>#<n>": failed sends for that report; it stops trying at five
   mailNote?: string; // "sent", or what stopped the last send
+  // the slower schedules (see daily.ts): which period's email is done, and when it went
+  weekly?: string; // the Friday, YYYY-MM-DD, that starts the week whose email is done
+  weeklyAt?: string;
+  monthly?: string; // YYYY-MM, the month whose email is done
+  monthlyAt?: string;
 };
+
+// how often someone gets the email: with every report, with the first report
+// of each week (Friday), or with the first report of each month
+export type Every = "day" | "week" | "month";
 
 export type MailNote = {
   kind: "census-mail";
   off?: boolean; // the owner turned the daily email off
-  to?: string[]; // who else gets it; the owner always does
+  to?: string[]; // who else gets it; the owner always does, with every report
+  every?: Record<string, "week" | "month">; // anyone in `to` on a slower schedule
   changed?: string;
 };
 
@@ -69,7 +80,7 @@ const CAPTIONS: Record<string, string> = {
   "census-login":
     "Census job login, sealed. Lets the job read the census report with the dashboard closed. Rewritten when the dashboard signs in to Gmail again.",
   "census-status": "Census job status. Rewritten after every check.",
-  "census-mail": "Daily census email settings: on or off, and who else gets it. Changed from the census job page.",
+  "census-mail": "Census email settings: on or off, who else gets it, and how often. Changed from the census job page.",
 };
 
 function headers(token: string) {
@@ -218,6 +229,34 @@ export function addressList(text: string): string[] | null {
 // who else gets the email; anything in the block that is not an address is dropped
 export const mailExtras = (mem: Memory): string[] =>
   (Array.isArray(mem.mail.data.to) ? mem.mail.data.to : []).filter((a) => typeof a === "string" && ADDRESS.test(a)).slice(0, 12);
+
+// everyone besides the owner, each with how often they get it
+export function mailPlan(mem: Memory): { address: string; every: Every }[] {
+  const slow = mem.mail.data.every && typeof mem.mail.data.every === "object" ? mem.mail.data.every : {};
+  return mailExtras(mem).map((address) => {
+    const e = slow[address];
+    return { address, every: e === "week" || e === "month" ? e : "day" };
+  });
+}
+
+// The list as the owner typed it on the page: an address per row and a
+// schedule beside each. Blank rows drop out; an address typed twice keeps its
+// first schedule. null if any row is not an address.
+export function planFrom(addresses: string[], everies: string[]): Pick<MailNote, "to" | "every"> | null {
+  const to: string[] = [];
+  const every: Record<string, "week" | "month"> = {};
+  for (let i = 0; i < addresses.length; i++) {
+    const list = addressList(addresses[i] || "");
+    if (!list) return null;
+    const e = everies[i];
+    for (const a of list) {
+      if (to.includes(a)) continue;
+      to.push(a);
+      if (e === "week" || e === "month") every[a] = e;
+    }
+  }
+  return to.length > 12 ? null : { to, every };
+}
 
 export const mailIsOn = (mem: Memory): boolean => mem.mail.data.off !== true;
 

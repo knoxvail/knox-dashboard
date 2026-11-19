@@ -121,7 +121,7 @@ Complete). It is not a task. It holds the Health Center census database that
 the dashboard fills from Carmen's daily report. Never pick, retag, rename,
 move, or delete it, never edit the rows inside that database, and never
 touch the code blocks on that row (they are the census job's memory, and
-the settings for the daily census email).
+the settings for the census email).
 
 Goal rows are buckets' cousins, not tasks. Never tag one as Action, never pick
 one as a daily three, never mark one Complete. A finished goal goes to 100 with
